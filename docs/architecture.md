@@ -32,7 +32,7 @@ Sleep is not a verb. Sleep is free.
 
 ## Skin
 
-The skin is a static page that looks at the dish. It is not the game. This milestone's skin loads the kernel WASM, draws the dish on a canvas, and offers a small program editor (plus demo programs). It ships as plain HTML/CSS/JS plus `pkg/` from a public Cloud Storage bucket.
+The skin is a static page that looks at the dish. It is not the game. This milestone's skin is a fullscreen retro camera: kernel WASM, a low-res pixel canvas (nearest-neighbor upscale, CRT scanlines), and a hideable program overlay — no tick/mass/FPS HUD. It ships as plain HTML/CSS/JS plus `pkg/` from a public Cloud Storage bucket.
 
 No CDN fonts. No random network calls. Relative paths. Serve over HTTP(S) so the browser can fetch the `.wasm` module (a `file://` open will not work).
 

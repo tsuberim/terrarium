@@ -9,7 +9,7 @@ What exists:
 - Docs in `/docs` hold vision and architecture.
 - `crates/kernel` — mass ledger (spawn / spend / dump / absorb) plus dish physics, tick, and a tiny guest ISA (`thrust`, `sense`, `absorb`, `dump`, `sleep`, jumps). Conservation tests still pass; tick/spend/absorb covered.
 - Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`).
-- `apps/skin` — static camera: canvas dish, HUD (mass in box / house burned / tick), editor, demo programs (wander / chase / sit). No Cloud Run. No Docker. No always-on server.
+- `apps/skin` — fullscreen pixelated camera: low-res canvas scaled with nearest-neighbor, no stats/HUD. Program editor is a hideable overlay (wander / chase / sit demos). No Cloud Run. No Docker. No always-on server.
 - CI runs `cargo test` and checks that required docs exist.
 - Staging and prod remain two public GCS buckets. Deploy is still `gcloud storage cp` of `apps/skin/*` (includes `pkg/`).
 
