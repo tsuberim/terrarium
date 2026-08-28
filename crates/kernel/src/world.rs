@@ -6,8 +6,8 @@ use std::fmt;
 use crate::program::{Instr, Program, MAX_OPS_PER_TICK};
 
 /// Playable torus size in fixed-point units. Center is (0, 0); coordinates wrap independently on each axis.
-pub const WORLD_WIDTH: i32 = 200_000;
-pub const WORLD_HEIGHT: i32 = 200_000;
+pub const WORLD_WIDTH: i32 = 800_000;
+pub const WORLD_HEIGHT: i32 = 800_000;
 
 /// Mass cost of one `sense` verb.
 pub const SENSE_COST: u64 = 2;

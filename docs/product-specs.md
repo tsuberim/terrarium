@@ -20,8 +20,10 @@ Status tags:
 
 The skin is a fullscreen retro camera on the sim. No chrome, no dashboard.
 
-- Pixelated look — chunky framebuffer, nearest-neighbor upscale (`image-rendering: pixelated`), CRT scanlines
-- Minimalist — world fills the viewport; almost nothing else on screen
+- **Edge-to-edge viewport** — the torus fills the browser window (cover scale). No letterboxed frame, no inset margins shrinking the sim. Chrome (wordmark / program overlay) floats on top and must not reduce the drawable area.
+- **Bigger world** — `WORLD_WIDTH` / `WORLD_HEIGHT` are large enough that the torus feels like an open map, not a tiny dish. Wrapping stays; no circular boundary.
+- **Higher-res pixel framebuffer** — more pixels on the short axis than the early 160px prototype (currently 480px short axis, aspect-following long axis). Still nearest-neighbor upscale (`image-rendering: pixelated`); no smooth anti-aliased blobs. CRT scanlines optional overlay.
+- Minimalist — almost nothing else on screen besides the sim
 - No stats / HUD — no tick counter, mass totals, house burned, FPS, or other overlays on the raw sim
 - Hideable program overlay — wander / chase / sit demos and the paste-a-program editor stay available, but tuck away so writing a creature program does not break the fullscreen feel
 
@@ -29,7 +31,7 @@ Kernel rules unchanged. The camera gets prettier; the box does not.
 
 ## Wrapping / toroidal open world
 
-**Status: requested** (implementation on a separate branch)
+**Status: shipped**
 
 Not a petri dish. The world wraps like a torus:
 
