@@ -22,6 +22,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          audience: https://github.com/tsuberim/terrarium
       - uses: google-github-actions/setup-gcloud@v2
       - name: Copy skin to gs://terrarium-506917-staging
         run: |
