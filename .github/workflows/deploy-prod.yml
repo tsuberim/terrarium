@@ -29,6 +29,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          audience: https://github.com/${{ github.repository }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy host
         id: host
@@ -68,6 +69,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          audience: https://github.com/${{ github.repository }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy API
         id: api
@@ -102,6 +104,7 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          audience: https://github.com/${{ github.repository }}
       - uses: google-github-actions/setup-gcloud@v2
       - uses: actions/setup-node@v4
         with:
