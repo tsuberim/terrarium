@@ -2,12 +2,18 @@
 
 GCP project: **`terrarium-506917`**. Region: **`us-central1`**.
 
-This milestone is cheap on purpose. Staging and prod are two public Cloud Storage buckets serving static files over HTTPS. There is no Cloud Run, no Docker, no Artifact Registry, no GKE, no VMs, and no load balancer.
+This milestone is cheap on purpose. The **skin** is static files on public GCS buckets. The **API + dashboard** run as one lightweight process (local dev or a single Cloud Run service on staging — not a farm).
 
-| Name | Bucket | Public URL |
+| Name | Skin (GCS) | API (when deployed) |
 | --- | --- | --- |
-| Staging | `gs://terrarium-506917-staging` | https://storage.googleapis.com/terrarium-506917-staging/index.html |
-| Production | `gs://terrarium-506917-prod` | https://storage.googleapis.com/terrarium-506917-prod/index.html |
+| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html | Cloud Run `terrarium-api-staging` (optional; see below) |
+| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html | Cloud Run `terrarium-api-prod` (optional; faucet **off**) |
+| Local | http://127.0.0.1:8080/ (`python3 -m http.server --directory apps/skin`) | http://127.0.0.1:3000/ (`./scripts/run-api.sh`; faucet **on**) |
+
+| Bucket | Purpose |
+| --- | --- |
+| `gs://terrarium-506917-staging` | Skin static files |
+| `gs://terrarium-506917-prod` | Skin static files |
 
 The skin lives in `apps/skin/` (`index.html`, `styles.css`, `main.js`, `pkg/` WASM). Deploy is a copy:
 
@@ -23,12 +29,38 @@ Rebuild the kernel WASM before deploy when the crate changes:
 ```
 Objects must be publicly readable. Website configuration can wait; the `index.html` URLs above are enough.
 
+## API (local)
+
+```bash
+cp .env.example .env   # TERRARIUM_ENV=local → free mint on
+./scripts/run-api.sh   # http://127.0.0.1:3000/dashboard/
+```
+
+QA flow: open dashboard → create account → faucet credits → mint API token → `curl -X POST …/v1/spawn` with Bearer token.
+
+## API (staging deploy — optional)
+
+One Cloud Run service, scale-to-zero, SQLite on `/tmp` (ephemeral — fine for staging QA). Set `TERRARIUM_ENV=staging` so the faucet works. No Stripe keys required.
+
+```bash
+# from repo root, after cargo build
+gcloud run deploy terrarium-api-staging \
+  --source crates/api \
+  --region us-central1 \
+  --project terrarium-506917 \
+  --set-env-vars TERRARIUM_ENV=staging \
+  --allow-unauthenticated
+```
+
+Production deploy is the same with `TERRARIUM_ENV=production` (faucet disabled).
+
 ## CI
 
 GitHub Actions, on pull requests and on push to `main`:
 
 1. `cargo test --manifest-path crates/kernel/Cargo.toml`
-2. Required docs files exist
+2. `cargo test --manifest-path crates/api/Cargo.toml`
+3. Required docs files exist
 
 That is all CI does. No image builds. No deploys inside the test workflow.
 

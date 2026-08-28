@@ -1,0 +1,127 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1410;
+  --panel: #1a2218;
+  --border: #2d3b28;
+  --text: #e8f0e4;
+  --muted: #8aa080;
+  --accent: #7dff6a;
+  --danger: #ff6a6a;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, sans-serif;
+  background: radial-gradient(circle at top, #1b2a16, var(--bg));
+  color: var(--text);
+}
+
+.panel {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+header h1 {
+  margin: 0;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 1.4rem;
+}
+
+.tagline, .env, .muted { color: var(--muted); }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.balance {
+  font-size: 2rem;
+  margin: 0.25rem 0;
+}
+
+button {
+  background: var(--accent);
+  color: #102010;
+  border: none;
+  border-radius: 6px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+input {
+  background: #0d120c;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-right: 0.5rem;
+}
+
+#mint-form { margin-bottom: 0.75rem; }
+
+#token-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#token-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+#token-list li.revoked { opacity: 0.5; }
+
+.secret {
+  background: #0d120c;
+  border: 1px dashed var(--accent);
+  padding: 0.75rem;
+  border-radius: 6px;
+  font-family: var(--mono);
+  word-break: break-all;
+  margin-bottom: 0.75rem;
+}
+
+.code {
+  background: #0d120c;
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
+.hidden { display: none; }
+
+.notice { font-size: 0.9rem; color: var(--muted); }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}

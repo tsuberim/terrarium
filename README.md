@@ -31,17 +31,23 @@ Early. Mass ledger and docs exist. No physics, no WASM guests, no multiplayer ye
 # optional, if you changed the kernel:
 ./scripts/build-wasm.sh
 
-# serve the static skin (required — browsers won't load WASM from file://)
+# skin camera (fullscreen retro)
 python3 -m http.server 8080 --directory apps/skin
 # open http://127.0.0.1:8080/
+
+# API + dashboard (credits, tokens, spawn)
+cp .env.example .env
+./scripts/run-api.sh
+# open http://127.0.0.1:3000/dashboard/
 ```
 
-`cargo test --manifest-path crates/kernel/Cargo.toml` must stay green.
+`cargo test` at repo root runs kernel + API tests.
 
-| Environment | URL |
-| --- | --- |
-| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html |
-| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html |
+| Environment | Skin | Dashboard / API |
+| --- | --- | --- |
+| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html | Cloud Run (optional; faucet ON) |
+| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html | Cloud Run (optional; faucet OFF) |
+| Local | http://127.0.0.1:8080/ | http://127.0.0.1:3000/dashboard/ |
 
 Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). GCP project: `terrarium-506917`.
 

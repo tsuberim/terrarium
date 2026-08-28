@@ -1,0 +1,144 @@
+use axum::{
+    extract::{Path, State},
+    http::HeaderMap,
+    Json,
+};
+use serde::{Deserialize, Serialize};
+
+use crate::auth::bearer_from_header;
+use crate::db::ApiTokenRow;
+use crate::error::{ApiError, ApiResult};
+use crate::AppState;
+
+fn session_account(headers: &HeaderMap, state: &AppState) -> ApiResult<String> {
+    let token = bearer_from_header(headers.get("authorization").and_then(|v| v.to_str().ok()))
+        .ok_or(ApiError::Unauthorized)?;
+    state.db.account_for_session(token)
+}
+
+pub async fn me(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<MeResponse>> {
+    let account_id = session_account(&headers, &state)?;
+    let credits = state.db.credits(&account_id)?;
+    Ok(Json(MeResponse {
+        account_id,
+        credits,
+        environment: state.config.env.name().to_string(),
+        free_mint_enabled: state.config.env.allows_free_mint(),
+        billing_enabled: false,
+    }))
+}
+
+#[derive(Serialize)]
+pub struct MeResponse {
+    account_id: String,
+    credits: u64,
+    environment: String,
+    free_mint_enabled: bool,
+    billing_enabled: bool,
+}
+
+pub async fn list_tokens(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<Vec<ApiTokenRow>>> {
+    let account_id = session_account(&headers, &state)?;
+    Ok(Json(state.db.list_api_tokens(&account_id)?))
+}
+
+#[derive(Deserialize)]
+pub struct MintTokenRequest {
+    #[serde(default = "default_label")]
+    pub label: String,
+}
+
+fn default_label() -> String {
+    "default".to_string()
+}
+
+#[derive(Serialize)]
+pub struct MintTokenResponse {
+    id: String,
+    token: String,
+    label: String,
+}
+
+pub async fn mint_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<MintTokenRequest>,
+) -> ApiResult<Json<MintTokenResponse>> {
+    let account_id = session_account(&headers, &state)?;
+    let (id, token) = state.db.mint_api_token(&account_id, &body.label)?;
+    Ok(Json(MintTokenResponse {
+        id,
+        token,
+        label: body.label,
+    }))
+}
+
+pub async fn revoke_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let account_id = session_account(&headers, &state)?;
+    state.db.revoke_api_token(&account_id, &id)?;
+    Ok(Json(serde_json::json!({ "revoked": id })))
+}
+
+#[derive(Deserialize)]
+pub struct FaucetRequest {
+    #[serde(default)]
+    pub amount: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct FaucetResponse {
+    credits: u64,
+    minted: u64,
+}
+
+pub async fn faucet(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<FaucetRequest>,
+) -> ApiResult<Json<FaucetResponse>> {
+    if !state.config.env.allows_free_mint() {
+        return Err(ApiError::Forbidden);
+    }
+    let account_id = session_account(&headers, &state)?;
+    let amount = body.amount.unwrap_or(state.config.faucet_amount);
+    if amount == 0 {
+        return Err(ApiError::BadRequest("amount must be greater than zero".into()));
+    }
+    let credits = state
+        .db
+        .faucet_credits(&account_id, amount, "staging_faucet")?;
+    Ok(Json(FaucetResponse {
+        credits,
+        minted: amount,
+    }))
+}
+
+#[derive(Serialize)]
+pub struct BillingCheckoutResponse {
+    status: &'static str,
+    message: String,
+}
+
+pub async fn billing_checkout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<BillingCheckoutResponse>> {
+    let _account = session_account(&headers, &state)?;
+    Ok(Json(BillingCheckoutResponse {
+        status: "coming_soon",
+        message: format!(
+            "Stripe checkout is not wired yet (env: {}). Use the free faucet on staging/local.",
+            state.config.env.name()
+        ),
+    }))
+}
