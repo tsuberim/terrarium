@@ -38,15 +38,17 @@ python3 -m http.server 8080 --directory apps/skin
 # API + dashboard (credits, tokens, spawn)
 cp .env.example .env
 ./scripts/run-api.sh
-# open http://127.0.0.1:3000/dashboard/
+# http://127.0.0.1:3000/dashboard/  (dev sign-in when Firebase unset)
 ```
 
 `cargo test` at repo root runs kernel + API tests.
 
-| Environment | Skin | Dashboard / API |
+Platform (see `docs/architecture.md`): Firebase Auth for humans, scoped API tokens for machines, always-on native host (PR #4) + API for credits/spawn. Firebase Hosting replaces GCS when deploy workflows switch.
+
+| Environment | Skin (legacy GCS) | Dashboard / API |
 | --- | --- | --- |
-| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html | Cloud Run (optional; faucet ON) |
-| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html | Cloud Run (optional; faucet OFF) |
+| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html | Cloud Run + Firebase (optional) |
+| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html | Cloud Run + Firebase (faucet OFF) |
 | Local | http://127.0.0.1:8080/ | http://127.0.0.1:3000/dashboard/ |
 
 Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). GCP project: `terrarium-506917`.

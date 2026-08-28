@@ -15,9 +15,13 @@
     </header>
 
     <section id="onboard" class="card hidden">
-      <h2>Get started</h2>
-      <p>Create an account to hold credits and mint API tokens.</p>
-      <button id="create-account" type="button">Create account</button>
+      <h2>Sign in</h2>
+      <p id="onboard-copy" class="muted"></p>
+      <div id="firebase-signin" class="hidden">
+        <button id="google-signin" type="button">Sign in with Google</button>
+        <button id="sign-out" type="button" class="danger hidden">Sign out</button>
+      </div>
+      <button id="dev-signin" type="button" class="hidden">Dev sign-in (local only)</button>
     </section>
 
     <section id="account" class="card hidden">
@@ -41,9 +45,11 @@
 
     <section id="tokens-section" class="card hidden">
       <h2>API tokens</h2>
-      <p class="muted">Use <code>Authorization: Bearer …</code> on <code>POST /v1/spawn</code>.</p>
+      <p class="muted">Machine tokens for <code>POST /v1/spawn</code>. Scoped: <code>spawn</code>, <code>read</code>.</p>
       <form id="mint-form">
         <input id="token-label" type="text" placeholder="Label" value="default" maxlength="64">
+        <label class="scope"><input type="checkbox" id="scope-spawn" checked> spawn</label>
+        <label class="scope"><input type="checkbox" id="scope-read" checked> read</label>
         <button type="submit">Mint token</button>
       </form>
       <div id="new-token" class="secret hidden"></div>
@@ -55,6 +61,6 @@
       <pre id="curl-example" class="code"></pre>
     </section>
   </main>
-  <script src="app.js"></script>
+  <script src="app.js" type="module"></script>
 </body>
 </html>

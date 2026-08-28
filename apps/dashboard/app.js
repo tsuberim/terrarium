@@ -1,23 +1,12 @@
-const SESSION_KEY = "terrarium_session";
-const API_BASE = window.location.origin;
+const SESSION_KEY = "terrarium_dev_session";
+const API_BASE = window.location.origin.includes("127.0.0.1") || window.location.origin.includes("localhost")
+  ? "http://127.0.0.1:3000"
+  : window.location.origin.replace(/\/dashboard\/?$/, "");
 
-function session() {
-  return localStorage.getItem(SESSION_KEY);
-}
-
-function setSession(token) {
-  localStorage.setItem(SESSION_KEY, token);
-}
-
-async function api(path, options = {}) {
-  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  const tok = session();
-  if (tok) headers.Authorization = `Bearer ${tok}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.message || body.error || res.statusText);
-  return body;
-}
+let firebaseAuth = null;
+let firebaseReady = false;
+let devSession = localStorage.getItem(SESSION_KEY);
+let runtimeConfig = null;
 
 function show(id) {
   document.getElementById(id)?.classList.remove("hidden");
@@ -25,6 +14,67 @@ function show(id) {
 
 function hide(id) {
   document.getElementById(id)?.classList.add("hidden");
+}
+
+async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  const tok = await authToken();
+  if (tok) headers.Authorization = `Bearer ${tok}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.message || body.error || res.statusText);
+  return body;
+}
+
+async function authToken() {
+  if (firebaseAuth?.currentUser) {
+    return firebaseAuth.currentUser.getIdToken();
+  }
+  return devSession;
+}
+
+async function loadConfig() {
+  runtimeConfig = await fetch(`${API_BASE}/dashboard/api/config`).then((r) => r.json());
+  document.getElementById("env-label").textContent = `Environment: ${runtimeConfig.environment}`;
+  return runtimeConfig;
+}
+
+async function initFirebase(cfg) {
+  if (!cfg.firebase) return;
+  const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js");
+  const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } =
+    await import("https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js");
+  const app = initializeApp({
+    apiKey: cfg.firebase.api_key,
+    authDomain: cfg.firebase.auth_domain,
+    projectId: cfg.firebase.project_id,
+  });
+  firebaseAuth = getAuth(app);
+  firebaseReady = true;
+  show("firebase-signin");
+  document.getElementById("onboard-copy").textContent =
+    "Sign in with Firebase to manage credits and API tokens.";
+
+  document.getElementById("google-signin").onclick = async () => {
+    await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
+  };
+  document.getElementById("sign-out").onclick = async () => {
+    await signOut(firebaseAuth);
+    devSession = null;
+    localStorage.removeItem(SESSION_KEY);
+    await refresh();
+  };
+
+  onAuthStateChanged(firebaseAuth, async (user) => {
+    if (user) {
+      hide("google-signin");
+      show("sign-out");
+    } else {
+      show("google-signin");
+      hide("sign-out");
+    }
+    await refresh();
+  });
 }
 
 function updateCurl(apiToken) {
@@ -37,8 +87,9 @@ function updateCurl(apiToken) {
 }
 
 async function refresh() {
-  const tok = session();
-  if (!tok) {
+  const hasFirebaseUser = firebaseAuth?.currentUser;
+  const hasDev = !!devSession;
+  if (!hasFirebaseUser && !hasDev) {
     show("onboard");
     hide("account");
     hide("faucet-section");
@@ -55,8 +106,7 @@ async function refresh() {
 
   const me = await api("/dashboard/api/me");
   document.getElementById("credits").textContent = me.credits.toLocaleString();
-  document.getElementById("account-id").textContent = `Account ${me.account_id}`;
-  document.getElementById("env-label").textContent = `Environment: ${me.environment}`;
+  document.getElementById("account-id").textContent = `Account ${me.account_id} (${me.auth_mode})`;
 
   if (me.free_mint_enabled) {
     show("faucet-section");
@@ -70,7 +120,7 @@ async function refresh() {
   for (const t of tokens) {
     const li = document.createElement("li");
     if (t.revoked_at) li.classList.add("revoked");
-    li.innerHTML = `<span><strong>${t.label}</strong><br><span class="muted">${t.id.slice(0, 8)}…</span></span>`;
+    li.innerHTML = `<span><strong>${t.label}</strong> <code>${t.scopes}</code><br><span class="muted">${t.id.slice(0, 8)}…</span></span>`;
     if (!t.revoked_at) {
       const btn = document.createElement("button");
       btn.textContent = "Revoke";
@@ -92,9 +142,12 @@ async function refresh() {
   updateCurl();
 }
 
-document.getElementById("create-account").addEventListener("click", async () => {
-  const res = await api("/v1/accounts", { method: "POST" });
-  setSession(res.session_token);
+document.getElementById("dev-signin").addEventListener("click", async () => {
+  const res = await fetch(`${API_BASE}/v1/accounts`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || body.error);
+  devSession = body.session_token;
+  localStorage.setItem(SESSION_KEY, devSession);
   await refresh();
 });
 
@@ -111,19 +164,35 @@ document.getElementById("checkout").addEventListener("click", async () => {
 document.getElementById("mint-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const label = document.getElementById("token-label").value.trim() || "default";
+  const scopes = [];
+  if (document.getElementById("scope-spawn").checked) scopes.push("spawn");
+  if (document.getElementById("scope-read").checked) scopes.push("read");
   const res = await api("/dashboard/api/tokens", {
     method: "POST",
-    body: JSON.stringify({ label }),
+    body: JSON.stringify({ label, scopes }),
   });
   const box = document.getElementById("new-token");
   box.classList.remove("hidden");
-  box.textContent = `Copy now — shown once:\n${res.token}`;
+  box.textContent = `Copy now — shown once:\n${res.token}\nscopes: ${res.scopes}`;
   updateCurl(res.token);
   await refresh();
 });
 
-refresh().catch((err) => {
+try {
+  const cfg = await loadConfig();
+  if (cfg.dev_auth_enabled) {
+    show("dev-signin");
+    document.getElementById("onboard-copy").textContent =
+      "Local dev: use dev sign-in, or configure Firebase for production-like auth.";
+  }
+  await initFirebase(cfg);
+  if (!firebaseReady) {
+    show("onboard");
+    if (cfg.dev_auth_enabled) show("dev-signin");
+  }
+  await refresh();
+} catch (err) {
   console.error(err);
-  localStorage.removeItem(SESSION_KEY);
   show("onboard");
-});
+  document.getElementById("onboard-copy").textContent = `Could not reach API at ${API_BASE}`;
+}

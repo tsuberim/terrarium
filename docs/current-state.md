@@ -2,17 +2,39 @@
 
 Honest snapshot as of 2026-08-28.
 
-**Playable local world + billing/API v1 (in progress).** The kernel ticks a deterministic fixed-point 2D `World`; the skin loads that same crate as WASM in the browser tab. A new Rust API service (`crates/api`) holds account credits, API tokens, and a native kernel world for public spawn.
+## Destination (agreed in #discuss-tech)
 
-What exists:
+| Layer | Target |
+| --- | --- |
+| Sim | Always-on **native host** (`crates/host`, PR #4) owns `World`, ticks continuously, WebSocket to browsers |
+| Skin | Firebase Hosting static client — **viewer only**, no WASM tick in tab |
+| Dashboard | Firebase Hosting static client — Firebase Auth, calls API for credits/tokens/billing |
+| Identity | Firebase Auth (humans) + scoped API tokens (machines) |
+| Economy | API credit ledger → `spawn_cell_at`; kernel stays auth-free |
+| Hosting | Firebase Hosting replaces GCS for skin + dashboard |
 
-- Docs in `/docs` hold vision, architecture, and product specs (source of truth).
-- `crates/kernel` — mass ledger (`spawned_mass` / `total_mass` / `house_burned`) plus world physics, tick, and a tiny guest ISA (`thrust`, `sense`, `absorb`, `dump`, `sleep`, jumps). Invariant tests cover closed ledger, monotonic burn, dump/absorb conservation, free sleep/halt, tick determinism, toroidal wrap, spend/dump-to-zero, and sense cost.
-- Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`). Public JS surface is `JsWorld` (`worldWidth`, `worldHeight`, `tick`, `snapshot`, …).
-- `apps/skin` — fullscreen pixelated camera over a wrapping rectangular world: `#world` canvas, no stats/HUD. Program editor is a hideable overlay (wander / chase / sit demos).
-- `crates/api` — Axum HTTP server: credits ledger (SQLite), API token mint/revoke, `POST /v1/spawn`, dashboard static UI at `/dashboard/`. Free-credit faucet on staging/local only.
-- `apps/dashboard` — separate billing/token UI (served by the API, not skin chrome).
-- CI runs `cargo test` for kernel and API, and checks required docs exist.
-- Staging skin + prod skin remain public GCS buckets. API deploy is optional Cloud Run (see `docs/environments.md`); local `./scripts/run-api.sh`.
+## What exists on main today
 
-What this is not yet: live Stripe, multiplayer sync between browser skin and server world, WASM guest modules inside cells, attach/split, or cash-out. Guests are bytecode interpreted by the kernel. Cash-out is still a later verb.
+- **`crates/kernel`** — mass ledger, toroidal world, bytecode ISA, invariant tests. Auth-free.
+- **`crates/api`** — Axum service: SQLite credits, scoped API tokens (`spawn` / `read`), `POST /v1/spawn`, dashboard JSON API, staging/local free-credit faucet. Firebase JWT verify when `FIREBASE_PROJECT_ID` is set; dev session tokens when not (CI/local). Runs an in-process native `World` for spawn v1.
+- **`apps/dashboard`** — static billing/token UI; Firebase Auth sign-in when configured, dev sign-in fallback.
+- **`apps/skin`** — fullscreen retro camera. **Legacy:** ticks kernel WASM in the browser tab.
+- **CI** — `cargo test` for kernel + API; required docs check.
+- **`firebase.json`** — Hosting config for skin + dashboard (deploy workflows still copy to GCS — migration TODO).
+
+## Legacy (still live, to be retired)
+
+| Legacy | Replacement |
+| --- | --- |
+| Skin ticks WASM in-tab | Host WebSocket + skin as viewer (PR #4) |
+| GCS bucket deploy (`gcloud storage cp`) | Firebase Hosting (`firebase deploy`) |
+| API serves dashboard static files | Firebase Hosting serves dashboard; API is JSON only |
+| Dev session tokens (`trm_sess_…`) | Firebase ID tokens in staging/prod |
+
+## Not yet
+
+- `crates/host` merged to main (PR #4 open)
+- Live Stripe checkout
+- API → host spawn delegation (API still owns world in-process for v1)
+- Firebase Hosting deploy in CI (config present; workflows not switched)
+- Cash-out verb, attach/split, WASM guest modules inside cells

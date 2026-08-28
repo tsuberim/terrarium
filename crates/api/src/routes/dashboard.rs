@@ -8,19 +8,50 @@ use serde::{Deserialize, Serialize};
 use crate::auth::bearer_from_header;
 use crate::db::ApiTokenRow;
 use crate::error::{ApiError, ApiResult};
+use crate::scopes::TokenScopes;
 use crate::AppState;
 
-fn session_account(headers: &HeaderMap, state: &AppState) -> ApiResult<String> {
+async fn session_account(headers: &HeaderMap, state: &AppState) -> ApiResult<String> {
     let token = bearer_from_header(headers.get("authorization").and_then(|v| v.to_str().ok()))
         .ok_or(ApiError::Unauthorized)?;
-    state.db.account_for_session(token)
+    state.identity.authenticate_human(token, &state.db).await
+}
+
+#[derive(Serialize)]
+pub struct ConfigResponse {
+    environment: String,
+    free_mint_enabled: bool,
+    dev_auth_enabled: bool,
+    firebase: Option<FirebaseConfigResponse>,
+    api_base: String,
+}
+
+#[derive(Serialize)]
+pub struct FirebaseConfigResponse {
+    api_key: String,
+    auth_domain: String,
+    project_id: String,
+}
+
+pub async fn config(State(state): State<AppState>) -> Json<ConfigResponse> {
+    Json(ConfigResponse {
+        environment: state.config.env.name().to_string(),
+        free_mint_enabled: state.config.env.allows_free_mint(),
+        dev_auth_enabled: state.identity.dev_auth_enabled() && !state.identity.firebase_configured(),
+        firebase: state.config.firebase_web.as_ref().map(|f| FirebaseConfigResponse {
+            api_key: f.api_key.clone(),
+            auth_domain: f.auth_domain.clone(),
+            project_id: f.project_id.clone(),
+        }),
+        api_base: String::new(),
+    })
 }
 
 pub async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<MeResponse>> {
-    let account_id = session_account(&headers, &state)?;
+    let account_id = session_account(&headers, &state).await?;
     let credits = state.db.credits(&account_id)?;
     Ok(Json(MeResponse {
         account_id,
@@ -28,6 +59,12 @@ pub async fn me(
         environment: state.config.env.name().to_string(),
         free_mint_enabled: state.config.env.allows_free_mint(),
         billing_enabled: false,
+        auth_mode: if state.identity.firebase_configured() {
+            "firebase"
+        } else {
+            "dev"
+        }
+        .to_string(),
     }))
 }
 
@@ -38,13 +75,14 @@ pub struct MeResponse {
     environment: String,
     free_mint_enabled: bool,
     billing_enabled: bool,
+    auth_mode: String,
 }
 
 pub async fn list_tokens(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<ApiTokenRow>>> {
-    let account_id = session_account(&headers, &state)?;
+    let account_id = session_account(&headers, &state).await?;
     Ok(Json(state.db.list_api_tokens(&account_id)?))
 }
 
@@ -52,6 +90,8 @@ pub async fn list_tokens(
 pub struct MintTokenRequest {
     #[serde(default = "default_label")]
     pub label: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 fn default_label() -> String {
@@ -63,6 +103,7 @@ pub struct MintTokenResponse {
     id: String,
     token: String,
     label: String,
+    scopes: String,
 }
 
 pub async fn mint_token(
@@ -70,12 +111,14 @@ pub async fn mint_token(
     headers: HeaderMap,
     Json(body): Json<MintTokenRequest>,
 ) -> ApiResult<Json<MintTokenResponse>> {
-    let account_id = session_account(&headers, &state)?;
-    let (id, token) = state.db.mint_api_token(&account_id, &body.label)?;
+    let account_id = session_account(&headers, &state).await?;
+    let scopes = TokenScopes::from_request(&body.scopes)?;
+    let (id, token) = state.db.mint_api_token(&account_id, &body.label, scopes)?;
     Ok(Json(MintTokenResponse {
         id,
         token,
         label: body.label,
+        scopes: scopes.to_string(),
     }))
 }
 
@@ -84,7 +127,7 @@ pub async fn revoke_token(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let account_id = session_account(&headers, &state)?;
+    let account_id = session_account(&headers, &state).await?;
     state.db.revoke_api_token(&account_id, &id)?;
     Ok(Json(serde_json::json!({ "revoked": id })))
 }
@@ -109,7 +152,7 @@ pub async fn faucet(
     if !state.config.env.allows_free_mint() {
         return Err(ApiError::Forbidden);
     }
-    let account_id = session_account(&headers, &state)?;
+    let account_id = session_account(&headers, &state).await?;
     let amount = body.amount.unwrap_or(state.config.faucet_amount);
     if amount == 0 {
         return Err(ApiError::BadRequest("amount must be greater than zero".into()));
@@ -133,7 +176,7 @@ pub async fn billing_checkout(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> ApiResult<Json<BillingCheckoutResponse>> {
-    let _account = session_account(&headers, &state)?;
+    let _account = session_account(&headers, &state).await?;
     Ok(Json(BillingCheckoutResponse {
         status: "coming_soon",
         message: format!(

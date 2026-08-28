@@ -2,11 +2,16 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod firebase;
+mod identity;
 mod routes;
+mod scopes;
 
-pub use config::{Config, Environment};
-pub use db::{spawn_tick_loop, Db, WorldHost};
+pub use config::{Config, Environment, FirebaseWebConfig};
+pub use db::{spawn_tick_loop, ApiTokenRow, Db, WorldHost};
 pub use error::{ApiError, ApiResult};
+pub use identity::IdentityService;
+pub use scopes::TokenScopes;
 
 use std::sync::Arc;
 
@@ -23,6 +28,7 @@ pub struct AppState {
     pub db: Arc<Db>,
     pub world: Arc<WorldHost>,
     pub config: Config,
+    pub identity: Arc<IdentityService>,
 }
 
 pub fn app(state: AppState) -> Router {
@@ -32,6 +38,7 @@ pub fn app(state: AppState) -> Router {
         .route("/world/snapshot", get(routes::v1::world_snapshot));
 
     let dashboard = Router::new()
+        .route("/config", get(routes::dashboard::config))
         .route("/me", get(routes::dashboard::me))
         .route("/tokens", get(routes::dashboard::list_tokens))
         .route("/tokens", post(routes::dashboard::mint_token))

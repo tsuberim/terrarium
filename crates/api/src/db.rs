@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::auth::{generate_token, hash_token};
 use crate::error::{ApiError, ApiResult};
+use crate::scopes::TokenScopes;
 
 pub struct Db {
     conn: Mutex<Connection>,
@@ -35,6 +36,7 @@ impl Db {
                 account_id TEXT NOT NULL REFERENCES accounts(id),
                 token_hash TEXT NOT NULL UNIQUE,
                 label TEXT NOT NULL,
+                scopes TEXT NOT NULL DEFAULT 'spawn,read',
                 created_at TEXT NOT NULL,
                 revoked_at TEXT
             );
@@ -59,6 +61,10 @@ impl Db {
             ",
         )
         .map_err(|_| ApiError::Internal)?;
+        let _ = conn.execute(
+            "ALTER TABLE api_tokens ADD COLUMN scopes TEXT NOT NULL DEFAULT 'spawn,read'",
+            [],
+        );
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -69,7 +75,18 @@ impl Db {
         format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs())
     }
 
-    pub fn create_account(&self) -> ApiResult<(String, String)> {
+    pub fn ensure_account(&self, account_id: &str) -> ApiResult<()> {
+        let now = Self::now_iso();
+        let conn = self.conn.lock().map_err(|_| ApiError::Internal)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO accounts (id, credits, created_at) VALUES (?1, 0, ?2)",
+            params![account_id, now],
+        )
+        .map_err(|_| ApiError::Internal)?;
+        Ok(())
+    }
+
+    pub fn create_dev_account(&self) -> ApiResult<(String, String)> {
         let account_id = Uuid::new_v4().to_string();
         let session_raw = generate_token("trm_sess_");
         let session_hash = hash_token(&session_raw);
@@ -99,13 +116,17 @@ impl Db {
         .map_err(|_| ApiError::Unauthorized)
     }
 
-    pub fn account_for_api_token(&self, token_raw: &str) -> ApiResult<String> {
+    pub fn account_for_api_token(&self, token_raw: &str) -> ApiResult<(String, TokenScopes)> {
         let hash = hash_token(token_raw);
         let conn = self.conn.lock().map_err(|_| ApiError::Internal)?;
         conn.query_row(
-            "SELECT account_id FROM api_tokens WHERE token_hash = ?1 AND revoked_at IS NULL",
+            "SELECT account_id, scopes FROM api_tokens WHERE token_hash = ?1 AND revoked_at IS NULL",
             params![hash],
-            |row| row.get(0),
+            |row| {
+                let account_id: String = row.get(0)?;
+                let scopes_raw: String = row.get(1)?;
+                Ok((account_id, TokenScopes::from_db(&scopes_raw)))
+            },
         )
         .map_err(|_| ApiError::Unauthorized)
     }
@@ -122,15 +143,21 @@ impl Db {
         Ok(credits.max(0) as u64)
     }
 
-    pub fn mint_api_token(&self, account_id: &str, label: &str) -> ApiResult<(String, String)> {
+    pub fn mint_api_token(
+        &self,
+        account_id: &str,
+        label: &str,
+        scopes: TokenScopes,
+    ) -> ApiResult<(String, String)> {
         let id = Uuid::new_v4().to_string();
         let raw = generate_token("trm_");
         let hash = hash_token(&raw);
         let now = Self::now_iso();
+        let scopes_db = scopes.to_db_string();
         let conn = self.conn.lock().map_err(|_| ApiError::Internal)?;
         conn.execute(
-            "INSERT INTO api_tokens (id, account_id, token_hash, label, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, account_id, hash, label, now],
+            "INSERT INTO api_tokens (id, account_id, token_hash, label, scopes, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, account_id, hash, label, scopes_db, now],
         )
         .map_err(|_| ApiError::Internal)?;
         Ok((id, raw))
@@ -140,7 +167,7 @@ impl Db {
         let conn = self.conn.lock().map_err(|_| ApiError::Internal)?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, label, created_at, revoked_at FROM api_tokens WHERE account_id = ?1 ORDER BY created_at DESC",
+                "SELECT id, label, scopes, created_at, revoked_at FROM api_tokens WHERE account_id = ?1 ORDER BY created_at DESC",
             )
             .map_err(|_| ApiError::Internal)?;
         let rows = stmt
@@ -148,8 +175,9 @@ impl Db {
                 Ok(ApiTokenRow {
                     id: row.get(0)?,
                     label: row.get(1)?,
-                    created_at: row.get(2)?,
-                    revoked_at: row.get(3)?,
+                    scopes: row.get(2)?,
+                    created_at: row.get(3)?,
+                    revoked_at: row.get(4)?,
                 })
             })
             .map_err(|_| ApiError::Internal)?;
@@ -256,6 +284,7 @@ impl Db {
 pub struct ApiTokenRow {
     pub id: String,
     pub label: String,
+    pub scopes: String,
     pub created_at: String,
     pub revoked_at: Option<String>,
 }
@@ -337,7 +366,7 @@ mod tests {
     #[test]
     fn credits_and_spawn_spend() {
         let db = Db::open(std::path::Path::new(":memory:")).unwrap();
-        let (account_id, _sess) = db.create_account().unwrap();
+        let (account_id, _sess) = db.create_dev_account().unwrap();
         db.faucet_credits(&account_id, 500, "test_faucet").unwrap();
         assert_eq!(db.credits(&account_id).unwrap(), 500);
         let (spawn_id, remaining) = db
@@ -351,7 +380,7 @@ mod tests {
     #[test]
     fn insufficient_credits_rejected() {
         let db = Db::open(std::path::Path::new(":memory:")).unwrap();
-        let (account_id, _sess) = db.create_account().unwrap();
+        let (account_id, _sess) = db.create_dev_account().unwrap();
         let err = db
             .spend_and_record_spawn(&account_id, 1, 1, 0, 0)
             .unwrap_err();
@@ -361,9 +390,11 @@ mod tests {
     #[test]
     fn api_token_auth() {
         let db = Db::open(std::path::Path::new(":memory:")).unwrap();
-        let (account_id, _sess) = db.create_account().unwrap();
-        let (_id, raw) = db.mint_api_token(&account_id, "test").unwrap();
-        assert_eq!(db.account_for_api_token(&raw).unwrap(), account_id);
+        let (account_id, _sess) = db.create_dev_account().unwrap();
+        let (_id, raw) = db.mint_api_token(&account_id, "test", TokenScopes::all()).unwrap();
+        let (id, scopes) = db.account_for_api_token(&raw).unwrap();
+        assert_eq!(id, account_id);
+        assert!(scopes.spawn && scopes.read);
         assert!(db.account_for_api_token("trm_bad").is_err());
     }
 }

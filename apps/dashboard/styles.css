@@ -78,7 +78,10 @@ input {
   margin-right: 0.5rem;
 }
 
-#mint-form { margin-bottom: 0.75rem; }
+#scope-spawn, #scope-read { margin-right: 0.75rem; }
+
+.scope { font-size: 0.9rem; color: var(--muted); margin-right: 0.5rem; }
+
 
 #token-list {
   list-style: none;

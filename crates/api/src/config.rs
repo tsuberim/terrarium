@@ -34,12 +34,22 @@ impl Environment {
 }
 
 #[derive(Clone, Debug)]
+pub struct FirebaseWebConfig {
+    pub api_key: String,
+    pub auth_domain: String,
+    pub project_id: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub env: Environment,
     pub listen_addr: String,
     pub database_path: PathBuf,
     pub dashboard_dir: PathBuf,
     pub faucet_amount: u64,
+    pub firebase_project_id: Option<String>,
+    pub firebase_web: Option<FirebaseWebConfig>,
+    pub dev_auth: bool,
 }
 
 impl Config {
@@ -60,12 +70,33 @@ impl Config {
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000);
 
+        let firebase_project_id = env::var("FIREBASE_PROJECT_ID").ok().filter(|s| !s.is_empty());
+        let firebase_web = firebase_project_id.as_ref().and_then(|project_id| {
+            let api_key = env::var("FIREBASE_API_KEY").ok().filter(|s| !s.is_empty())?;
+            let auth_domain = env::var("FIREBASE_AUTH_DOMAIN")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| format!("{project_id}.firebaseapp.com"));
+            Some(FirebaseWebConfig {
+                api_key,
+                auth_domain,
+                project_id: project_id.clone(),
+            })
+        });
+
+        let dev_auth = env::var("TERRARIUM_DEV_AUTH")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(true);
+
         Self {
             env,
             listen_addr,
             database_path,
             dashboard_dir,
             faucet_amount,
+            firebase_project_id,
+            firebase_web,
+            dev_auth,
         }
     }
 }

@@ -22,3 +22,7 @@ Those are identifiers, not key files. The JSON private key never leaves Google, 
 ## Operator machine
 
 If you need to run `gcloud` yourself, use whatever is already in `~/keys/` on that machine. Do not invent a second copy "for the project." The repo's `.gitignore` refuses `/keys`, `.env`, `*.pem`, and service-account JSON patterns as a backstop, not as a place to put files.
+
+## Firebase
+
+Public web config (`FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`) is safe in env vars and served to the dashboard — it is not a secret. **Never commit** Firebase Admin service account JSON or private keys; JWT verification uses Google's public x509 keys over HTTPS, no admin SDK key required for ID-token verify.
