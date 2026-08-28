@@ -643,10 +643,10 @@ fn thrust_cost(fx: i32, fy: i32) -> u64 {
 }
 
 fn body_radius(mass: Mass) -> i32 {
-    // sqrt-ish: more mass → slightly larger blob. Floor so tiny cells still have size.
+    // sqrt-ish: more mass → larger blob. Floor high enough to see on the skin canvas.
     let m = mass.get();
-    let r = isqrt(m.saturating_mul(80)) as i32;
-    std::cmp::max(1_500, std::cmp::min(r, 18_000))
+    let r = isqrt(m.saturating_mul(2_000)) as i32;
+    std::cmp::max(4_000, std::cmp::min(r, 22_000))
 }
 
 fn inside_dish(x: i32, y: i32, radius: i32, body: i32) -> bool {

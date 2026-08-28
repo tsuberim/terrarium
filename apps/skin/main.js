@@ -2,13 +2,13 @@ import init, { JsWorld } from "./pkg/terrarium_kernel.js";
 
 const DEMOS = {
   wander: `# wander — fixed thrust loop (deterministic)
-thrust 120 40
+thrust 50 20
 sleep
-thrust -90 110
+thrust -40 45
 sleep
-thrust -70 -130
+thrust -30 -55
 sleep
-thrust 140 -30
+thrust 55 -15
 sleep
 jump 0
 `,
@@ -17,7 +17,7 @@ sense
 jnz 0 4
 sleep
 jump 0
-thrust_toward 160
+thrust_toward 70
 sleep
 jump 0
 `,
@@ -71,15 +71,15 @@ function envBadge() {
 
 function seedDish() {
   world = new JsWorld();
-  var a = world.spawnCell(800, -28000, -12000);
-  var b = world.spawnCell(600, 22000, 8000);
-  var c = world.spawnCell(450, -5000, 28000);
+  var a = world.spawnCell(5000, -28000, -12000);
+  var b = world.spawnCell(4000, 22000, 8000);
+  var c = world.spawnCell(3500, -5000, 28000);
   world.setProgramText(a, DEMOS.wander);
   world.setProgramText(b, DEMOS.chase);
   world.setProgramText(c, DEMOS.sit);
   // Inert crumb already in the box — absorb is an explicit verb.
-  var dumper = world.spawnCell(100, 12000, -22000);
-  world.dumpMatter(dumper, 60);
+  var dumper = world.spawnCell(800, 12000, -22000);
+  world.dumpMatter(dumper, 400);
   world.setProgramText(dumper, DEMOS.sit);
   selectedCell = a;
   refreshCellSelect();
@@ -122,8 +122,8 @@ function resize() {
 }
 
 function bodyRadius(mass, radius) {
-  var r = Math.sqrt(mass * 80);
-  r = Math.max(1500, Math.min(r, 18000));
+  var r = Math.sqrt(mass * 2000);
+  r = Math.max(4000, Math.min(r, 22000));
   return (r / radius) * (cssSize * 0.48);
 }
 
@@ -240,8 +240,22 @@ function syncSelectLabels(snap) {
   });
 }
 
+function ensureLivingSelection() {
+  if (!lastSnapshot || !lastSnapshot.cells.length) return false;
+  if (lastSnapshot.cells.some(function (c) { return c.id === selectedCell; })) {
+    return true;
+  }
+  selectedCell = lastSnapshot.cells[0].id;
+  cellSelect.value = String(selectedCell);
+  return true;
+}
+
 function onRun() {
   if (!world) return;
+  if (!ensureLivingSelection()) {
+    setStatus("no living cells — reset the dish.", "error");
+    return;
+  }
   var src = programEl.value;
   try {
     world.setProgramText(selectedCell, src);
