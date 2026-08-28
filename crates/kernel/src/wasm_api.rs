@@ -3,7 +3,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::program::{compile_text, decode_program, encode_program};
-use crate::world::{Mass, World, WORLD_RADIUS};
+use crate::world::{Mass, World, WORLD_WIDTH, WORLD_HEIGHT};
 
 /// JS-facing world handle.
 #[wasm_bindgen]
@@ -16,13 +16,18 @@ impl JsWorld {
     #[wasm_bindgen(constructor)]
     pub fn new() -> JsWorld {
         JsWorld {
-            inner: World::with_radius(WORLD_RADIUS),
+            inner: World::with_size(WORLD_WIDTH, WORLD_HEIGHT),
         }
     }
 
-    #[wasm_bindgen(js_name = worldRadius)]
-    pub fn world_radius(&self) -> i32 {
-        self.inner.radius()
+    #[wasm_bindgen(js_name = worldWidth)]
+    pub fn world_width(&self) -> i32 {
+        self.inner.width()
+    }
+
+    #[wasm_bindgen(js_name = worldHeight)]
+    pub fn world_height(&self) -> i32 {
+        self.inner.height()
     }
 
     #[wasm_bindgen(js_name = totalMass)]
@@ -107,8 +112,10 @@ impl JsWorld {
         out.push_str(&s.house_burned.get().to_string());
         out.push_str(",\"spawned_mass\":");
         out.push_str(&s.spawned_mass.get().to_string());
-        out.push_str(",\"radius\":");
-        out.push_str(&s.radius.to_string());
+        out.push_str(",\"width\":");
+        out.push_str(&s.width.to_string());
+        out.push_str(",\"height\":");
+        out.push_str(&s.height.to_string());
         out.push_str(",\"cells\":[");
         for (i, c) in s.cells.iter().enumerate() {
             if i > 0 {

@@ -37,9 +37,9 @@ const CELL_COLORS = [
 ];
 const INERT_COLOR = "#8a6a2e";
 const WORLD_BG = "#0a1210";
-const VOID_BG = "#020403";
-const RING_COLOR = "#1a2e24";
+const EDGE_COLOR = "#1a2e24";
 const SELECT_COLOR = "#e8f0ea";
+const GHOST_ALPHA = 0.38;
 
 const TICKS_PER_FRAME = 1;
 const MS_PER_TICK = 50;
@@ -151,22 +151,19 @@ function setupCanvas() {
   ctx.imageSmoothingEnabled = false;
 }
 
-function worldRadiusPx() {
-  return Math.round(Math.min(bufW, bufH) * 0.46);
-}
-
-function bodyRadiusPx(mass, worldRadius) {
+function bodyRadiusPx(mass, worldWidth) {
   var r = Math.sqrt(mass * 2000);
   r = Math.max(5000, Math.min(r, 24000));
-  return Math.max(3, Math.round((r / worldRadius) * worldRadiusPx() * 1.15));
+  var worldSpan = Math.min(bufW, bufH) * 0.94;
+  return Math.max(3, Math.round((r / worldWidth) * worldSpan * 1.15));
 }
 
-function fillCircle(x, y, r, color) {
+function fillCircle(x, y, r, color, alpha) {
   var cx = Math.round(x);
   var cy = Math.round(y);
   var rr = Math.max(1, Math.round(r));
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
   ctx.fillStyle = color;
-  /* Chunkier than a perfect arc: fill a pixel disk */
   for (var dy = -rr; dy <= rr; dy++) {
     for (var dx = -rr; dx <= rr; dx++) {
       if (dx * dx + dy * dy <= rr * rr) {
@@ -174,14 +171,16 @@ function fillCircle(x, y, r, color) {
       }
     }
   }
+  ctx.globalAlpha = 1;
 }
 
-function strokeCircle(x, y, r, color) {
+function strokeCircle(x, y, r, color, alpha) {
   var cx = Math.round(x);
   var cy = Math.round(y);
   var rr = Math.max(1, Math.round(r));
   var inner = (rr - 1) * (rr - 1);
   var outer = rr * rr;
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
   ctx.fillStyle = color;
   for (var dy = -rr; dy <= rr; dy++) {
     for (var dx = -rr; dx <= rr; dx++) {
@@ -191,38 +190,100 @@ function strokeCircle(x, y, r, color) {
       }
     }
   }
+  ctx.globalAlpha = 1;
+}
+
+function drawWorldFrame(view) {
+  var left = Math.round(view.left);
+  var top = Math.round(view.top);
+  var w = Math.round(view.widthPx);
+  var h = Math.round(view.heightPx);
+  ctx.fillStyle = WORLD_BG;
+  ctx.fillRect(left, top, w, h);
+  ctx.fillStyle = EDGE_COLOR;
+  ctx.fillRect(left, top, w, 1);
+  ctx.fillRect(left, top + h - 1, w, 1);
+  ctx.fillRect(left, top, 1, h);
+  ctx.fillRect(left + w - 1, top, 1, h);
+}
+
+function worldToScreen(x, y, view) {
+  return {
+    px: view.cx + x * view.scale,
+    py: view.cy + y * view.scale,
+  };
+}
+
+function wrapOffsets(px, py, pr, view) {
+  var offsets = [[0, 0]];
+  var left = view.cx - view.widthPx / 2;
+  var right = view.cx + view.widthPx / 2;
+  var top = view.cy - view.heightPx / 2;
+  var bottom = view.cy + view.heightPx / 2;
+  var band = pr + 3;
+  if (px - band < left) offsets.push([view.widthPx, 0]);
+  if (px + band > right) offsets.push([-view.widthPx, 0]);
+  if (py - band < top) offsets.push([0, view.heightPx]);
+  if (py + band > bottom) offsets.push([0, -view.heightPx]);
+  if (px - band < left && py - band < top) offsets.push([view.widthPx, view.heightPx]);
+  if (px + band > right && py - band < top) offsets.push([-view.widthPx, view.heightPx]);
+  if (px - band < left && py + band > bottom) offsets.push([view.widthPx, -view.heightPx]);
+  if (px + band > right && py + band > bottom) offsets.push([-view.widthPx, -view.heightPx]);
+  return offsets;
+}
+
+function drawBlob(px, py, pr, color, selected) {
+  fillCircle(px, py, pr, color);
+  if (selected) {
+    strokeCircle(px, py, pr + 2, SELECT_COLOR);
+  }
+}
+
+function drawBlobWithWraps(px, py, pr, color, selected, view) {
+  var offsets = wrapOffsets(px, py, pr, view);
+  for (var i = 0; i < offsets.length; i++) {
+    var ox = offsets[i][0];
+    var oy = offsets[i][1];
+    var ghost = ox !== 0 || oy !== 0;
+    var alpha = ghost ? GHOST_ALPHA : 1;
+    fillCircle(px + ox, py + oy, pr, color, alpha);
+    if (selected && !ghost) {
+      strokeCircle(px + ox, py + oy, pr + 2, SELECT_COLOR);
+    }
+  }
 }
 
 function draw() {
-  ctx.fillStyle = VOID_BG;
+  ctx.fillStyle = WORLD_BG;
   ctx.fillRect(0, 0, bufW, bufH);
   if (!lastSnapshot) return;
 
-  var radius = lastSnapshot.radius || 100000;
-  var worldR = worldRadiusPx();
-  var scale = worldR / radius;
-  var cx = bufW / 2;
-  var cy = bufH / 2;
+  var worldWidth = lastSnapshot.width || 200000;
+  var worldHeight = lastSnapshot.height || 200000;
+  var scale = Math.min((bufW * 0.94) / worldWidth, (bufH * 0.94) / worldHeight);
+  var view = {
+    cx: bufW / 2,
+    cy: bufH / 2,
+    scale: scale,
+    widthPx: worldWidth * scale,
+    heightPx: worldHeight * scale,
+    left: bufW / 2 - (worldWidth * scale) / 2,
+    top: bufH / 2 - (worldHeight * scale) / 2,
+  };
 
-  fillCircle(cx, cy, worldR, WORLD_BG);
-  strokeCircle(cx, cy, worldR, RING_COLOR);
+  drawWorldFrame(view);
 
   lastSnapshot.inert.forEach(function (d) {
-    var px = cx + d.x * scale;
-    var py = cy + d.y * scale;
-    var pr = Math.max(1, Math.round(bodyRadiusPx(d.mass, radius) * 0.65));
-    fillCircle(px, py, pr, INERT_COLOR);
+    var pos = worldToScreen(d.x, d.y, view);
+    var pr = Math.max(1, Math.round(bodyRadiusPx(d.mass, worldWidth) * 0.65));
+    drawBlobWithWraps(pos.px, pos.py, pr, INERT_COLOR, false, view);
   });
 
   lastSnapshot.cells.forEach(function (c) {
     var color = CELL_COLORS[c.id % CELL_COLORS.length];
-    var px = cx + c.x * scale;
-    var py = cy + c.y * scale;
-    var pr = bodyRadiusPx(c.mass, radius);
-    fillCircle(px, py, pr, color);
-    if (c.id === selectedCell) {
-      strokeCircle(px, py, pr + 2, SELECT_COLOR);
-    }
+    var pos = worldToScreen(c.x, c.y, view);
+    var pr = bodyRadiusPx(c.mass, worldWidth);
+    drawBlobWithWraps(pos.px, pos.py, pr, color, c.id === selectedCell, view);
   });
 }
 

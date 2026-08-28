@@ -16,5 +16,5 @@ pub use program::{compile_text, decode_program, encode_program, Instr, Program, 
 pub use wasm_api::JsWorld;
 pub use world::{
     CellId, CellView, InertId, InertView, KernelError, Mass, World, WorldSnapshot, SENSE_COST,
-    WORLD_RADIUS,
+    WORLD_WIDTH, WORLD_HEIGHT,
 };

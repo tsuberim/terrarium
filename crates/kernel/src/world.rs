@@ -5,8 +5,9 @@ use std::fmt;
 
 use crate::program::{Instr, Program, MAX_OPS_PER_TICK};
 
-/// World radius in fixed-point units. Center is (0, 0).
-pub const WORLD_RADIUS: i32 = 100_000;
+/// Playable torus size in fixed-point units. Center is (0, 0); coordinates wrap independently on each axis.
+pub const WORLD_WIDTH: i32 = 200_000;
+pub const WORLD_HEIGHT: i32 = 200_000;
 
 /// Mass cost of one `sense` verb.
 pub const SENSE_COST: u64 = 2;
@@ -93,7 +94,6 @@ pub enum KernelError {
     InsufficientMass,
     ZeroAmount,
     BadProgram,
-    OutOfBounds,
 }
 
 impl fmt::Display for KernelError {
@@ -104,7 +104,6 @@ impl fmt::Display for KernelError {
             Self::InsufficientMass => write!(f, "insufficient mass"),
             Self::ZeroAmount => write!(f, "amount must be greater than zero"),
             Self::BadProgram => write!(f, "bad program"),
-            Self::OutOfBounds => write!(f, "out of bounds"),
         }
     }
 }
@@ -161,7 +160,8 @@ pub struct WorldSnapshot {
     pub total_mass: Mass,
     pub house_burned: Mass,
     pub spawned_mass: Mass,
-    pub radius: i32,
+    pub width: i32,
+    pub height: i32,
     pub cells: Vec<CellView>,
     pub inert: Vec<InertView>,
 }
@@ -175,7 +175,8 @@ pub struct World {
     house_burned: Mass,
     /// Cash-in total. Until cash-out exists: spawned_mass == total_mass + house_burned.
     spawned_mass: Mass,
-    radius: i32,
+    width: i32,
+    height: i32,
     tick: u64,
 }
 
@@ -187,10 +188,10 @@ impl Default for World {
 
 impl World {
     pub fn new() -> Self {
-        Self::with_radius(WORLD_RADIUS)
+        Self::with_size(WORLD_WIDTH, WORLD_HEIGHT)
     }
 
-    pub fn with_radius(radius: i32) -> Self {
+    pub fn with_size(width: i32, height: i32) -> Self {
         Self {
             next_cell: 0,
             next_inert: 0,
@@ -198,7 +199,8 @@ impl World {
             inert: HashMap::new(),
             house_burned: Mass::ZERO,
             spawned_mass: Mass::ZERO,
-            radius,
+            width,
+            height,
             tick: 0,
         }
     }
@@ -207,8 +209,12 @@ impl World {
         self.tick
     }
 
-    pub fn radius(&self) -> i32 {
-        self.radius
+    pub fn width(&self) -> i32 {
+        self.width
+    }
+
+    pub fn height(&self) -> i32 {
+        self.height
     }
 
     /// Living cells plus inert dumps. Does not include mass the house burned.
@@ -250,14 +256,12 @@ impl World {
         self.spawn_cell_at(mass, 0, 0)
     }
 
-    /// Cash-in at a position. Rejects spawn outside the world radius.
+    /// Cash-in at a position. Coordinates wrap onto the torus.
     pub fn spawn_cell_at(&mut self, mass: Mass, x: i32, y: i32) -> Result<CellId, KernelError> {
         if mass.is_zero() {
             return Err(KernelError::ZeroAmount);
         }
-        if !inside_world(x, y, self.radius, body_radius(mass)) {
-            return Err(KernelError::OutOfBounds);
-        }
+        let (x, y) = wrap_position(x, y, self.width, self.height);
         let id = CellId(self.next_cell);
         self.next_cell += 1;
         self.cells.insert(
@@ -335,6 +339,7 @@ impl World {
         }
         let inert_id = InertId(self.next_inert);
         self.next_inert += 1;
+        let (x, y) = wrap_position(x, y, self.width, self.height);
         self.inert.insert(
             inert_id.0,
             Inert {
@@ -404,17 +409,17 @@ impl World {
             if *oid == id.0 {
                 continue;
             }
-            let dx = other.x - mx;
-            let dy = other.y - my;
-            let d2 = dist2(dx, dy);
+            let dx = toroidal_delta(mx, other.x, self.width);
+            let dy = toroidal_delta(my, other.y, self.height);
+            let d2 = toroidal_dist2(mx, my, other.x, other.y, self.width, self.height);
             if best.map(|(b, _, _, _)| d2 < b).unwrap_or(true) {
                 best = Some((d2, dx, dy, 1));
             }
         }
         for dump in self.inert.values() {
-            let dx = dump.x - mx;
-            let dy = dump.y - my;
-            let d2 = dist2(dx, dy);
+            let dx = toroidal_delta(mx, dump.x, self.width);
+            let dy = toroidal_delta(my, dump.y, self.height);
+            let d2 = toroidal_dist2(mx, my, dump.x, dump.y, self.width, self.height);
             if best.map(|(b, _, _, _)| d2 < b).unwrap_or(true) {
                 best = Some((d2, dx, dy, 0));
             }
@@ -448,9 +453,7 @@ impl World {
         let reach = body_radius(cmass).saturating_add(8_000);
         let mut best: Option<(i64, u64, Mass)> = None;
         for (iid, dump) in &self.inert {
-            let dx = dump.x - cx;
-            let dy = dump.y - cy;
-            let d2 = dist2(dx, dy);
+            let d2 = toroidal_dist2(cx, cy, dump.x, dump.y, self.width, self.height);
             let limit = reach.saturating_add(body_radius(dump.mass));
             if d2 > (limit as i64) * (limit as i64) {
                 continue;
@@ -501,7 +504,9 @@ impl World {
             cell.vy = (cell.vy as i64 * FRICTION_NUM as i64 / FRICTION_DEN as i64) as i32;
             cell.x = cell.x.saturating_add(cell.vx);
             cell.y = cell.y.saturating_add(cell.vy);
-            clamp_to_world(cell, self.radius);
+            let (x, y) = wrap_position(cell.x, cell.y, self.width, self.height);
+            cell.x = x;
+            cell.y = y;
             cell.impulse_x = 0;
             cell.impulse_y = 0;
         }
@@ -643,7 +648,8 @@ impl World {
             total_mass: self.total_mass(),
             house_burned: self.house_burned,
             spawned_mass: self.spawned_mass,
-            radius: self.radius,
+            width: self.width,
+            height: self.height,
             cells,
             inert,
         }
@@ -663,49 +669,39 @@ fn body_radius(mass: Mass) -> i32 {
     std::cmp::max(4_000, std::cmp::min(r, 22_000))
 }
 
-fn inside_world(x: i32, y: i32, radius: i32, body: i32) -> bool {
-    let limit = radius.saturating_sub(body);
-    if limit <= 0 {
-        return false;
+fn wrap_axis(value: i32, extent: i32) -> i32 {
+    if extent <= 0 {
+        return 0;
     }
-    dist2(x, y) <= (limit as i64) * (limit as i64)
+    let half = extent / 2;
+    let mut v = value + half;
+    v = v.rem_euclid(extent);
+    v - half
 }
 
-fn clamp_to_world(cell: &mut Cell, radius: i32) {
-    let body = body_radius(cell.mass);
-    let limit = radius.saturating_sub(body);
-    if limit <= 0 {
-        cell.x = 0;
-        cell.y = 0;
-        cell.vx = 0;
-        cell.vy = 0;
-        return;
+fn wrap_position(x: i32, y: i32, width: i32, height: i32) -> (i32, i32) {
+    (
+        wrap_axis(x, width),
+        wrap_axis(y, height),
+    )
+}
+
+/// Shortest signed delta along one toroidal axis.
+fn toroidal_delta(from: i32, to: i32, extent: i32) -> i32 {
+    let mut d = to - from;
+    let half = extent / 2;
+    if d > half {
+        d -= extent;
+    } else if d < -half {
+        d += extent;
     }
-    let d2 = dist2(cell.x, cell.y);
-    let lim2 = (limit as i64) * (limit as i64);
-    if d2 <= lim2 {
-        return;
-    }
-    let dist = isqrt_i64(d2).max(1);
-    cell.x = ((cell.x as i64) * (limit as i64) / dist) as i32;
-    cell.y = ((cell.y as i64) * (limit as i64) / dist) as i32;
-    // Integer truncation of the radial project can leave us one unit outside.
-    if dist2(cell.x, cell.y) > lim2 {
-        let safe = (limit as i64).saturating_sub(1).max(0);
-        let d2 = dist2(cell.x, cell.y);
-        let dist = isqrt_i64(d2).max(1);
-        cell.x = ((cell.x as i64) * safe / dist) as i32;
-        cell.y = ((cell.y as i64) * safe / dist) as i32;
-    }
-    // Bounce: flip radial velocity component roughly.
-    let nx = cell.x as i64;
-    let ny = cell.y as i64;
-    let dot = cell.vx as i64 * nx + cell.vy as i64 * ny;
-    if dot > 0 {
-        // Moving outward — reflect.
-        cell.vx = (cell.vx as i64 - 2 * dot * nx / (lim2.max(1))) as i32;
-        cell.vy = (cell.vy as i64 - 2 * dot * ny / (lim2.max(1))) as i32;
-    }
+    d
+}
+
+fn toroidal_dist2(x1: i32, y1: i32, x2: i32, y2: i32, width: i32, height: i32) -> i64 {
+    let dx = toroidal_delta(x1, x2, width);
+    let dy = toroidal_delta(y1, y2, height);
+    dist2(dx, dy)
 }
 
 fn dist2(dx: i32, dy: i32) -> i64 {
@@ -1022,36 +1018,107 @@ mod tests {
     }
 
     #[test]
-    fn living_cells_stay_within_world_radius() {
+    fn wrap_axis_crosses_right_edge() {
+        let w = WORLD_WIDTH;
+        let half = w / 2;
+        assert_eq!(wrap_axis(half - 1, w), half - 1);
+        assert_eq!(wrap_axis(half, w), -half);
+        assert_eq!(wrap_axis(half + 1, w), -half + 1);
+    }
+
+    #[test]
+    fn wrap_axis_crosses_left_edge() {
+        let w = WORLD_WIDTH;
+        let half = w / 2;
+        assert_eq!(wrap_axis(-half, w), -half);
+        assert_eq!(wrap_axis(-half - 1, w), half - 1);
+    }
+
+    #[test]
+    fn toroidal_delta_prefers_shortest_path() {
+        let w = WORLD_WIDTH;
+        let half = w / 2;
+        assert_eq!(toroidal_delta(half - 10_000, -half + 5_000, w), 15_000);
+        assert_eq!(toroidal_delta(-half + 5_000, half - 10_000, w), -15_000);
+    }
+
+    #[test]
+    fn toroidal_dist2_matches_wrap_around() {
+        let w = WORLD_WIDTH;
+        let h = WORLD_HEIGHT;
+        let half_w = w / 2;
+        let near = toroidal_dist2(half_w - 1_000, 0, -half_w + 500, 0, w, h);
+        let direct = dist2(-1_500, 0);
+        assert_eq!(near, direct);
+        let far = toroidal_dist2(0, 0, half_w - 1, 0, w, h);
+        assert_eq!(far, dist2(half_w - 1, 0));
+    }
+
+    #[test]
+    fn thrust_wraps_cell_across_x_edge() {
         let mut w = World::new();
-        let c = w.spawn_cell_at(Mass::new(800), 0, 0).unwrap();
+        let half = w.width() / 2;
+        let c = w.spawn_cell_at(Mass::new(1_000), half - 500, 0).unwrap();
         w.set_program(
             c,
             Program::new(vec![
-                Instr::Thrust { fx: 2000, fy: 1500 },
+                Instr::Thrust { fx: 2000, fy: 0 },
                 Instr::Sleep,
                 Instr::Jump { addr: 0 },
             ]),
         )
         .unwrap();
-        for _ in 0..200 {
+        for _ in 0..80 {
             w.tick();
             assert_ledger(&w);
-            for cell in w.snapshot().cells {
-                let body = body_radius(cell.mass);
-                let limit = w.radius().saturating_sub(body);
-                let d2 = dist2(cell.x, cell.y);
-                let lim2 = (limit as i64) * (limit as i64);
-                assert!(
-                    d2 <= lim2,
-                    "cell {} at ({},{}) outside world (limit={})",
-                    cell.id.get(),
-                    cell.x,
-                    cell.y,
-                    limit
-                );
-            }
         }
+        let (x, y) = w.cell_pos(c).unwrap();
+        assert!(x < half, "cell should wrap to left side, got x={x}");
+        assert_eq!(y, 0);
+    }
+
+    #[test]
+    fn thrust_wraps_cell_across_y_edge() {
+        let mut w = World::new();
+        let half = w.height() / 2;
+        let c = w.spawn_cell_at(Mass::new(1_000), 0, half - 500).unwrap();
+        w.set_program(
+            c,
+            Program::new(vec![
+                Instr::Thrust { fx: 0, fy: 2000 },
+                Instr::Sleep,
+                Instr::Jump { addr: 0 },
+            ]),
+        )
+        .unwrap();
+        for _ in 0..80 {
+            w.tick();
+            assert_ledger(&w);
+        }
+        let (x, y) = w.cell_pos(c).unwrap();
+        assert_eq!(x, 0);
+        assert!(y < half, "cell should wrap to bottom side, got y={y}");
+    }
+
+    #[test]
+    fn sense_uses_toroidal_nearest() {
+        let mut w = World::new();
+        let half = w.width() / 2;
+        let observer = w.spawn_cell_at(Mass::new(5000), -half + 2_000, 0).unwrap();
+        let _target = w.spawn_cell_at(Mass::new(200), half - 5_000, 0).unwrap();
+        w.set_program(
+            observer,
+            compile_text("sense\nthrust_toward 100\nsleep\njump 0").unwrap(),
+        )
+        .unwrap();
+        let (x_before, _) = w.cell_pos(observer).unwrap();
+        w.tick();
+        let (x_after, _) = w.cell_pos(observer).unwrap();
+        assert!(
+            x_after < x_before,
+            "sense should pick wrapped target leftward (before={x_before}, after={x_after})"
+        );
+        assert_ledger(&w);
     }
 
     #[test]
