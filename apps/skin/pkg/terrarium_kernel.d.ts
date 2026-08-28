@@ -6,9 +6,10 @@
 export class JsWorld {
   free(): void;
   constructor();
-  dishRadius(): number;
+  worldRadius(): number;
   totalMass(): number;
   houseBurned(): number;
+  spawnedMass(): number;
   tickCount(): number;
   /**
    * Spawn a cell. Returns cell id, or throws on error.
@@ -43,9 +44,10 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_jsworld_free: (a: number, b: number) => void;
   readonly jsworld_new: () => number;
-  readonly jsworld_dishRadius: (a: number) => number;
+  readonly jsworld_worldRadius: (a: number) => number;
   readonly jsworld_totalMass: (a: number) => number;
   readonly jsworld_houseBurned: (a: number) => number;
+  readonly jsworld_spawnedMass: (a: number) => number;
   readonly jsworld_tickCount: (a: number) => number;
   readonly jsworld_spawnCell: (a: number, b: number, c: number, d: number) => [number, number, number];
   readonly jsworld_setProgramText: (a: number, b: number, c: number, d: number) => [number, number];

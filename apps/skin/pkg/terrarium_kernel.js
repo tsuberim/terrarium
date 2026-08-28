@@ -120,8 +120,8 @@ export class JsWorld {
     /**
      * @returns {number}
      */
-    dishRadius() {
-        const ret = wasm.jsworld_dishRadius(this.__wbg_ptr);
+    worldRadius() {
+        const ret = wasm.jsworld_worldRadius(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -136,6 +136,13 @@ export class JsWorld {
      */
     houseBurned() {
         const ret = wasm.jsworld_houseBurned(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    spawnedMass() {
+        const ret = wasm.jsworld_spawnedMass(this.__wbg_ptr);
         return ret;
     }
     /**

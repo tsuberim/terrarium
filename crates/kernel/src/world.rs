@@ -1,12 +1,12 @@
-//! Closed-box world: mass ledger + deterministic fixed-point dish.
+//! Closed-box world: mass ledger + deterministic fixed-point physics.
 
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::program::{Instr, Program, MAX_OPS_PER_TICK};
 
-/// Dish radius in fixed-point units. Center is (0, 0).
-pub const DISH_RADIUS: i32 = 100_000;
+/// World radius in fixed-point units. Center is (0, 0).
+pub const WORLD_RADIUS: i32 = 100_000;
 
 /// Mass cost of one `sense` verb.
 pub const SENSE_COST: u64 = 2;
@@ -154,12 +154,13 @@ pub struct InertView {
     pub y: i32,
 }
 
-/// Full dish snapshot (JSON-friendly fields via Display helpers on the WASM side).
+/// Full world snapshot (JSON-friendly fields via Display helpers on the WASM side).
 #[derive(Clone, Debug)]
 pub struct WorldSnapshot {
     pub tick: u64,
     pub total_mass: Mass,
     pub house_burned: Mass,
+    pub spawned_mass: Mass,
     pub radius: i32,
     pub cells: Vec<CellView>,
     pub inert: Vec<InertView>,
@@ -172,6 +173,8 @@ pub struct World {
     cells: HashMap<u64, Cell>,
     inert: HashMap<u64, Inert>,
     house_burned: Mass,
+    /// Cash-in total. Until cash-out exists: spawned_mass == total_mass + house_burned.
+    spawned_mass: Mass,
     radius: i32,
     tick: u64,
 }
@@ -184,7 +187,7 @@ impl Default for World {
 
 impl World {
     pub fn new() -> Self {
-        Self::with_radius(DISH_RADIUS)
+        Self::with_radius(WORLD_RADIUS)
     }
 
     pub fn with_radius(radius: i32) -> Self {
@@ -194,6 +197,7 @@ impl World {
             cells: HashMap::new(),
             inert: HashMap::new(),
             house_burned: Mass::ZERO,
+            spawned_mass: Mass::ZERO,
             radius,
             tick: 0,
         }
@@ -224,6 +228,11 @@ impl World {
         self.house_burned
     }
 
+    /// Total mass ever spawned (cash-in). Cash-out does not exist yet.
+    pub fn spawned_mass(&self) -> Mass {
+        self.spawned_mass
+    }
+
     pub fn cell_mass(&self, id: CellId) -> Option<Mass> {
         self.cells.get(&id.0).map(|c| c.mass)
     }
@@ -241,12 +250,12 @@ impl World {
         self.spawn_cell_at(mass, 0, 0)
     }
 
-    /// Cash-in at a position. Rejects spawn outside the dish.
+    /// Cash-in at a position. Rejects spawn outside the world radius.
     pub fn spawn_cell_at(&mut self, mass: Mass, x: i32, y: i32) -> Result<CellId, KernelError> {
         if mass.is_zero() {
             return Err(KernelError::ZeroAmount);
         }
-        if !inside_dish(x, y, self.radius, body_radius(mass)) {
+        if !inside_world(x, y, self.radius, body_radius(mass)) {
             return Err(KernelError::OutOfBounds);
         }
         let id = CellId(self.next_cell);
@@ -267,6 +276,10 @@ impl World {
                 impulse_y: 0,
             },
         );
+        self.spawned_mass = self
+            .spawned_mass
+            .checked_add(mass)
+            .expect("spawned_mass overflow");
         Ok(id)
     }
 
@@ -452,7 +465,7 @@ impl World {
         self.absorb_matter(id, InertId(inert_id), amount)
     }
 
-    /// Advance the dish one tick: run programs, integrate motion. Deterministic.
+    /// Advance the world one tick: run programs, integrate motion. Deterministic.
     pub fn tick(&mut self) {
         let ids: Vec<u64> = {
             let mut v: Vec<u64> = self.cells.keys().copied().collect();
@@ -488,7 +501,7 @@ impl World {
             cell.vy = (cell.vy as i64 * FRICTION_NUM as i64 / FRICTION_DEN as i64) as i32;
             cell.x = cell.x.saturating_add(cell.vx);
             cell.y = cell.y.saturating_add(cell.vy);
-            clamp_to_dish(cell, self.radius);
+            clamp_to_world(cell, self.radius);
             cell.impulse_x = 0;
             cell.impulse_y = 0;
         }
@@ -629,6 +642,7 @@ impl World {
             tick: self.tick,
             total_mass: self.total_mass(),
             house_burned: self.house_burned,
+            spawned_mass: self.spawned_mass,
             radius: self.radius,
             cells,
             inert,
@@ -649,7 +663,7 @@ fn body_radius(mass: Mass) -> i32 {
     std::cmp::max(4_000, std::cmp::min(r, 22_000))
 }
 
-fn inside_dish(x: i32, y: i32, radius: i32, body: i32) -> bool {
+fn inside_world(x: i32, y: i32, radius: i32, body: i32) -> bool {
     let limit = radius.saturating_sub(body);
     if limit <= 0 {
         return false;
@@ -657,7 +671,7 @@ fn inside_dish(x: i32, y: i32, radius: i32, body: i32) -> bool {
     dist2(x, y) <= (limit as i64) * (limit as i64)
 }
 
-fn clamp_to_dish(cell: &mut Cell, radius: i32) {
+fn clamp_to_world(cell: &mut Cell, radius: i32) {
     let body = body_radius(cell.mass);
     let limit = radius.saturating_sub(body);
     if limit <= 0 {
@@ -675,6 +689,14 @@ fn clamp_to_dish(cell: &mut Cell, radius: i32) {
     let dist = isqrt_i64(d2).max(1);
     cell.x = ((cell.x as i64) * (limit as i64) / dist) as i32;
     cell.y = ((cell.y as i64) * (limit as i64) / dist) as i32;
+    // Integer truncation of the radial project can leave us one unit outside.
+    if dist2(cell.x, cell.y) > lim2 {
+        let safe = (limit as i64).saturating_sub(1).max(0);
+        let d2 = dist2(cell.x, cell.y);
+        let dist = isqrt_i64(d2).max(1);
+        cell.x = ((cell.x as i64) * safe / dist) as i32;
+        cell.y = ((cell.y as i64) * safe / dist) as i32;
+    }
     // Bounce: flip radial velocity component roughly.
     let nx = cell.x as i64;
     let ny = cell.y as i64;
@@ -727,14 +749,37 @@ mod tests {
     use super::*;
     use crate::program::{compile_text, Instr, Program};
 
+    /// Closed ledger: cash-in equals mass still in the box plus house burn.
+    fn assert_ledger(w: &World) {
+        assert_eq!(
+            w.spawned_mass().get(),
+            w.total_mass().get() + w.house_burned().get(),
+            "ledger: spawned={} total={} burned={}",
+            w.spawned_mass(),
+            w.total_mass(),
+            w.house_burned()
+        );
+    }
+
+    fn fingerprint(w: &World) -> Vec<(u64, i32, i32, u64, u16, bool)> {
+        w.snapshot()
+            .cells
+            .iter()
+            .map(|c| (c.id.get(), c.x, c.y, c.mass.get(), c.pc, c.halted))
+            .collect()
+    }
+
     #[test]
     fn spawn_adds_to_total_mass() {
         let mut w = World::new();
         assert_eq!(w.total_mass(), Mass::ZERO);
         assert_eq!(w.house_burned(), Mass::ZERO);
+        assert_eq!(w.spawned_mass(), Mass::ZERO);
         w.spawn_cell(Mass::new(100)).unwrap();
         assert_eq!(w.total_mass(), Mass::new(100));
         assert_eq!(w.house_burned(), Mass::ZERO);
+        assert_eq!(w.spawned_mass(), Mass::new(100));
+        assert_ledger(&w);
     }
 
     #[test]
@@ -743,15 +788,18 @@ mod tests {
         let a = w.spawn_cell(Mass::new(50)).unwrap();
         let b = w.spawn_cell(Mass::new(30)).unwrap();
         let before = w.total_mass();
+        let burned = w.house_burned();
         let dump = w.dump_matter(a, Mass::new(20)).unwrap();
         assert_eq!(w.total_mass(), before);
+        assert_eq!(w.house_burned(), burned);
         assert_eq!(w.cell_mass(a), Some(Mass::new(30)));
         assert_eq!(w.inert_mass(dump), Some(Mass::new(20)));
         w.absorb_matter(b, dump, Mass::new(20)).unwrap();
         assert_eq!(w.total_mass(), before);
+        assert_eq!(w.house_burned(), burned);
         assert_eq!(w.cell_mass(b), Some(Mass::new(50)));
         assert_eq!(w.inert_mass(dump), None);
-        assert_eq!(w.house_burned(), Mass::ZERO);
+        assert_ledger(&w);
     }
 
     #[test]
@@ -768,6 +816,7 @@ mod tests {
         w.absorb_matter(c, dump, Mass::new(10)).unwrap();
         assert_eq!(w.total_mass(), before);
         assert_eq!(w.house_burned(), Mass::new(15));
+        assert_ledger(&w);
     }
 
     #[test]
@@ -780,6 +829,7 @@ mod tests {
         );
         assert_eq!(w.total_mass(), Mass::new(10));
         assert_eq!(w.house_burned(), Mass::ZERO);
+        assert_ledger(&w);
     }
 
     #[test]
@@ -791,6 +841,19 @@ mod tests {
         assert_eq!(w.total_mass(), Mass::ZERO);
         assert_eq!(w.house_burned(), Mass::new(7));
         assert_eq!(w.spend(c, Mass::new(1)), Err(KernelError::UnknownCell));
+        assert_ledger(&w);
+    }
+
+    #[test]
+    fn dump_to_zero_removes_cell_and_leaves_inert() {
+        let mut w = World::new();
+        let c = w.spawn_cell(Mass::new(12)).unwrap();
+        let dump = w.dump_matter(c, Mass::new(12)).unwrap();
+        assert_eq!(w.cell_mass(c), None);
+        assert_eq!(w.inert_mass(dump), Some(Mass::new(12)));
+        assert_eq!(w.total_mass(), Mass::new(12));
+        assert_eq!(w.house_burned(), Mass::ZERO);
+        assert_ledger(&w);
     }
 
     #[test]
@@ -806,6 +869,7 @@ mod tests {
             Err(KernelError::ZeroAmount)
         );
         assert_eq!(w.total_mass(), Mass::new(5));
+        assert_ledger(&w);
     }
 
     #[test]
@@ -818,6 +882,209 @@ mod tests {
         assert_eq!(w.inert_mass(dump), Some(Mass::new(4)));
         assert_eq!(w.cell_mass(b), Some(Mass::new(3)));
         assert_eq!(w.total_mass(), Mass::new(9));
+        assert_ledger(&w);
+    }
+
+    #[test]
+    fn closed_ledger_holds_across_mixed_ops() {
+        let mut w = World::new();
+        let a = w.spawn_cell_at(Mass::new(200), -5_000, 0).unwrap();
+        let b = w.spawn_cell_at(Mass::new(150), 5_000, 0).unwrap();
+        assert_ledger(&w);
+        let dump = w.dump_matter(a, Mass::new(40)).unwrap();
+        assert_ledger(&w);
+        w.spend(b, Mass::new(10)).unwrap();
+        assert_ledger(&w);
+        w.absorb_matter(b, dump, Mass::new(20)).unwrap();
+        assert_ledger(&w);
+        w.thrust(a, 80, -40).unwrap();
+        assert_ledger(&w);
+        w.sense(b).unwrap();
+        assert_ledger(&w);
+        w.set_program(
+            a,
+            Program::new(vec![
+                Instr::Thrust { fx: 30, fy: 10 },
+                Instr::Sleep,
+                Instr::Jump { addr: 0 },
+            ]),
+        )
+        .unwrap();
+        for _ in 0..25 {
+            w.tick();
+            assert_ledger(&w);
+        }
+    }
+
+    #[test]
+    fn house_burned_is_monotonic() {
+        let mut w = World::new();
+        let c = w.spawn_cell(Mass::new(500)).unwrap();
+        let mut prev = w.house_burned().get();
+        w.spend(c, Mass::new(3)).unwrap();
+        assert!(w.house_burned().get() >= prev);
+        prev = w.house_burned().get();
+        w.thrust(c, 100, 0).unwrap();
+        assert!(w.house_burned().get() >= prev);
+        prev = w.house_burned().get();
+        w.sense(c).unwrap();
+        assert!(w.house_burned().get() >= prev);
+        prev = w.house_burned().get();
+        let dump = w.dump_matter(c, Mass::new(5)).unwrap();
+        assert_eq!(w.house_burned().get(), prev);
+        w.absorb_matter(c, dump, Mass::new(5)).unwrap();
+        assert_eq!(w.house_burned().get(), prev);
+        w.set_program(c, Program::new(vec![Instr::Sleep, Instr::Jump { addr: 0 }]))
+            .unwrap();
+        for _ in 0..10 {
+            w.tick();
+            assert_eq!(w.house_burned().get(), prev);
+        }
+        assert_ledger(&w);
+    }
+
+    #[test]
+    fn dump_absorb_never_change_total_or_burn() {
+        let mut w = World::new();
+        let a = w.spawn_cell(Mass::new(80)).unwrap();
+        let b = w.spawn_cell(Mass::new(40)).unwrap();
+        let total = w.total_mass();
+        let burned = w.house_burned();
+        let dump = w.dump_matter(a, Mass::new(25)).unwrap();
+        assert_eq!(w.total_mass(), total);
+        assert_eq!(w.house_burned(), burned);
+        w.absorb_matter(b, dump, Mass::new(10)).unwrap();
+        assert_eq!(w.total_mass(), total);
+        assert_eq!(w.house_burned(), burned);
+        w.absorb_matter(b, dump, Mass::new(15)).unwrap();
+        assert_eq!(w.total_mass(), total);
+        assert_eq!(w.house_burned(), burned);
+        assert_ledger(&w);
+    }
+
+    #[test]
+    fn sleep_empty_halt_free_across_ticks() {
+        let mut sleep_w = World::new();
+        let s = sleep_w.spawn_cell(Mass::new(50)).unwrap();
+        sleep_w
+            .set_program(
+                s,
+                Program::new(vec![Instr::Sleep, Instr::Jump { addr: 0 }]),
+            )
+            .unwrap();
+
+        let mut empty_w = World::new();
+        let e = empty_w.spawn_cell(Mass::new(50)).unwrap();
+        empty_w.set_program(e, Program::new(vec![])).unwrap();
+
+        let mut halt_w = World::new();
+        let h = halt_w.spawn_cell(Mass::new(50)).unwrap();
+        halt_w
+            .set_program(h, Program::new(vec![Instr::Halt]))
+            .unwrap();
+
+        for w in [&mut sleep_w, &mut empty_w, &mut halt_w] {
+            for _ in 0..40 {
+                w.tick();
+            }
+            assert_eq!(w.total_mass(), Mass::new(50));
+            assert_eq!(w.house_burned(), Mass::ZERO);
+            assert_ledger(w);
+        }
+        assert_eq!(sleep_w.cell_mass(s), Some(Mass::new(50)));
+        assert_eq!(empty_w.cell_mass(e), Some(Mass::new(50)));
+        assert_eq!(halt_w.cell_mass(h), Some(Mass::new(50)));
+    }
+
+    #[test]
+    fn tick_determinism_identical_snapshots() {
+        fn run() -> (Vec<(u64, i32, i32, u64, u16, bool)>, u64, u64) {
+            let mut w = World::new();
+            let a = w.spawn_cell_at(Mass::new(400), -10_000, 5_000).unwrap();
+            let b = w.spawn_cell_at(Mass::new(300), 8_000, -4_000).unwrap();
+            w.set_program(
+                a,
+                compile_text("thrust 60 20\nsleep\nthrust -40 30\nsleep\njump 0").unwrap(),
+            )
+            .unwrap();
+            w.set_program(
+                b,
+                compile_text("sense\nthrust_toward 50\nsleep\njump 0").unwrap(),
+            )
+            .unwrap();
+            for _ in 0..40 {
+                w.tick();
+            }
+            let cells = fingerprint(&w);
+            (cells, w.house_burned().get(), w.spawned_mass().get())
+        }
+        assert_eq!(run(), run());
+    }
+
+    #[test]
+    fn living_cells_stay_within_world_radius() {
+        let mut w = World::new();
+        let c = w.spawn_cell_at(Mass::new(800), 0, 0).unwrap();
+        w.set_program(
+            c,
+            Program::new(vec![
+                Instr::Thrust { fx: 2000, fy: 1500 },
+                Instr::Sleep,
+                Instr::Jump { addr: 0 },
+            ]),
+        )
+        .unwrap();
+        for _ in 0..200 {
+            w.tick();
+            assert_ledger(&w);
+            for cell in w.snapshot().cells {
+                let body = body_radius(cell.mass);
+                let limit = w.radius().saturating_sub(body);
+                let d2 = dist2(cell.x, cell.y);
+                let lim2 = (limit as i64) * (limit as i64);
+                assert!(
+                    d2 <= lim2,
+                    "cell {} at ({},{}) outside world (limit={})",
+                    cell.id.get(),
+                    cell.x,
+                    cell.y,
+                    limit
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sense_costs_sense_cost_and_cannot_mint() {
+        let mut w = World::new();
+        let c = w.spawn_cell(Mass::new(SENSE_COST + 5)).unwrap();
+        let before_total = w.total_mass();
+        let before_burn = w.house_burned();
+        w.sense(c).unwrap();
+        assert_eq!(w.house_burned().get(), before_burn.get() + SENSE_COST);
+        assert_eq!(w.total_mass().get(), before_total.get() - SENSE_COST);
+        assert_ledger(&w);
+
+        // Spend down to less than SENSE_COST.
+        let left = w.cell_mass(c).unwrap().get();
+        assert!(left < SENSE_COST || left >= 1);
+        if left > 0 {
+            w.spend(c, Mass::new(left)).unwrap();
+        }
+        // Cell may be gone; spawn a tiny cell that cannot afford sense.
+        let poor = w.spawn_cell(Mass::new(1)).unwrap();
+        let total = w.total_mass();
+        let burned = w.house_burned();
+        let spawned = w.spawned_mass();
+        assert_eq!(
+            w.sense(poor),
+            Err(KernelError::InsufficientMass)
+        );
+        assert_eq!(w.total_mass(), total);
+        assert_eq!(w.house_burned(), burned);
+        assert_eq!(w.spawned_mass(), spawned);
+        assert_eq!(w.cell_mass(poor), Some(Mass::new(1)));
+        assert_ledger(&w);
     }
 
     #[test]
@@ -845,6 +1112,7 @@ mod tests {
             before_mass.get() - w.total_mass().get(),
             w.house_burned().get() - before_burn.get()
         );
+        assert_ledger(&w);
     }
 
     #[test]
@@ -862,6 +1130,7 @@ mod tests {
         assert_eq!(w.cell_mass(c), Some(Mass::new(50)));
         assert_eq!(w.house_burned(), Mass::ZERO);
         assert_eq!(w.total_mass(), Mass::new(50));
+        assert_ledger(&w);
     }
 
     #[test]
@@ -877,6 +1146,7 @@ mod tests {
         assert_eq!(w.total_mass(), before);
         assert_eq!(w.inert_mass(dump), None);
         assert_eq!(w.cell_mass(a), Some(Mass::new(100)));
+        assert_ledger(&w);
     }
 
     #[test]
@@ -900,9 +1170,9 @@ mod tests {
         let before = w.house_burned();
         w.tick();
         assert!(w.house_burned().get() > before.get());
-        // After sense+thrust, hunter should have moved toward +x.
         let (x, _) = w.cell_pos(hunter).unwrap();
         assert!(x > -20_000, "hunter x={x}");
+        assert_ledger(&w);
     }
 
     #[test]

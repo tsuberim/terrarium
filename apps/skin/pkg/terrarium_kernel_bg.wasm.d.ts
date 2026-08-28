@@ -3,9 +3,10 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_jsworld_free: (a: number, b: number) => void;
 export const jsworld_new: () => number;
-export const jsworld_dishRadius: (a: number) => number;
+export const jsworld_worldRadius: (a: number) => number;
 export const jsworld_totalMass: (a: number) => number;
 export const jsworld_houseBurned: (a: number) => number;
+export const jsworld_spawnedMass: (a: number) => number;
 export const jsworld_tickCount: (a: number) => number;
 export const jsworld_spawnCell: (a: number, b: number, c: number, d: number) => [number, number, number];
 export const jsworld_setProgramText: (a: number, b: number, c: number, d: number) => [number, number];
