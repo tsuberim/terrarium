@@ -15,6 +15,7 @@ GitHub Actions authenticates as a service account through WIF:
 
 - Variable `GCP_WIF_PROVIDER` — the provider resource name
 - Variable `GCP_SERVICE_ACCOUNT` — the service account email
+- Workflow input `audience: https://github.com/tsuberim/terrarium` on `google-github-actions/auth@v2` — must match the GCP OIDC provider's `allowedAudiences`
 
 Those are identifiers, not key files. The JSON private key never leaves Google, never sits in GitHub Secrets, never sits in this repo.
 

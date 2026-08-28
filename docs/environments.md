@@ -36,7 +36,7 @@ Failures post to **`#ci`** (`C0BT9UDTQJX`) when the `SLACK_BOT_TOKEN` repository
 
 ## Deploy (when GCP is wired)
 
-Workflows on `main` (staging) and on tags `v*` (prod) authenticate with **Workload Identity Federation** and then `gcloud storage cp` the skin. They use repository variables `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT`. If those are not set yet, the copy job is skipped; CI still has to be green.
+Workflows on `main` (staging) and on tags `v*` (prod) authenticate with **Workload Identity Federation** and then `gcloud storage cp` the skin. They use repository variables `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT`, and pass `audience: https://github.com/tsuberim/terrarium` to `google-github-actions/auth@v2` (must match the GCP OIDC provider's allowed audiences). If the variables are not set yet, the copy job is skipped; CI still has to be green.
 
 GitHub Actions must use WIF. Never commit keys. Never paste a service-account JSON into GitHub Secrets.
 
