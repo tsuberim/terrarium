@@ -10,5 +10,6 @@ This folder is the source of truth for terrarium: intent, architecture, environm
 | [secrets.md](secrets.md) | Keys live in `~/keys/` only. Never the repo, never copies in GitHub secrets |
 | [journey.md](journey.md) | Development log |
 | [current-state.md](current-state.md) | Honest snapshot of what exists right now |
+| [product-specs.md](product-specs.md) | Product behaviour — skin, UX, feel; `#product-requests` is intake |
 
 The public repo is [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). The GCP project is `terrarium-506917`.

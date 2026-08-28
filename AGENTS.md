@@ -14,7 +14,7 @@ CI must be green. QA staging (manual or tests) before every release. Don't ship 
 
 ## Docs
 
-`/docs` is source of truth. Read before coding. Don't contradict vision or architecture without talking it through.
+`/docs` is source of truth. Read before coding. Don't contradict vision or architecture without talking it through. Product specs live in [`docs/product-specs.md`](docs/product-specs.md); Slack `#product-requests` is intake — write the spec there before building.
 
 ## Secrets
 

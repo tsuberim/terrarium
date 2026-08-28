@@ -19,3 +19,7 @@ Skin UX pass: world fills the viewport as a chunky pixel framebuffer (`image-ren
 ## 2026-08-28 (drop dish; ledger invariants)
 
 Dropped "dish" terminology everywhere (code, skin, docs). Public names are `World` / `WORLD_RADIUS` / `worldRadius` / `#world`. Added kernel invariant tests (closed ledger with `spawned_mass`, monotonic `house_burned`, dump/absorb conservation, free sleep/halt/empty, tick determinism, world bounds, spend/dump-to-zero, sense cost) under the existing CI `cargo test` job. Docs note: sim runs as WASM in the browser; native tests share the crate; no game server yet. GCS hosting unchanged.
+
+## 2026-08-28 (product specs in docs)
+
+Added `docs/product-specs.md` as the source of truth for product behaviour. Slack `#product-requests` stays intake; specs get written here with status tags. Captured fullscreen retro camera (shipped) and wrapping toroidal world (requested). CI required-docs and `AGENTS.md` updated.

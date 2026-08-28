@@ -34,7 +34,8 @@ jobs:
             docs/environments.md \
             docs/secrets.md \
             docs/journey.md \
-            docs/current-state.md
+            docs/current-state.md \
+            docs/product-specs.md
           do
             test -f "$f" || { echo "missing $f"; exit 1; }
           done
