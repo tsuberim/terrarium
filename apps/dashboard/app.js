@@ -1,7 +1,10 @@
 const SESSION_KEY = "terrarium_dev_session";
-const API_BASE = window.location.origin.includes("127.0.0.1") || window.location.origin.includes("localhost")
-  ? "http://127.0.0.1:3000"
-  : window.location.origin.replace(/\/dashboard\/?$/, "");
+const API_META = document.querySelector('meta[name="terrarium-api"]');
+const API_BASE = (API_META && API_META.getAttribute("content") && API_META.getAttribute("content").trim())
+  ? API_META.getAttribute("content").trim().replace(/\/$/, "")
+  : (window.location.origin.includes("127.0.0.1") || window.location.origin.includes("localhost")
+    ? "http://127.0.0.1:3000"
+    : window.location.origin.replace(/\/dashboard\/?$/, ""));
 
 let firebaseAuth = null;
 let firebaseReady = false;

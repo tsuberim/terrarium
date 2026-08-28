@@ -2,92 +2,72 @@
 
 GCP / Firebase project: **`terrarium-506917`**. Region: **`us-central1`**.
 
-## Destination vs legacy
+## Production shape
 
-| | Destination | Legacy (main today) |
+| Piece | Where | Notes |
 | --- | --- | --- |
-| Skin + dashboard static files | **Firebase Hosting** | GCS buckets (`gcloud storage cp`) |
-| Sim process | **Host** (`crates/host`, PR #4) WebSocket | WASM ticks in browser tab |
-| Human auth | **Firebase Auth** | Dev session tokens (`trm_sess_…`) |
-| API | Cloud Run or co-located with host | `./scripts/run-api.sh` locally |
+| Skin | Firebase Hosting (`terrarium-skin-staging` / `terrarium-skin-prod`) | WebSocket viewer to Cloud Run host |
+| Dashboard | Firebase Hosting (`terrarium-dashboard-staging` / `terrarium-dashboard-prod`) | Calls Cloud Run API |
+| Sim | Cloud Run **`terrarium-host-*`** | Native kernel, `min-instances=1`, `max-instances=1` |
+| Credits / tokens / spawn | Cloud Run **`terrarium-api-*`** | SQLite; `TERRARIUM_HOST_URL` → host internal API |
 
-`firebase.json` + `.firebaserc` are checked in. **TODO:** switch GitHub deploy workflows from GCS to `firebase deploy` — not done on this branch.
+Legacy GCS buckets (`gs://terrarium-506917-staging`, `gs://terrarium-506917-prod`) are **retired** — workflows no longer copy to them.
 
-### Firebase Hosting (config only)
+## Deploy (GitHub Actions)
 
-```bash
-# operator machine — after firebase login
-firebase deploy --only hosting:skin --project terrarium-506917      # staging target TBD
-firebase deploy --only hosting:dashboard --project terrarium-506917
-```
+On push to `main` (staging) and tags `v*` (prod), when WIF vars are set:
 
-Hosting targets in `firebase.json`: `skin` → `apps/skin`, `dashboard` → `apps/dashboard`.
+1. Deploy host to Cloud Run (always-on, 1 instance)
+2. Deploy API with `TERRARIUM_HOST_URL` + `TERRARIUM_HOST_TOKEN`
+3. Patch skin/dashboard HTML meta tags (`scripts/patch-hosting-meta.sh`)
+4. `firebase deploy` for Hosting
 
-### Legacy GCS (still wired in CI)
+Requires repository secret **`TERRARIUM_HOST_TOKEN`** (shared bearer for host internal routes). WIF via `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT` — never commit keys.
 
-| Bucket | URL |
-| --- | --- |
-| `gs://terrarium-506917-staging` | https://storage.googleapis.com/terrarium-506917-staging/index.html |
-| `gs://terrarium-506917-prod` | https://storage.googleapis.com/terrarium-506917-prod/index.html |
+Operator manual deploy:
 
 ```bash
-gcloud storage cp -r apps/skin/* gs://terrarium-506917-staging --cache-control="public, max-age=60"
-./scripts/build-wasm.sh   # when kernel changed
+firebase deploy --only hosting:terrarium-skin-staging,hosting:terrarium-dashboard-staging --project terrarium-506917
+gcloud run deploy terrarium-host-staging --source=. --region us-central1 --min-instances=1 --max-instances=1 ...
 ```
 
 ## Local development
 
 ```bash
 cp .env.example .env
-./scripts/run-api.sh          # API + dashboard fallback at :3000
-python3 -m http.server 8080 --directory apps/skin   # legacy WASM skin
+./scripts/run-host.sh
+./scripts/run-api.sh
 ```
 
 | Service | URL | Notes |
 | --- | --- | --- |
-| API | http://127.0.0.1:3000/ | JSON + dev dashboard static |
+| Host | http://127.0.0.1:8080/ | World + `/ws`; serves skin when `SKIN_DIR=apps/skin` |
+| API | http://127.0.0.1:3000/ | JSON + dashboard static fallback |
+| Skin (via host) | http://127.0.0.1:8080/ | WebSocket camera |
 | Dashboard | http://127.0.0.1:3000/dashboard/ | Dev sign-in when Firebase unset |
-| Skin (legacy) | http://127.0.0.1:8080/ | WASM in-tab |
 
-QA: dashboard → dev sign-in (or Firebase) → faucet → mint scoped token → `curl POST /v1/spawn`.
-
-## API env vars
+## Env vars
 
 See `.env.example`. Key vars:
 
 | Variable | Purpose |
 | --- | --- |
 | `TERRARIUM_ENV` | `local` / `staging` / `production` — controls free-credit faucet |
+| `TERRARIUM_HOST_URL` | API → host delegation (staging/prod Cloud Run URL) |
+| `TERRARIUM_HOST_TOKEN` | Bearer auth on host `/internal/*` |
 | `FIREBASE_PROJECT_ID` | When set, dashboard requires Firebase ID tokens |
-| `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN` | Public web config served to dashboard (not secrets) |
 | `TERRARIUM_DEV_AUTH` | `1` (default) allows dev session tokens when Firebase unset |
-
-Staging Cloud Run example:
-
-```bash
-gcloud run deploy terrarium-api-staging \
-  --source crates/api \
-  --region us-central1 \
-  --project terrarium-506917 \
-  --set-env-vars TERRARIUM_ENV=staging,FIREBASE_PROJECT_ID=terrarium-506917 \
-  --allow-unauthenticated
-```
-
-Production: same with `TERRARIUM_ENV=production` (faucet **off**).
 
 ## CI
 
 GitHub Actions on PR and push to `main`:
 
 1. `cargo test -p terrarium-kernel`
-2. `cargo test -p terrarium-api` (dev auth — no Firebase keys in CI)
-3. Required docs exist
+2. `cargo test -p terrarium-api`
+3. `cargo test -p terrarium-host`
+4. Required docs exist
 
 Failures post to **`#ci`** when `SLACK_BOT_TOKEN` is set.
-
-## Deploy workflows (legacy GCS)
-
-Workflows on `main` / tags `v*` use WIF + `gcloud storage cp` for skin only. See [secrets.md](secrets.md). Firebase Hosting deploy is a follow-up.
 
 ## Secrets
 

@@ -72,6 +72,10 @@ impl CellId {
         self.0
     }
 
+    pub const fn new(raw: u64) -> Self {
+        Self(raw)
+    }
+
     pub(crate) const fn from_raw(raw: u64) -> Self {
         Self(raw)
     }

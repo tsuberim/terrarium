@@ -2,19 +2,40 @@
 
 Honest snapshot as of 2026-08-28.
 
-**Playable local world + platform v1.** The kernel ticks a deterministic fixed-point 2D toroidal `World`; the skin loads that same crate as WASM in the browser tab and lets you paste a bytecode program onto a cell. Credits, API tokens, and spawn rail live in `crates/api`. There is no always-on game server wired to production yet — a separate effort handles native host + Firebase Hosting deploy.
+## Shipped on main
 
-What exists:
+| Layer | What runs |
+| --- | --- |
+| **Host** (`crates/host`) | Always-on native `World` (800k torus), ~20 Hz tick loop, WebSocket `/ws`, internal spawn/snapshot API for the credits rail |
+| **Skin** (`apps/skin`) | Firebase Hosting — WebSocket camera only (480px short axis, edge-to-edge cover). No WASM tick in tab. |
+| **Site** (`apps/site`) | Landing + about on Firebase Hosting |
+| **Dashboard** (`apps/dashboard`) | Console on Firebase Hosting — Firebase Auth + `/dashboard/api/*` |
+| **API** (`crates/api`) | Credits ledger, scoped API tokens, `POST /v1/spawn`. Delegates to host when `TERRARIUM_HOST_URL` set; in-process world for CI/local |
+| **Kernel** (`crates/kernel`) | Auth-free physics + mass ledger |
 
-- Docs in `/docs` — vision, architecture, **product-specs** (source of truth for UX).
-- `crates/kernel` — mass ledger, toroidal wrap (`WORLD_WIDTH` / `WORLD_HEIGHT` = 800k), guest ISA, invariant tests.
-- Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`). Public JS surface is `JsWorld`.
-- `apps/skin` — fullscreen 480px-short-axis retro camera, hideable program overlay, cross-links to home/console via meta tags. Still deployed to GCS buckets for staging/prod play URLs.
-- `apps/site` — landing + about (minimal copy, shared nav). Firebase Hosting target `site`.
-- `apps/dashboard` — console: Firebase Auth, credits, API tokens, billing stub. Polished to match site shell. Firebase Hosting target `dashboard`.
-- `apps/shared` — shell CSS + link resolver copied into site/dashboard deploy folders.
-- `crates/api` — Axum API: credits ledger, scoped tokens, `/v1/spawn`, dashboard routes. SQLite.
-- `firebase.json` / `.firebaserc` — three hosting targets: site, skin, dashboard.
-- CI runs `cargo test` on kernel + api and checks required docs exist.
+## Hosting
 
-What this is not yet: live multiplayer on the always-on host in prod, Stripe checkout, cash-out, attach/split, or retired GCS skin deploy. Guests are bytecode interpreted by the kernel.
+- **Firebase Hosting** — site, skin, dashboard. Deploy workflows patch meta tags then `firebase deploy`.
+- **Cloud Run** — host (`min-instances=1`, `max-instances=1`) and API in `us-central1`. GCS skin deploy retired.
+- **Secrets** — `TERRARIUM_HOST_TOKEN` for API ↔ host internal routes (GitHub secret).
+
+## Local development
+
+```bash
+./scripts/run-host.sh          # :8080 — world + WebSocket (+ skin when SKIN_DIR set)
+./scripts/run-api.sh           # :3000 — credits/tokens/spawn
+```
+
+```bash
+export TERRARIUM_HOST_URL=http://127.0.0.1:8080
+export TERRARIUM_HOST_TOKEN=dev-shared-secret   # optional locally
+```
+
+## CI
+
+`cargo test` for kernel, api, and host; required docs check.
+
+## Not yet
+
+- Live Stripe checkout
+- Cash-out verb, attach/split, WASM guest modules inside cells

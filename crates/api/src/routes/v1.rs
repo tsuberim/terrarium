@@ -72,22 +72,19 @@ pub async fn spawn(
     if body.mass == 0 {
         return Err(ApiError::BadRequest("mass must be greater than zero".into()));
     }
-    let cell_id = state.world.spawn_cell(
+    let cell_id = state
+        .world
+        .spawn_cell(
         body.mass,
         body.x,
         body.y,
         body.program.as_deref(),
-    )?;
+    )
+    .await?;
     let (spawn_id, credits_remaining) = state
         .db
         .spend_and_record_spawn(&account_id, body.mass, cell_id, body.x, body.y)?;
-    let world_spawned_mass = state
-        .world
-        .snapshot_json()
-        .ok()
-        .and_then(|j| serde_json::from_str::<serde_json::Value>(&j).ok())
-        .and_then(|v| v.get("spawned_mass").and_then(|m| m.as_u64()))
-        .unwrap_or(body.mass);
+    let world_spawned_mass = state.world.spawned_mass().await.unwrap_or(body.mass);
     Ok((
         StatusCode::CREATED,
         Json(SpawnResponse {
@@ -110,7 +107,7 @@ pub async fn world_snapshot(
         .ok_or(ApiError::Unauthorized)?;
     let (_account_id, scopes) = state.db.account_for_api_token(token)?;
     scopes.require_read()?;
-    let json = state.world.snapshot_json()?;
+    let json = state.world.snapshot_json().await?;
     let value: serde_json::Value =
         serde_json::from_str(&json).map_err(|_| ApiError::Internal)?;
     Ok(Json(value))

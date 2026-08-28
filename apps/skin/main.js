@@ -1,5 +1,3 @@
-import init, { JsWorld } from "./pkg/terrarium_kernel.js";
-
 const DEMOS = {
   wander: `# wander — fixed thrust loop (deterministic)
 thrust 50 20
@@ -40,16 +38,12 @@ const WORLD_BG = "#0a1210";
 const SELECT_COLOR = "#e8f0ea";
 const GHOST_ALPHA = 0.38;
 
-const TICKS_PER_FRAME = 1;
-const MS_PER_TICK = 50;
 /** Short-axis pixel count; long axis follows viewport aspect (square pixels). */
 const PIXEL_SHORT = 480;
 
-let world = null;
+let socket = null;
 let selectedCell = 0;
 let lastSnapshot = null;
-let running = true;
-let lastTickAt = 0;
 let statusEl;
 let programEl;
 let cellSelect;
@@ -59,21 +53,23 @@ let canvas;
 let ctx;
 let bufW = PIXEL_SHORT;
 let bufH = PIXEL_SHORT;
+let reconnectTimer = null;
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg || "";
   statusEl.className = "status" + (kind ? " " + kind : "");
 }
 
-function envBadge() {
-  var meta = document.querySelector('meta[name="terrarium-env"]');
-  var env = ((meta && meta.getAttribute("content")) || "staging").trim() || "staging";
+function envBadge(env) {
+  var value = (env || "staging").trim() || "staging";
   var badge = document.getElementById("env-badge");
   if (badge) {
-    badge.textContent = env;
-    badge.setAttribute("data-env", env);
+    badge.textContent = value;
+    badge.setAttribute("data-env", value);
   }
-  document.documentElement.setAttribute("data-env", env);
+  document.documentElement.setAttribute("data-env", value);
+  var meta = document.querySelector('meta[name="terrarium-env"]');
+  if (meta) meta.setAttribute("content", value);
 }
 
 function wireChromeLinks() {
@@ -98,32 +94,20 @@ function setConsoleOpen(open) {
   }
 }
 
-function seedWorld() {
-  world = new JsWorld();
-  var a = world.spawnCell(5000, -120000, -80000);
-  var b = world.spawnCell(4000, 100000, 60000);
-  var c = world.spawnCell(3500, -40000, 140000);
-  world.setProgramText(a, DEMOS.wander);
-  world.setProgramText(b, DEMOS.chase);
-  world.setProgramText(c, DEMOS.sit);
-  // Inert crumb already in the box — absorb is an explicit verb.
-  var dumper = world.spawnCell(800, 80000, -100000);
-  world.dumpMatter(dumper, 400);
-  world.setProgramText(dumper, DEMOS.sit);
-  selectedCell = a;
-  refreshCellSelect();
-  programEl.value = DEMOS.wander;
-  markDemo("wander");
-  setStatus("world seeded. wander on cell " + a + ".", "ok");
-}
-
 function cellLabel(id) {
   return "cell " + id;
 }
 
-function refreshCellSelect() {
-  var snap = JSON.parse(world.snapshot());
+function applySnapshot(snap) {
   lastSnapshot = snap;
+  if (!cellSelect.options.length) {
+    refreshCellSelect(snap);
+  } else {
+    syncSelectLabels(snap);
+  }
+}
+
+function refreshCellSelect(snap) {
   cellSelect.innerHTML = "";
   snap.cells.forEach(function (c) {
     var opt = document.createElement("option");
@@ -228,13 +212,6 @@ function wrapOffsets(px, py, pr, view) {
   return offsets;
 }
 
-function drawBlob(px, py, pr, color, selected) {
-  fillCircle(px, py, pr, color);
-  if (selected) {
-    strokeCircle(px, py, pr + 2, SELECT_COLOR);
-  }
-}
-
 function drawBlobWithWraps(px, py, pr, color, selected, view) {
   var offsets = wrapOffsets(px, py, pr, view);
   for (var i = 0; i < offsets.length; i++) {
@@ -267,7 +244,7 @@ function draw() {
     top: bufH / 2 - (worldHeight * scale) / 2,
   };
 
-  lastSnapshot.inert.forEach(function (d) {
+  (lastSnapshot.inert || []).forEach(function (d) {
     var pos = worldToScreen(d.x, d.y, view);
     var pr = Math.max(1, Math.round(bodyRadiusPx(d.mass, scale) * 0.65));
     drawBlobWithWraps(pos.px, pos.py, pr, INERT_COLOR, false, view);
@@ -281,15 +258,7 @@ function draw() {
   });
 }
 
-function frame(now) {
-  if (running && world && now - lastTickAt >= MS_PER_TICK) {
-    lastTickAt = now;
-    for (var i = 0; i < TICKS_PER_FRAME; i++) {
-      world.tick();
-    }
-    lastSnapshot = JSON.parse(world.snapshot());
-    syncSelectLabels(lastSnapshot);
-  }
+function frame() {
   draw();
   requestAnimationFrame(frame);
 }
@@ -336,30 +305,102 @@ function ensureLivingSelection() {
   return true;
 }
 
+function sendJson(obj) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    setStatus("not connected to host.", "error");
+    return false;
+  }
+  socket.send(JSON.stringify(obj));
+  return true;
+}
+
 function onRun() {
-  if (!world) return;
   if (!ensureLivingSelection()) {
     setStatus("no living cells — reset the world.", "error");
     return;
   }
-  var src = programEl.value;
-  try {
-    world.setProgramText(selectedCell, src);
-    setStatus("running on cell " + selectedCell + ".", "ok");
+  if (sendJson({ type: "set_program", cell_id: selectedCell, source: programEl.value })) {
     markDemo(null);
-  } catch (err) {
-    setStatus(String(err.message || err), "error");
   }
 }
 
 function onReset() {
-  seedWorld();
-  lastSnapshot = JSON.parse(world.snapshot());
+  sendJson({ type: "reset" });
 }
 
-async function main() {
-  envBadge();
+function wsUrl() {
+  var meta = document.querySelector('meta[name="terrarium-ws-host"]');
+  var configured = meta && meta.getAttribute("content");
+  if (configured && configured.trim()) {
+    var base = configured.trim().replace(/\/$/, "");
+    if (base.startsWith("ws://") || base.startsWith("wss://")) {
+      return base.endsWith("/ws") ? base : base + "/ws";
+    }
+    if (base.startsWith("http://")) {
+      return "ws://" + base.slice(7) + "/ws";
+    }
+    if (base.startsWith("https://")) {
+      return "wss://" + base.slice(8) + "/ws";
+    }
+    var proto = location.protocol === "https:" ? "wss:" : "ws:";
+    return proto + "//" + base + "/ws";
+  }
+  var proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return proto + "//" + location.host + "/ws";
+}
+
+function connect() {
+  setStatus("connecting to host…");
+  var ws = new WebSocket(wsUrl());
+  socket = ws;
+
+  ws.onopen = function () {
+    setStatus("connected — host owns the tick.", "ok");
+  };
+
+  ws.onmessage = function (ev) {
+    var msg;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch (err) {
+      setStatus("bad host message", "error");
+      return;
+    }
+    if (msg.type === "hello") {
+      envBadge(msg.env);
+      return;
+    }
+    if (msg.type === "snapshot") {
+      applySnapshot(msg.world);
+      return;
+    }
+    if (msg.type === "ok") {
+      setStatus(msg.message || "ok", "ok");
+      return;
+    }
+    if (msg.type === "error") {
+      setStatus(msg.message || "error", "error");
+      setConsoleOpen(true);
+    }
+  };
+
+  ws.onclose = function () {
+    setStatus("host disconnected — retrying…", "error");
+    socket = null;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 1500);
+  };
+
+  ws.onerror = function () {
+    ws.close();
+  };
+}
+
+function main() {
+  var meta = document.querySelector('meta[name="terrarium-env"]');
+  envBadge((meta && meta.getAttribute("content")) || "staging");
   wireChromeLinks();
+
   statusEl = document.getElementById("status");
   programEl = document.getElementById("program");
   cellSelect = document.getElementById("cell-select");
@@ -385,10 +426,8 @@ async function main() {
     }
   });
 
-  setStatus("loading kernel…");
-  await init();
-  seedWorld();
-  lastSnapshot = JSON.parse(world.snapshot());
+  programEl.value = DEMOS.wander;
+  markDemo("wander");
 
   document.getElementById("btn-run").addEventListener("click", onRun);
   document.getElementById("btn-reset").addEventListener("click", onReset);
@@ -405,15 +444,8 @@ async function main() {
   });
 
   window.addEventListener("resize", setupCanvas);
+  connect();
   requestAnimationFrame(frame);
 }
 
-main().catch(function (err) {
-  console.error(err);
-  var el = document.getElementById("status");
-  if (el) {
-    el.textContent = "kernel failed to load: " + (err && err.message ? err.message : err);
-    el.className = "status error";
-  }
-  setConsoleOpen(true);
-});
+main();

@@ -5,9 +5,9 @@
   "targets": {
     "terrarium-506917": {
       "hosting": {
-        "site": ["terrarium-site-staging"],
-        "skin": ["terrarium-skin-staging"],
-        "dashboard": ["terrarium-dashboard-staging"]
+        "site": ["terrarium-site-staging", "terrarium-site-prod"],
+        "skin": ["terrarium-skin-staging", "terrarium-skin-prod"],
+        "dashboard": ["terrarium-dashboard-staging", "terrarium-dashboard-prod"]
       }
     }
   }

@@ -28,28 +28,20 @@ Early. Mass ledger and docs exist. No physics, no WASM guests, no multiplayer ye
 ## Play locally
 
 ```bash
-# optional, if you changed the kernel:
-./scripts/build-wasm.sh
-
-# skin camera (fullscreen retro)
-python3 -m http.server 8080 --directory apps/skin
-# open http://127.0.0.1:8080/
-
-# API + dashboard (credits, tokens, spawn)
 cp .env.example .env
-./scripts/run-api.sh
-# http://127.0.0.1:3000/dashboard/  (dev sign-in when Firebase unset)
+./scripts/run-host.sh    # world + WebSocket camera at http://127.0.0.1:8080/
+./scripts/run-api.sh     # credits, tokens, spawn at http://127.0.0.1:3000/
 ```
 
-`cargo test` at repo root runs kernel + API tests.
+See [`docs/environments.md`](docs/environments.md) for staging/prod deploy and env vars.
 
-Platform (see `docs/architecture.md`): Firebase Auth for humans, scoped API tokens for machines, always-on native host (PR #4) + API for credits/spawn. Firebase Hosting replaces GCS when deploy workflows switch.
+`cargo test` at repo root runs kernel, API, and host tests.
 
-| Environment | Skin (legacy GCS) | Dashboard / API |
+| Environment | Skin | Dashboard / API |
 | --- | --- | --- |
-| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html | Cloud Run + Firebase (optional) |
-| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html | Cloud Run + Firebase (faucet OFF) |
-| Local | http://127.0.0.1:8080/ | http://127.0.0.1:3000/dashboard/ |
+| Staging | Firebase Hosting + Cloud Run host | Cloud Run API |
+| Production | Firebase Hosting + Cloud Run host | Cloud Run API (faucet OFF) |
+| Local | http://127.0.0.1:8080/ (via host) | http://127.0.0.1:3000/dashboard/ |
 
 Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). GCP project: `terrarium-506917`.
 

@@ -8,11 +8,90 @@ permissions:
   contents: read
   id-token: write
 
-# Copy static skin to a public GCS bucket. No Docker, no Cloud Run, no load balancer.
-# Job is skipped until WIF variables exist; CI remains the green/red signal.
+env:
+  GCP_PROJECT: terrarium-506917
+  GCP_REGION: us-central1
+  HOST_SERVICE: terrarium-host-staging
+  API_SERVICE: terrarium-api-staging
+
 jobs:
-  deploy:
-    name: gcloud storage cp (staging)
+  deploy-host:
+    name: Cloud Run host (staging)
+    if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      host_url: ${{ steps.host.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy host
+        id: host
+        env:
+          TERRARIUM_HOST_TOKEN: ${{ secrets.TERRARIUM_HOST_TOKEN }}
+        run: |
+          gcloud run deploy "$HOST_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --source=. \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=1 \
+            --memory=256Mi \
+            --cpu=1 \
+            --no-cpu-throttling \
+            --timeout=3600 \
+            --set-env-vars="TERRARIUM_ENV=staging,TERRARIUM_HOST_TOKEN=${TERRARIUM_HOST_TOKEN}" \
+            --quiet
+          URL=$(gcloud run services describe "$HOST_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+  deploy-api:
+    name: Cloud Run API (staging)
+    needs: [deploy-host]
+    if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      api_url: ${{ steps.api.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy API
+        id: api
+        env:
+          TERRARIUM_HOST_TOKEN: ${{ secrets.TERRARIUM_HOST_TOKEN }}
+        run: |
+          gcloud run deploy "$API_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --source=crates/api \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=300 \
+            --set-env-vars="TERRARIUM_ENV=staging,FIREBASE_PROJECT_ID=terrarium-506917,TERRARIUM_HOST_URL=${{ needs.deploy-host.outputs.host_url }},TERRARIUM_HOST_TOKEN=${TERRARIUM_HOST_TOKEN}" \
+            --quiet
+          URL=$(gcloud run services describe "$API_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+  deploy-hosting:
+    name: Firebase Hosting (staging)
+    needs: [deploy-host, deploy-api]
     if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
     runs-on: ubuntu-latest
     environment: staging
@@ -22,22 +101,31 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-          audience: https://github.com/tsuberim/terrarium
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Copy skin to gs://terrarium-506917-staging
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Patch static meta tags
+        env:
+          TERRARIUM_WS_HOST: ${{ needs.deploy-host.outputs.host_url }}
+          TERRARIUM_API_URL: ${{ needs.deploy-api.outputs.api_url }}
+          TERRARIUM_PLAY_URL: https://terrarium-skin-staging.web.app
+          TERRARIUM_SITE_URL: https://terrarium-site-staging.web.app
+          TERRARIUM_CONSOLE_URL: https://terrarium-dashboard-staging.web.app
+          TERRARIUM_ENV: staging
+        run: bash scripts/patch-hosting-meta.sh
+      - name: Deploy Firebase Hosting
         run: |
-          gcloud storage cp \
-            apps/skin/index.html \
-            apps/skin/styles.css \
-            apps/skin/main.js \
-            gs://terrarium-506917-staging/ \
-            --cache-control="public, max-age=60" \
-            --project=terrarium-506917
+          npm install -g firebase-tools
+          firebase deploy \
+            --only hosting:terrarium-site-staging,hosting:terrarium-skin-staging,hosting:terrarium-dashboard-staging \
+            --project="$GCP_PROJECT" \
+            --non-interactive
 
   notify:
     name: slack (#deploys)
-    needs: [deploy]
-    if: always() && needs.deploy.result != 'skipped'
+    needs: [deploy-host, deploy-api, deploy-hosting]
+    if: always() && needs.deploy-host.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +135,9 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           channel: C0BT9UDEVS7
           text: |
-            ${{ needs.deploy.result == 'success' && ':white_check_mark: Staging is live.' || ':x: Staging deploy failed.' }}
-            https://storage.googleapis.com/terrarium-506917-staging/index.html
+            ${{ needs.deploy-hosting.result == 'success' && ':white_check_mark: Staging is live (host + API + Firebase).' || ':x: Staging deploy failed.' }}
+            Skin: https://terrarium-skin-staging.web.app
+            Site: https://terrarium-site-staging.web.app
+            Console: https://terrarium-dashboard-staging.web.app
+            Host: ${{ needs.deploy-host.outputs.host_url }}
             <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>

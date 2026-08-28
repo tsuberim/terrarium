@@ -50,6 +50,8 @@ pub struct Config {
     pub firebase_project_id: Option<String>,
     pub firebase_web: Option<FirebaseWebConfig>,
     pub dev_auth: bool,
+    pub host_url: Option<String>,
+    pub host_token: Option<String>,
 }
 
 impl Config {
@@ -88,6 +90,9 @@ impl Config {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(true);
 
+        let host_url = env::var("TERRARIUM_HOST_URL").ok().filter(|s| !s.is_empty());
+        let host_token = env::var("TERRARIUM_HOST_TOKEN").ok().filter(|s| !s.is_empty());
+
         Self {
             env,
             listen_addr,
@@ -97,6 +102,8 @@ impl Config {
             firebase_project_id,
             firebase_web,
             dev_auth,
+            host_url,
+            host_token,
         }
     }
 }
