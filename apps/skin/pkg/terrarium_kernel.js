@@ -120,8 +120,15 @@ export class JsWorld {
     /**
      * @returns {number}
      */
-    worldRadius() {
-        const ret = wasm.jsworld_worldRadius(this.__wbg_ptr);
+    worldWidth() {
+        const ret = wasm.jsworld_worldWidth(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {number}
+     */
+    worldHeight() {
+        const ret = wasm.jsworld_worldHeight(this.__wbg_ptr);
         return ret;
     }
     /**

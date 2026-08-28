@@ -54,9 +54,9 @@ The closed box is denominated in `Mass` (a `u64` newtype).
 - `dump_matter` / `absorb_matter` are internal transfers. They must not change `total_mass()` or `house_burned`.
 - Cash-out (later) is mass leaving the box as money, the inverse of spawn.
 
-`WORLD_RADIUS` bounds the playable area. Living cells are clamped inside it (accounting for body radius).
+`WORLD_WIDTH` and `WORLD_HEIGHT` define a rectangular torus centered at the origin. Coordinates wrap independently on X and Y after motion; sense and reach use shortest toroidal distance.
 
-Tests in `crates/kernel` (run by CI `cargo test`) pin ledger identity, monotonic burn, dump/absorb conservation, free sleep/halt, tick determinism, world bounds, and sense costing.
+Tests in `crates/kernel` (run by CI `cargo test`) pin ledger identity, monotonic burn, dump/absorb conservation, free sleep/halt, tick determinism, toroidal wrap, and sense costing.
 
 ## Why conservation matters
 

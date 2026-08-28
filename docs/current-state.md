@@ -7,9 +7,9 @@ Honest snapshot as of 2026-08-28.
 What exists:
 
 - Docs in `/docs` hold vision and architecture (source of truth).
-- `crates/kernel` — mass ledger (`spawned_mass` / `total_mass` / `house_burned`) plus world physics, tick, and a tiny guest ISA (`thrust`, `sense`, `absorb`, `dump`, `sleep`, jumps). Invariant tests cover closed ledger, monotonic burn, dump/absorb conservation, free sleep/halt, tick determinism, world bounds, spend/dump-to-zero, and sense cost.
-- Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`). Public JS surface is `JsWorld` (`worldRadius`, `tick`, `snapshot`, …) — no dish names.
-- `apps/skin` — fullscreen pixelated camera: `#world` canvas, no stats/HUD. Program editor is a hideable overlay (wander / chase / sit demos). No Cloud Run. No Docker. No always-on server.
+- `crates/kernel` — mass ledger (`spawned_mass` / `total_mass` / `house_burned`) plus world physics, tick, and a tiny guest ISA (`thrust`, `sense`, `absorb`, `dump`, `sleep`, jumps). Invariant tests cover closed ledger, monotonic burn, dump/absorb conservation, free sleep/halt, tick determinism, toroidal wrap, spend/dump-to-zero, and sense cost.
+- Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`). Public JS surface is `JsWorld` (`worldWidth`, `worldHeight`, `tick`, `snapshot`, …).
+- `apps/skin` — fullscreen pixelated camera over a wrapping rectangular world: `#world` canvas, no stats/HUD. Program editor is a hideable overlay (wander / chase / sit demos). No Cloud Run. No Docker. No always-on server.
 - CI runs `cargo test --manifest-path crates/kernel/Cargo.toml` and checks that required docs exist.
 - Staging and prod remain two public GCS buckets. Deploy is still `gcloud storage cp` of `apps/skin/*` (includes `pkg/`).
 

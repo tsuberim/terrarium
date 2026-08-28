@@ -6,7 +6,8 @@
 export class JsWorld {
   free(): void;
   constructor();
-  worldRadius(): number;
+  worldWidth(): number;
+  worldHeight(): number;
   totalMass(): number;
   houseBurned(): number;
   spawnedMass(): number;
@@ -44,7 +45,8 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_jsworld_free: (a: number, b: number) => void;
   readonly jsworld_new: () => number;
-  readonly jsworld_worldRadius: (a: number) => number;
+  readonly jsworld_worldWidth: (a: number) => number;
+  readonly jsworld_worldHeight: (a: number) => number;
   readonly jsworld_totalMass: (a: number) => number;
   readonly jsworld_houseBurned: (a: number) => number;
   readonly jsworld_spawnedMass: (a: number) => number;
