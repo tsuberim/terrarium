@@ -1,16 +1,16 @@
 # Current state
 
-Honest snapshot as of 2026-08-28.
+Honest snapshot as of 2026-08-28 (evening).
 
-**There is no simulation yet.** No physics, no WASM guests, no verbs beyond mass accounting, no multiplayer, no cash rail.
+**Playable local dish.** The kernel ticks a deterministic fixed-point 2D dish; the skin loads that same crate as WASM and lets you paste a bytecode program onto a cell.
 
-This milestone is architecture, CI, and a staging/prod shell:
+What exists:
 
 - Docs in `/docs` hold vision and architecture.
-- `crates/kernel` is a mass ledger (`Mass`, `World`, spawn / spend / dump / absorb) with tests that conservation holds except `spend` (house burn).
-- `apps/skin` is a static landing/camera. It does not talk to a kernel.
+- `crates/kernel` — mass ledger (spawn / spend / dump / absorb) plus dish physics, tick, and a tiny guest ISA (`thrust`, `sense`, `absorb`, `dump`, `sleep`, jumps). Conservation tests still pass; tick/spend/absorb covered.
+- Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`).
+- `apps/skin` — static camera: canvas dish, HUD (mass in box / house burned / tick), editor, demo programs (wander / chase / sit). No Cloud Run. No Docker. No always-on server.
 - CI runs `cargo test` and checks that required docs exist.
-- Staging and prod will be two public GCS buckets serving that skin. They may be empty until the first `gcloud storage cp`.
-- WIF is not wired in this commit. Deploy jobs skip until `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT` exist.
+- Staging and prod remain two public GCS buckets. Deploy is still `gcloud storage cp` of `apps/skin/*` (includes `pkg/`).
 
-What this is not: a Cloud Run service, a container, a cluster, a fake demo of creatures eating each other.
+What this is not: multiplayer, WASM guest modules inside cells, cash rail / real money, attach/split, or a hosted always-on sim. Guests are bytecode interpreted by the kernel. Cash-out is still a later verb.

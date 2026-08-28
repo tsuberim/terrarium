@@ -19,19 +19,56 @@
   <main>
     <p class="lede">a closed box of matter. you are a blob with a program inside. if you die, you are gone.</p>
 
-    <section class="stage" aria-label="the dish">
-      <div class="dish-glass">
-        <canvas id="dish" width="720" height="720" aria-label="petri dish"></canvas>
-        <div class="css-blobs" aria-hidden="true">
-          <span class="blob b1"></span>
-          <span class="blob b2"></span>
-          <span class="blob b3"></span>
+    <section class="play" aria-label="dish and program">
+      <div class="stage" aria-label="the dish">
+        <div class="dish-glass">
+          <canvas id="dish" width="720" height="720" aria-label="petri dish"></canvas>
+          <span class="tick tick-n">N</span>
+          <span class="tick tick-e">mass</span>
+          <span class="tick tick-s">closed</span>
+          <span class="tick tick-w">box</span>
         </div>
-        <span class="tick tick-n">N</span>
-        <span class="tick tick-e">mass</span>
-        <span class="tick tick-s">closed</span>
-        <span class="tick tick-w">box</span>
+        <dl class="hud" aria-live="polite">
+          <div><dt>in box</dt><dd id="hud-mass">—</dd></div>
+          <div><dt>house burned</dt><dd id="hud-burned">—</dd></div>
+          <div><dt>tick</dt><dd id="hud-tick">—</dd></div>
+        </dl>
       </div>
+
+      <aside class="console" aria-label="program editor">
+        <div class="console-head">
+          <label for="cell-select">cell</label>
+          <select id="cell-select"></select>
+        </div>
+
+        <div class="demos" role="group" aria-label="demo programs">
+          <button type="button" data-demo="wander">wander</button>
+          <button type="button" data-demo="chase">chase</button>
+          <button type="button" data-demo="sit">sit</button>
+        </div>
+
+        <label class="sr-only" for="program">program</label>
+        <textarea id="program" spellcheck="false" rows="14" placeholder="thrust 40 20&#10;sleep&#10;jump 0"></textarea>
+
+        <div class="actions">
+          <button type="button" id="btn-run" class="primary">Run</button>
+          <button type="button" id="btn-reset">Reset dish</button>
+        </div>
+
+        <p id="status" class="status" role="status"></p>
+
+        <details class="cheatsheet">
+          <summary>verbs</summary>
+          <pre>thrust fx fy       burn mass, push
+thrust_toward mag  chase last sense hit
+sense              look (burns)
+absorb             take nearest inert
+dump amount        leave inert mass
+sleep              free; end this tick
+jump / jnz / jz    control flow
+halt</pre>
+        </details>
+      </aside>
     </section>
 
     <ul class="axioms">
@@ -48,9 +85,9 @@
   </main>
 
   <footer>
-    <p>kernel coming. the skin is a camera. nobody plays through a menu.</p>
+    <p>kernel in WASM. the skin is a camera. write a program to move.</p>
   </footer>
 
-  <script src="main.js"></script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>
