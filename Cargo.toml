@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["crates/kernel", "crates/host"]
+default-members = ["crates/kernel", "crates/host"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

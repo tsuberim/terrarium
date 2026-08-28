@@ -71,7 +71,7 @@ impl CellId {
         self.0
     }
 
-    pub(crate) const fn from_raw(raw: u64) -> Self {
+    pub const fn from_raw(raw: u64) -> Self {
         Self(raw)
     }
 }
@@ -154,7 +154,7 @@ pub struct InertView {
     pub y: i32,
 }
 
-/// Full dish snapshot (JSON-friendly fields via Display helpers on the WASM side).
+/// Full world snapshot for cameras (WASM skin, native host WS clients).
 #[derive(Clone, Debug)]
 pub struct WorldSnapshot {
     pub tick: u64,
@@ -163,6 +163,53 @@ pub struct WorldSnapshot {
     pub radius: i32,
     pub cells: Vec<CellView>,
     pub inert: Vec<InertView>,
+}
+
+impl WorldSnapshot {
+    /// Compact JSON for wire/WASM. Integer fields only — no floats.
+    pub fn to_json(&self) -> String {
+        let mut out = String::from("{\"tick\":");
+        out.push_str(&self.tick.to_string());
+        out.push_str(",\"total_mass\":");
+        out.push_str(&self.total_mass.get().to_string());
+        out.push_str(",\"house_burned\":");
+        out.push_str(&self.house_burned.get().to_string());
+        out.push_str(",\"radius\":");
+        out.push_str(&self.radius.to_string());
+        out.push_str(",\"cells\":[");
+        for (i, c) in self.cells.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                "{{\"id\":{},\"mass\":{},\"x\":{},\"y\":{},\"vx\":{},\"vy\":{},\"pc\":{},\"halted\":{}}}",
+                c.id.get(),
+                c.mass.get(),
+                c.x,
+                c.y,
+                c.vx,
+                c.vy,
+                c.pc,
+                c.halted
+            ));
+        }
+        out.push_str("],\"inert\":[");
+        for (i, n) in self.inert.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                "{{\"id\":{},\"mass\":{},\"x\":{},\"y\":{}}}",
+                n.id.get(),
+                n.mass.get(),
+                n.x,
+                n.y
+            ));
+        }
+        out.push(']');
+        out.push('}');
+        out
+    }
 }
 
 /// The closed box.
@@ -633,6 +680,10 @@ impl World {
             cells,
             inert,
         }
+    }
+
+    pub fn snapshot_json(&self) -> String {
+        self.snapshot().to_json()
     }
 }
 

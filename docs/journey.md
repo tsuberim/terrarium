@@ -14,4 +14,8 @@ First playable milestone. Kernel grew a deterministic fixed-point dish, a tick, 
 
 ## 2026-08-28 (fullscreen retro skin)
 
-Skin UX pass: dish fills the viewport as a chunky pixel framebuffer (`image-rendering: pixelated`), CRT scanlines, almost no chrome. HUD/stats (tick, mass totals, house burned) removed — raw sim only. Program editor kept as a hideable overlay so writing a creature program does not break the fullscreen feel. Docs updated. Kernel untouched.
+Skin UX pass: world fills the viewport as a chunky pixel framebuffer (`image-rendering: pixelated`), CRT scanlines, almost no chrome. HUD/stats (tick, mass totals, house burned) removed — raw sim only. Program editor kept as a hideable overlay so writing a creature program does not break the fullscreen feel. Docs updated. Kernel untouched.
+
+## 2026-08-28 (native host)
+
+Live sim leaves the browser tab. `crates/host` owns one `World`, ticks without a client open, serves the skin, and pushes state over WebSocket. Skin is camera + program editor only. GCS `gcloud storage cp` deploy workflows replaced with Cloud Run (`terrarium-staging` / `terrarium-prod`, min 1, 128Mi, CPU always on). Docs (`architecture`, `current-state`, `environments`) updated. WASM build remains optional for tests / later guests.

@@ -9,10 +9,10 @@ permissions:
   contents: read
   id-token: write
 
-# Copy static skin to the public prod GCS bucket. No Docker, no Cloud Run.
+# Build and deploy the native host to Cloud Run prod (persistent World).
 jobs:
   deploy:
-    name: gcloud storage cp (prod)
+    name: Cloud Run (prod)
     if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
     runs-on: ubuntu-latest
     environment: production
@@ -23,12 +23,18 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Copy skin to gs://terrarium-506917-prod
+      - name: Deploy terrarium-prod
         run: |
-          gcloud storage cp \
-            apps/skin/index.html \
-            apps/skin/styles.css \
-            apps/skin/main.js \
-            gs://terrarium-506917-prod/ \
-            --cache-control="public, max-age=60" \
-            --project=terrarium-506917
+          gcloud run deploy terrarium-prod \
+            --project=terrarium-506917 \
+            --region=us-central1 \
+            --source=. \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=1 \
+            --memory=128Mi \
+            --cpu=1 \
+            --no-cpu-throttling \
+            --timeout=3600 \
+            --set-env-vars=TERRARIUM_ENV=prod,SKIN_DIR=/skin \
+            --quiet

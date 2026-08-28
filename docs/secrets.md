@@ -7,7 +7,7 @@ All keys live in **`~/keys/`** on the operator machine. That path is outside the
 - Keys in the git repo (including `/keys`, `.env`, `*.pem`, service-account JSON).
 - Keys in chat logs, if avoidable. Do not paste JSON key files into Cursor, Slack, or a ticket.
 - GitHub Secrets as copies of the service-account JSON. That duplicates a key we already refused to store. Use **Workload Identity Federation** instead.
-- Service account JSON in CI checkout, Docker build context (there is no Docker in this milestone), or Cloud Storage next to the skin.
+- Service account JSON in CI checkout, Docker build context, or next to the skin.
 
 ## How CI talks to GCP
 

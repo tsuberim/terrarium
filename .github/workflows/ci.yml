@@ -16,7 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Test kernel
-        run: cargo test --manifest-path crates/kernel/Cargo.toml
+        run: cargo test -p terrarium-kernel
+      - name: Build host
+        run: cargo build -p terrarium-host
 
   docs:
     name: required docs exist

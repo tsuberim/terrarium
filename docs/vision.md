@@ -2,9 +2,9 @@
 
 Terrarium is a 2D realtime MMO programming game.
 
-You look down on a dish. A creature is a blob of matter with a program inside. That blob is you. If it dies, you are gone.
+You look down on a closed world. A creature is a blob of matter with a program inside. That blob is you. If it dies, you are gone.
 
-The dish is a closed box. All mass in the world was bought with real money. Players can cash out. Conservation is not a flavour text; it is load-bearing. Every gram is accounted for, because grams are money.
+The world is a closed box. All mass in the world was bought with real money. Players can cash out. Conservation is not a flavour text; it is load-bearing. Every gram is accounted for, because grams are money.
 
 Sleep is free. Acting and computing burn mass to the house. Burned mass is destroyed. Idle life is cheap. Thought and motion are not.
 

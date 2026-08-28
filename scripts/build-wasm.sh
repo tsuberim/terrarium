@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Build crates/kernel to WASM and emit apps/skin/pkg/ for the static skin.
+# Build crates/kernel to WASM (optional — tests / later cell guests).
+# The live sim host is native (`crates/host`); this is not the deploy path.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MANIFEST="$ROOT/crates/kernel/Cargo.toml"
 OUT="$ROOT/apps/skin/pkg"
 
 cd "$ROOT"
-cargo build --manifest-path "$MANIFEST" --target wasm32-unknown-unknown --release
+cargo build -p terrarium-kernel --features wasm --target wasm32-unknown-unknown --release
 wasm-bindgen \
   --target web \
   --out-dir "$OUT" \
-  "$ROOT/crates/kernel/target/wasm32-unknown-unknown/release/terrarium_kernel.wasm"
+  "$ROOT/target/wasm32-unknown-unknown/release/terrarium_kernel.wasm"
 echo "wrote $OUT"

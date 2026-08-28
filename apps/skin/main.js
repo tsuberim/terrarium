@@ -1,4 +1,19 @@
-import init, { JsWorld } from "./pkg/terrarium_kernel.js";
+/* Flat palette — chunky pixels, no soft glow */
+const CELL_COLORS = [
+  "#4dff88",
+  "#e0a84a",
+  "#5ecfc8",
+  "#9ad64a",
+  "#3dbf7a",
+];
+const INERT_COLOR = "#8a6a2e";
+const WORLD_BG = "#0a1210";
+const VOID_BG = "#020403";
+const RING_COLOR = "#1a2e24";
+const SELECT_COLOR = "#e8f0ea";
+
+/** Short-axis pixel count; long axis follows viewport aspect (square pixels). */
+const PIXEL_SHORT = 160;
 
 const DEMOS = {
   wander: `# wander — fixed thrust loop (deterministic)
@@ -27,30 +42,9 @@ jump 0
 `,
 };
 
-/* Flat palette — chunky pixels, no soft glow */
-const CELL_COLORS = [
-  "#4dff88",
-  "#e0a84a",
-  "#5ecfc8",
-  "#9ad64a",
-  "#3dbf7a",
-];
-const INERT_COLOR = "#8a6a2e";
-const DISH_BG = "#0a1210";
-const VOID_BG = "#020403";
-const RING_COLOR = "#1a2e24";
-const SELECT_COLOR = "#e8f0ea";
-
-const TICKS_PER_FRAME = 1;
-const MS_PER_TICK = 50;
-/** Short-axis pixel count; long axis follows viewport aspect (square pixels). */
-const PIXEL_SHORT = 160;
-
-let world = null;
+let socket = null;
 let selectedCell = 0;
 let lastSnapshot = null;
-let running = true;
-let lastTickAt = 0;
 let statusEl;
 let programEl;
 let cellSelect;
@@ -60,21 +54,23 @@ let canvas;
 let ctx;
 let bufW = PIXEL_SHORT;
 let bufH = PIXEL_SHORT;
+let reconnectTimer = null;
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg || "";
   statusEl.className = "status" + (kind ? " " + kind : "");
 }
 
-function envBadge() {
-  var meta = document.querySelector('meta[name="terrarium-env"]');
-  var env = ((meta && meta.getAttribute("content")) || "staging").trim() || "staging";
+function envBadge(env) {
+  var value = (env || "staging").trim() || "staging";
   var badge = document.getElementById("env-badge");
   if (badge) {
-    badge.textContent = env;
-    badge.setAttribute("data-env", env);
+    badge.textContent = value;
+    badge.setAttribute("data-env", value);
   }
-  document.documentElement.setAttribute("data-env", env);
+  document.documentElement.setAttribute("data-env", value);
+  var meta = document.querySelector('meta[name="terrarium-env"]');
+  if (meta) meta.setAttribute("content", value);
 }
 
 function setConsoleOpen(open) {
@@ -87,32 +83,20 @@ function setConsoleOpen(open) {
   }
 }
 
-function seedDish() {
-  world = new JsWorld();
-  var a = world.spawnCell(5000, -28000, -12000);
-  var b = world.spawnCell(4000, 22000, 8000);
-  var c = world.spawnCell(3500, -5000, 28000);
-  world.setProgramText(a, DEMOS.wander);
-  world.setProgramText(b, DEMOS.chase);
-  world.setProgramText(c, DEMOS.sit);
-  // Inert crumb already in the box — absorb is an explicit verb.
-  var dumper = world.spawnCell(800, 12000, -22000);
-  world.dumpMatter(dumper, 400);
-  world.setProgramText(dumper, DEMOS.sit);
-  selectedCell = a;
-  refreshCellSelect();
-  programEl.value = DEMOS.wander;
-  markDemo("wander");
-  setStatus("dish seeded. wander on cell " + a + ".", "ok");
-}
-
 function cellLabel(id) {
   return "cell " + id;
 }
 
-function refreshCellSelect() {
-  var snap = JSON.parse(world.snapshot());
+function applySnapshot(snap) {
   lastSnapshot = snap;
+  if (!cellSelect.options.length) {
+    refreshCellSelect(snap);
+  } else {
+    syncSelectLabels(snap);
+  }
+}
+
+function refreshCellSelect(snap) {
   cellSelect.innerHTML = "";
   snap.cells.forEach(function (c) {
     var opt = document.createElement("option");
@@ -151,14 +135,14 @@ function setupCanvas() {
   ctx.imageSmoothingEnabled = false;
 }
 
-function dishRadiusPx() {
+function worldRadiusPx() {
   return Math.round(Math.min(bufW, bufH) * 0.46);
 }
 
 function bodyRadiusPx(mass, worldRadius) {
   var r = Math.sqrt(mass * 2000);
   r = Math.max(5000, Math.min(r, 24000));
-  return Math.max(3, Math.round((r / worldRadius) * dishRadiusPx() * 1.15));
+  return Math.max(3, Math.round((r / worldRadius) * worldRadiusPx() * 1.15));
 }
 
 function fillCircle(x, y, r, color) {
@@ -166,7 +150,6 @@ function fillCircle(x, y, r, color) {
   var cy = Math.round(y);
   var rr = Math.max(1, Math.round(r));
   ctx.fillStyle = color;
-  /* Chunkier than a perfect arc: fill a pixel disk */
   for (var dy = -rr; dy <= rr; dy++) {
     for (var dx = -rr; dx <= rr; dx++) {
       if (dx * dx + dy * dy <= rr * rr) {
@@ -199,13 +182,13 @@ function draw() {
   if (!lastSnapshot) return;
 
   var radius = lastSnapshot.radius || 100000;
-  var dishR = dishRadiusPx();
-  var scale = dishR / radius;
+  var ringR = worldRadiusPx();
+  var scale = ringR / radius;
   var cx = bufW / 2;
   var cy = bufH / 2;
 
-  fillCircle(cx, cy, dishR, DISH_BG);
-  strokeCircle(cx, cy, dishR, RING_COLOR);
+  fillCircle(cx, cy, ringR, WORLD_BG);
+  strokeCircle(cx, cy, ringR, RING_COLOR);
 
   lastSnapshot.inert.forEach(function (d) {
     var px = cx + d.x * scale;
@@ -226,15 +209,7 @@ function draw() {
   });
 }
 
-function frame(now) {
-  if (running && world && now - lastTickAt >= MS_PER_TICK) {
-    lastTickAt = now;
-    for (var i = 0; i < TICKS_PER_FRAME; i++) {
-      world.tick();
-    }
-    lastSnapshot = JSON.parse(world.snapshot());
-    syncSelectLabels(lastSnapshot);
-  }
+function frame() {
   draw();
   requestAnimationFrame(frame);
 }
@@ -281,35 +256,91 @@ function ensureLivingSelection() {
   return true;
 }
 
+function sendJson(obj) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    setStatus("not connected to host.", "error");
+    return false;
+  }
+  socket.send(JSON.stringify(obj));
+  return true;
+}
+
 function onRun() {
-  if (!world) return;
   if (!ensureLivingSelection()) {
-    setStatus("no living cells — reset the dish.", "error");
+    setStatus("no living cells — reset the world.", "error");
     return;
   }
-  var src = programEl.value;
-  try {
-    world.setProgramText(selectedCell, src);
-    setStatus("running on cell " + selectedCell + ".", "ok");
+  if (sendJson({ type: "set_program", cell_id: selectedCell, source: programEl.value })) {
     markDemo(null);
-  } catch (err) {
-    setStatus(String(err.message || err), "error");
   }
 }
 
 function onReset() {
-  seedDish();
-  lastSnapshot = JSON.parse(world.snapshot());
+  sendJson({ type: "reset" });
 }
 
-async function main() {
-  envBadge();
+function wsUrl() {
+  var proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return proto + "//" + location.host + "/ws";
+}
+
+function connect() {
+  setStatus("connecting to host…");
+  var ws = new WebSocket(wsUrl());
+  socket = ws;
+
+  ws.onopen = function () {
+    setStatus("connected. camera only — host owns the tick.", "ok");
+  };
+
+  ws.onmessage = function (ev) {
+    var msg;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch (err) {
+      setStatus("bad host message", "error");
+      return;
+    }
+    if (msg.type === "hello") {
+      envBadge(msg.env);
+      return;
+    }
+    if (msg.type === "snapshot") {
+      applySnapshot(msg.world);
+      return;
+    }
+    if (msg.type === "ok") {
+      setStatus(msg.message || "ok", "ok");
+      return;
+    }
+    if (msg.type === "error") {
+      setStatus(msg.message || "error", "error");
+      setConsoleOpen(true);
+    }
+  };
+
+  ws.onclose = function () {
+    setStatus("host disconnected — retrying…", "error");
+    socket = null;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 1500);
+  };
+
+  ws.onerror = function () {
+    ws.close();
+  };
+}
+
+function main() {
+  var meta = document.querySelector('meta[name="terrarium-env"]');
+  envBadge((meta && meta.getAttribute("content")) || "staging");
+
   statusEl = document.getElementById("status");
   programEl = document.getElementById("program");
   cellSelect = document.getElementById("cell-select");
   consoleEl = document.getElementById("console");
   toggleBtn = document.getElementById("btn-toggle-console");
-  canvas = document.getElementById("dish");
+  canvas = document.getElementById("world");
   if (!canvas || !canvas.getContext) {
     setStatus("canvas unavailable", "error");
     return;
@@ -329,10 +360,8 @@ async function main() {
     }
   });
 
-  setStatus("loading kernel…");
-  await init();
-  seedDish();
-  lastSnapshot = JSON.parse(world.snapshot());
+  programEl.value = DEMOS.wander;
+  markDemo("wander");
 
   document.getElementById("btn-run").addEventListener("click", onRun);
   document.getElementById("btn-reset").addEventListener("click", onReset);
@@ -349,15 +378,8 @@ async function main() {
   });
 
   window.addEventListener("resize", setupCanvas);
+  connect();
   requestAnimationFrame(frame);
 }
 
-main().catch(function (err) {
-  console.error(err);
-  var el = document.getElementById("status");
-  if (el) {
-    el.textContent = "kernel failed to load: " + (err && err.message ? err.message : err);
-    el.className = "status error";
-  }
-  setConsoleOpen(true);
-});
+main();

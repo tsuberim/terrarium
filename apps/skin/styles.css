@@ -33,7 +33,7 @@ body {
 }
 
 /* Full-viewport pixel canvas — nearest-neighbor upscale */
-#dish {
+#world {
   position: fixed;
   inset: 0;
   width: 100%;

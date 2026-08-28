@@ -1,0 +1,9 @@
+.git
+.github
+docs
+**/target
+target
+apps/skin/pkg
+*.md
+.gitignore
+scripts

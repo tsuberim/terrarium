@@ -7,21 +7,19 @@ A 2D realtime MMO programming game. You are a blob of matter with a program insi
 ## Play locally
 
 ```bash
-# optional, if you changed the kernel:
-./scripts/build-wasm.sh
-
-# serve the static skin (required — browsers won't load WASM from file://)
-python3 -m http.server 8080 --directory apps/skin
+cargo run -p terrarium-host
 # open http://127.0.0.1:8080/
 ```
 
-`cargo test --manifest-path crates/kernel/Cargo.toml` must stay green.
+The host owns `World` and ticks continuously. The browser is a WebSocket client (camera + program editor).
 
-| Environment | URL |
+`cargo test -p terrarium-kernel` must stay green.
+
+| Environment | Service |
 | --- | --- |
-| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html |
-| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html |
+| Staging | Cloud Run `terrarium-staging` (`us-central1`) |
+| Production | Cloud Run `terrarium-prod` (`us-central1`) |
 
-Staging and production are public Cloud Storage buckets serving the static skin over HTTPS. No Cloud Run, no containers, no load balancers for this milestone.
+URLs: `gcloud run services describe terrarium-staging --project=terrarium-506917 --region=us-central1 --format='value(status.url)'` (same for prod).
 
 Do not put keys in this repo. Operator keys live in `~/keys/` on the operator machine. See [`docs/secrets.md`](docs/secrets.md).

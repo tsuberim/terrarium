@@ -1,4 +1,4 @@
-//! WASM surface for the skin. Same kernel, camera talks through this.
+//! WASM surface for tests / later cell guests. Not the live sim host.
 
 use wasm_bindgen::prelude::*;
 
@@ -20,8 +20,8 @@ impl JsWorld {
         }
     }
 
-    #[wasm_bindgen(js_name = dishRadius)]
-    pub fn dish_radius(&self) -> i32 {
+    #[wasm_bindgen(js_name = worldRadius)]
+    pub fn world_radius(&self) -> i32 {
         self.inner.radius()
     }
 
@@ -68,14 +68,14 @@ impl JsWorld {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
-    /// Compile text → bytecode (for skin tooling / demos).
+    /// Compile text → bytecode (for tooling / demos).
     #[wasm_bindgen(js_name = compileProgram)]
     pub fn compile_program(src: &str) -> Result<Vec<u8>, JsValue> {
         let program = compile_text(src).map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(encode_program(&program))
     }
 
-    /// Dump inert mass from a cell (JSON-friendly). Conserves total_mass.
+    /// Dump inert mass from a cell. Conserves total_mass.
     #[wasm_bindgen(js_name = dumpMatter)]
     pub fn dump_matter(&mut self, cell_id: u32, amount: f64) -> Result<u32, JsValue> {
         self.inner
@@ -91,49 +91,9 @@ impl JsWorld {
         self.inner.tick();
     }
 
-    /// JSON snapshot for the canvas.
+    /// JSON snapshot for a canvas / client.
     pub fn snapshot(&self) -> String {
-        let s = self.inner.snapshot();
-        let mut out = String::from("{\"tick\":");
-        out.push_str(&s.tick.to_string());
-        out.push_str(",\"total_mass\":");
-        out.push_str(&s.total_mass.get().to_string());
-        out.push_str(",\"house_burned\":");
-        out.push_str(&s.house_burned.get().to_string());
-        out.push_str(",\"radius\":");
-        out.push_str(&s.radius.to_string());
-        out.push_str(",\"cells\":[");
-        for (i, c) in s.cells.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push_str(&format!(
-                "{{\"id\":{},\"mass\":{},\"x\":{},\"y\":{},\"vx\":{},\"vy\":{},\"pc\":{},\"halted\":{}}}",
-                c.id.get(),
-                c.mass.get(),
-                c.x,
-                c.y,
-                c.vx,
-                c.vy,
-                c.pc,
-                c.halted
-            ));
-        }
-        out.push_str("],\"inert\":[");
-        for (i, n) in s.inert.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push_str(&format!(
-                "{{\"id\":{},\"mass\":{},\"x\":{},\"y\":{}}}",
-                n.id.get(),
-                n.mass.get(),
-                n.x,
-                n.y
-            ));
-        }
-        out.push_str("]}");
-        out
+        self.inner.snapshot_json()
     }
 }
 
@@ -142,4 +102,3 @@ impl Default for JsWorld {
         Self::new()
     }
 }
-

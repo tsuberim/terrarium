@@ -2,39 +2,53 @@
 
 GCP project: **`terrarium-506917`**. Region: **`us-central1`**.
 
-This milestone is cheap on purpose. Staging and prod are two public Cloud Storage buckets serving static files over HTTPS. There is no Cloud Run, no Docker, no Artifact Registry, no GKE, no VMs, and no load balancer.
+Staging and prod are **Cloud Run** services that run the native host (persistent `World`). A static bucket is not a process and is not the deploy target.
 
-| Name | Bucket | Public URL |
+| Name | Cloud Run service | Notes |
 | --- | --- | --- |
-| Staging | `gs://terrarium-506917-staging` | https://storage.googleapis.com/terrarium-506917-staging/index.html |
-| Production | `gs://terrarium-506917-prod` | https://storage.googleapis.com/terrarium-506917-prod/index.html |
+| Staging | `terrarium-staging` | `TERRARIUM_ENV=staging`, deploy on push to `main` |
+| Production | `terrarium-prod` | `TERRARIUM_ENV=prod`, deploy on tags `v*` |
 
-The skin lives in `apps/skin/` (`index.html`, `styles.css`, `main.js`, `pkg/` WASM). Deploy is a copy:
+Public HTTPS URLs come from Cloud Run after the first deploy (`gcloud run services describe … --format='value(status.url)'`). There is no separate HTTPS load balancer.
+
+### Service shape (cost rule: cheapest that works)
+
+- **min instances: 1** — scale-to-zero would wipe in-memory World state
+- **max instances: 1** — one authoritative World (no split-brain)
+- **memory: 128Mi**, **cpu: 1**
+- **`--no-cpu-throttling`** — tick loop must run between HTTP/WS requests
+- Allow unauthenticated (public skin + WS)
+
+No GKE, GCE VMs, Cloud SQL, or extra load balancers for this milestone.
+
+## Local
 
 ```bash
-gcloud storage cp -r apps/skin/* gs://terrarium-506917-staging --cache-control="public, max-age=60"
-gcloud storage cp -r apps/skin/* gs://terrarium-506917-prod --cache-control="public, max-age=60"
+cargo run -p terrarium-host
+# open http://127.0.0.1:8080/
 ```
 
-Rebuild the kernel WASM before deploy when the crate changes:
+Optional WASM rebuild (not required for live play):
 
 ```bash
 ./scripts/build-wasm.sh
 ```
-Objects must be publicly readable. Website configuration can wait; the `index.html` URLs above are enough.
 
 ## CI
 
 GitHub Actions, on pull requests and on push to `main`:
 
-1. `cargo test --manifest-path crates/kernel/Cargo.toml`
-2. Required docs files exist
+1. `cargo test -p terrarium-kernel`
+2. `cargo build -p terrarium-host`
+3. Required docs files exist
 
-That is all CI does. No image builds. No deploys inside the test workflow.
+Deploys are not part of the test workflow.
 
 ## Deploy (when GCP is wired)
 
-Workflows on `main` (staging) and on tags `v*` (prod) authenticate with **Workload Identity Federation** and then `gcloud storage cp` the skin. They use repository variables `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT`. If those are not set yet, the copy job is skipped; CI still has to be green.
+Workflows authenticate with **Workload Identity Federation** (`GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`) and run `gcloud run deploy` with `--source=.` (Dockerfile at repo root). If those variables are unset, the deploy job is skipped; CI still has to be green.
+
+The WIF service account needs permission to build and deploy Cloud Run (Cloud Build / Artifact Registry / Run admin as usual for `--source` deploys).
 
 GitHub Actions must use WIF. Never commit keys. Never paste a service-account JSON into GitHub Secrets.
 

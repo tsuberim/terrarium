@@ -1,16 +1,16 @@
 # Current state
 
-Honest snapshot as of 2026-08-28 (evening).
+Honest snapshot as of 2026-08-28 (night).
 
-**Playable local dish.** The kernel ticks a deterministic fixed-point 2D dish; the skin loads that same crate as WASM and lets you paste a bytecode program onto a cell.
+**Persistent native host.** The sim runs as a process that owns `World` and ticks without a browser. The skin is a WebSocket client (camera + program editor). Staging/prod target Cloud Run, not GCS.
 
 What exists:
 
 - Docs in `/docs` hold vision and architecture.
-- `crates/kernel` — mass ledger (spawn / spend / dump / absorb) plus dish physics, tick, and a tiny guest ISA (`thrust`, `sense`, `absorb`, `dump`, `sleep`, jumps). Conservation tests still pass; tick/spend/absorb covered.
-- Kernel builds to WASM (`scripts/build-wasm.sh` → `apps/skin/pkg/`).
-- `apps/skin` — fullscreen pixelated camera: low-res canvas scaled with nearest-neighbor, no stats/HUD. Program editor is a hideable overlay (wander / chase / sit demos). No Cloud Run. No Docker. No always-on server.
-- CI runs `cargo test` and checks that required docs exist.
-- Staging and prod remain two public GCS buckets. Deploy is still `gcloud storage cp` of `apps/skin/*` (includes `pkg/`).
+- `crates/kernel` — mass ledger, fixed-point physics, tick, tiny guest ISA. Conservation tests pass. Optional `--features wasm` for WASM builds (not the live host).
+- `crates/host` — native binary: tick loop, static skin, WebSocket snapshots + `set_program` / `reset`.
+- `apps/skin` — fullscreen pixel camera over WS; hideable program overlay (wander / chase / sit). Does not call `tick`.
+- Dockerfile + Cloud Run deploy workflows for `terrarium-staging` / `terrarium-prod` (`us-central1`, min 1, max 1, 128Mi, CPU always allocated).
+- CI: `cargo test -p terrarium-kernel`, `cargo build -p terrarium-host`, required docs present.
 
-What this is not: multiplayer, WASM guest modules inside cells, cash rail / real money, attach/split, or a hosted always-on sim. Guests are bytecode interpreted by the kernel. Cash-out is still a later verb.
+What this is not: multiplayer (one World per service instance), WASM guest modules inside cells, cash rail / real money, attach/split. Guests are bytecode interpreted by the kernel. Cash-out is still a later verb.

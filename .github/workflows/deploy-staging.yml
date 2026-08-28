@@ -8,11 +8,11 @@ permissions:
   contents: read
   id-token: write
 
-# Copy static skin to a public GCS bucket. No Docker, no Cloud Run, no load balancer.
+# Build and deploy the native host to Cloud Run (persistent World).
 # Job is skipped until WIF variables exist; CI remains the green/red signal.
 jobs:
   deploy:
-    name: gcloud storage cp (staging)
+    name: Cloud Run (staging)
     if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
     runs-on: ubuntu-latest
     environment: staging
@@ -23,12 +23,18 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Copy skin to gs://terrarium-506917-staging
+      - name: Deploy terrarium-staging
         run: |
-          gcloud storage cp \
-            apps/skin/index.html \
-            apps/skin/styles.css \
-            apps/skin/main.js \
-            gs://terrarium-506917-staging/ \
-            --cache-control="public, max-age=60" \
-            --project=terrarium-506917
+          gcloud run deploy terrarium-staging \
+            --project=terrarium-506917 \
+            --region=us-central1 \
+            --source=. \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=1 \
+            --memory=128Mi \
+            --cpu=1 \
+            --no-cpu-throttling \
+            --timeout=3600 \
+            --set-env-vars=TERRARIUM_ENV=staging,SKIN_DIR=/skin \
+            --quiet
