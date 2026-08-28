@@ -1,11 +1,14 @@
 name: Slack notify
-description: Post a message to Slack via incoming webhook
+description: Post a message to Slack via chat.postMessage (Remy bot)
 
 inputs:
-  webhook:
-    description: Slack incoming webhook URL (empty skips the post)
+  token:
+    description: Slack bot token (empty skips the post)
     required: false
     default: ""
+  channel:
+    description: Slack channel ID or name
+    required: true
   text:
     description: Message text (Slack mrkdwn)
     required: true
@@ -15,13 +18,24 @@ runs:
   steps:
     - shell: bash
       env:
-        WEBHOOK: ${{ inputs.webhook }}
+        SLACK_BOT_TOKEN: ${{ inputs.token }}
+        SLACK_CHANNEL: ${{ inputs.channel }}
         TEXT: ${{ inputs.text }}
       run: |
         set -euo pipefail
-        if [ -z "$WEBHOOK" ]; then
-          echo "No webhook configured; skipping Slack notify."
+        if [ -z "$SLACK_BOT_TOKEN" ]; then
+          echo "No bot token configured; skipping Slack notify."
           exit 0
         fi
-        payload="$(jq -n --arg text "$TEXT" '{text: $text}')"
-        curl -sf -X POST -H 'Content-type: application/json' -d "$payload" "$WEBHOOK"
+        payload="$(jq -n --arg channel "$SLACK_CHANNEL" --arg text "$TEXT" '{channel: $channel, text: $text}')"
+        response="$(curl -sf -X POST \
+          -H 'Authorization: Bearer '"$SLACK_BOT_TOKEN" \
+          -H 'Content-type: application/json; charset=utf-8' \
+          -d "$payload" \
+          'https://slack.com/api/chat.postMessage')"
+        ok="$(echo "$response" | jq -r '.ok')"
+        if [ "$ok" != "true" ]; then
+          echo "Slack chat.postMessage failed:"
+          echo "$response" | jq '{ok, error, warning}'
+          exit 1
+        fi

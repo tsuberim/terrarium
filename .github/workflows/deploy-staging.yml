@@ -43,7 +43,8 @@ jobs:
       - name: Post staging deploy result
         uses: ./.github/actions/slack-notify
         with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_DEPLOYS }}
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          channel: C0BT9UDEVS7
           text: |
             ${{ needs.deploy.result == 'success' && ':white_check_mark: Staging is live.' || ':x: Staging deploy failed.' }}
             https://storage.googleapis.com/terrarium-506917-staging/index.html

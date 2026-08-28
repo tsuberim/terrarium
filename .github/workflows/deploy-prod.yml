@@ -43,7 +43,8 @@ jobs:
       - name: Post prod deploy result
         uses: ./.github/actions/slack-notify
         with:
-          webhook: ${{ secrets.SLACK_WEBHOOK_DEPLOYS }}
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          channel: C0BT9UDEVS7
           text: |
             ${{ needs.deploy.result == 'success' && format(':white_check_mark: Production is live — `{0}`.', github.ref_name) || format(':x: Production deploy failed — `{0}`.', github.ref_name) }}
             https://storage.googleapis.com/terrarium-506917-prod/index.html
