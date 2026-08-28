@@ -27,16 +27,24 @@ jump 0
 `,
 };
 
-const CELL_HUES = [
-  "120, 70%, 55%",
-  "38, 70%, 58%",
-  "176, 45%, 60%",
-  "88, 55%, 52%",
-  "150, 50%, 48%",
+/* Flat palette — chunky pixels, no soft glow */
+const CELL_COLORS = [
+  "#4dff88",
+  "#e0a84a",
+  "#5ecfc8",
+  "#9ad64a",
+  "#3dbf7a",
 ];
+const INERT_COLOR = "#8a6a2e";
+const DISH_BG = "#0a1210";
+const VOID_BG = "#020403";
+const RING_COLOR = "#1a2e24";
+const SELECT_COLOR = "#e8f0ea";
 
 const TICKS_PER_FRAME = 1;
 const MS_PER_TICK = 50;
+/** Short-axis pixel count; long axis follows viewport aspect (square pixels). */
+const PIXEL_SHORT = 160;
 
 let world = null;
 let selectedCell = 0;
@@ -44,14 +52,14 @@ let lastSnapshot = null;
 let running = true;
 let lastTickAt = 0;
 let statusEl;
-let hudMass;
-let hudBurned;
-let hudTick;
 let programEl;
 let cellSelect;
+let consoleEl;
+let toggleBtn;
 let canvas;
 let ctx;
-let cssSize = 420;
+let bufW = PIXEL_SHORT;
+let bufH = PIXEL_SHORT;
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg || "";
@@ -67,6 +75,16 @@ function envBadge() {
     badge.setAttribute("data-env", env);
   }
   document.documentElement.setAttribute("data-env", env);
+}
+
+function setConsoleOpen(open) {
+  if (open) {
+    consoleEl.hidden = false;
+    toggleBtn.setAttribute("aria-expanded", "true");
+  } else {
+    consoleEl.hidden = true;
+    toggleBtn.setAttribute("aria-expanded", "false");
+  }
 }
 
 function seedDish() {
@@ -85,7 +103,11 @@ function seedDish() {
   refreshCellSelect();
   programEl.value = DEMOS.wander;
   markDemo("wander");
-  setStatus("dish seeded. wander is running on cell " + a + ".", "ok");
+  setStatus("dish seeded. wander on cell " + a + ".", "ok");
+}
+
+function cellLabel(id) {
+  return "cell " + id;
 }
 
 function refreshCellSelect() {
@@ -95,7 +117,7 @@ function refreshCellSelect() {
   snap.cells.forEach(function (c) {
     var opt = document.createElement("option");
     opt.value = String(c.id);
-    opt.textContent = "cell " + c.id + " · mass " + c.mass;
+    opt.textContent = cellLabel(c.id);
     cellSelect.appendChild(opt);
   });
   if (snap.cells.some(function (c) { return c.id === selectedCell; })) {
@@ -112,83 +134,96 @@ function markDemo(name) {
   });
 }
 
-function resize() {
-  var size = canvas.parentElement.clientWidth;
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = size * dpr;
-  canvas.height = size * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cssSize = size;
+function setupCanvas() {
+  var vw = Math.max(1, window.innerWidth || 1);
+  var vh = Math.max(1, window.innerHeight || 1);
+  if (vw >= vh) {
+    bufH = PIXEL_SHORT;
+    bufW = Math.max(PIXEL_SHORT, Math.round(PIXEL_SHORT * (vw / vh)));
+  } else {
+    bufW = PIXEL_SHORT;
+    bufH = Math.max(PIXEL_SHORT, Math.round(PIXEL_SHORT * (vh / vw)));
+  }
+  if (canvas.width !== bufW || canvas.height !== bufH) {
+    canvas.width = bufW;
+    canvas.height = bufH;
+  }
+  ctx.imageSmoothingEnabled = false;
 }
 
-function bodyRadius(mass, radius) {
+function dishRadiusPx() {
+  return Math.round(Math.min(bufW, bufH) * 0.46);
+}
+
+function bodyRadiusPx(mass, worldRadius) {
   var r = Math.sqrt(mass * 2000);
-  r = Math.max(4000, Math.min(r, 22000));
-  return (r / radius) * (cssSize * 0.48);
+  r = Math.max(5000, Math.min(r, 24000));
+  return Math.max(3, Math.round((r / worldRadius) * dishRadiusPx() * 1.15));
+}
+
+function fillCircle(x, y, r, color) {
+  var cx = Math.round(x);
+  var cy = Math.round(y);
+  var rr = Math.max(1, Math.round(r));
+  ctx.fillStyle = color;
+  /* Chunkier than a perfect arc: fill a pixel disk */
+  for (var dy = -rr; dy <= rr; dy++) {
+    for (var dx = -rr; dx <= rr; dx++) {
+      if (dx * dx + dy * dy <= rr * rr) {
+        ctx.fillRect(cx + dx, cy + dy, 1, 1);
+      }
+    }
+  }
+}
+
+function strokeCircle(x, y, r, color) {
+  var cx = Math.round(x);
+  var cy = Math.round(y);
+  var rr = Math.max(1, Math.round(r));
+  var inner = (rr - 1) * (rr - 1);
+  var outer = rr * rr;
+  ctx.fillStyle = color;
+  for (var dy = -rr; dy <= rr; dy++) {
+    for (var dx = -rr; dx <= rr; dx++) {
+      var d2 = dx * dx + dy * dy;
+      if (d2 <= outer && d2 >= inner) {
+        ctx.fillRect(cx + dx, cy + dy, 1, 1);
+      }
+    }
+  }
 }
 
 function draw() {
-  var n = cssSize;
-  ctx.clearRect(0, 0, n, n);
+  ctx.fillStyle = VOID_BG;
+  ctx.fillRect(0, 0, bufW, bufH);
   if (!lastSnapshot) return;
 
   var radius = lastSnapshot.radius || 100000;
-  var scale = (n * 0.48) / radius;
+  var dishR = dishRadiusPx();
+  var scale = dishR / radius;
+  var cx = bufW / 2;
+  var cy = bufH / 2;
 
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(n / 2, n / 2, n * 0.48, 0, Math.PI * 2);
-  ctx.clip();
+  fillCircle(cx, cy, dishR, DISH_BG);
+  strokeCircle(cx, cy, dishR, RING_COLOR);
 
-  // inert dumps — dim amber crumbs
   lastSnapshot.inert.forEach(function (d) {
-    var px = n / 2 + d.x * scale;
-    var py = n / 2 + d.y * scale;
-    var pr = Math.max(2.5, bodyRadius(d.mass, radius) * 0.7);
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = "hsla(38, 55%, 50%, 0.55)";
-    ctx.beginPath();
-    ctx.arc(px, py, pr, 0, Math.PI * 2);
-    ctx.fill();
+    var px = cx + d.x * scale;
+    var py = cy + d.y * scale;
+    var pr = Math.max(1, Math.round(bodyRadiusPx(d.mass, radius) * 0.65));
+    fillCircle(px, py, pr, INERT_COLOR);
   });
 
-  lastSnapshot.cells.forEach(function (c, i) {
-    var hue = CELL_HUES[c.id % CELL_HUES.length];
-    var px = n / 2 + c.x * scale;
-    var py = n / 2 + c.y * scale;
-    var pr = bodyRadius(c.mass, radius);
-    var pulse = 1 + 0.04 * Math.sin(Date.now() / 900 + i);
-    pr *= pulse;
-
-    var g = ctx.createRadialGradient(px - pr * 0.2, py - pr * 0.2, pr * 0.1, px, py, pr);
-    g.addColorStop(0, "hsla(" + hue + ", 0.9)");
-    g.addColorStop(0.55, "hsla(" + hue + ", 0.3)");
-    g.addColorStop(1, "hsla(" + hue + ", 0)");
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(px, py, pr, 0, Math.PI * 2);
-    ctx.fill();
-
+  lastSnapshot.cells.forEach(function (c) {
+    var color = CELL_COLORS[c.id % CELL_COLORS.length];
+    var px = cx + c.x * scale;
+    var py = cy + c.y * scale;
+    var pr = bodyRadiusPx(c.mass, radius);
+    fillCircle(px, py, pr, color);
     if (c.id === selectedCell) {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = "rgba(213, 228, 218, 0.55)";
-      ctx.lineWidth = 1.25;
-      ctx.beginPath();
-      ctx.arc(px, py, pr + 3, 0, Math.PI * 2);
-      ctx.stroke();
+      strokeCircle(px, py, pr + 2, SELECT_COLOR);
     }
   });
-
-  ctx.restore();
-  ctx.globalCompositeOperation = "source-over";
-}
-
-function updateHud(snap) {
-  hudMass.textContent = String(snap.total_mass);
-  hudBurned.textContent = String(snap.house_burned);
-  hudBurned.classList.toggle("burn", snap.house_burned > 0);
-  hudTick.textContent = String(snap.tick);
 }
 
 function frame(now) {
@@ -198,8 +233,6 @@ function frame(now) {
       world.tick();
     }
     lastSnapshot = JSON.parse(world.snapshot());
-    updateHud(lastSnapshot);
-    // Keep select labels fresh without stealing focus every frame.
     syncSelectLabels(lastSnapshot);
   }
   draw();
@@ -212,17 +245,15 @@ function syncSelectLabels(snap) {
     var id = Number(opts[i].value);
     var cell = snap.cells.find(function (c) { return c.id === id; });
     if (cell) {
-      opts[i].textContent = "cell " + cell.id + " · mass " + cell.mass;
+      opts[i].textContent = cellLabel(cell.id);
     }
   }
-  // Drop dead cells from the list.
   var living = new Set(snap.cells.map(function (c) { return String(c.id); }));
   for (var j = opts.length - 1; j >= 0; j--) {
     if (!living.has(opts[j].value)) {
       opts[j].remove();
     }
   }
-  // Add newly appeared cells (rare).
   snap.cells.forEach(function (c) {
     var found = false;
     for (var k = 0; k < opts.length; k++) {
@@ -234,7 +265,7 @@ function syncSelectLabels(snap) {
     if (!found) {
       var opt = document.createElement("option");
       opt.value = String(c.id);
-      opt.textContent = "cell " + c.id + " · mass " + c.mass;
+      opt.textContent = cellLabel(c.id);
       cellSelect.appendChild(opt);
     }
   });
@@ -269,29 +300,39 @@ function onRun() {
 function onReset() {
   seedDish();
   lastSnapshot = JSON.parse(world.snapshot());
-  updateHud(lastSnapshot);
 }
 
 async function main() {
   envBadge();
   statusEl = document.getElementById("status");
-  hudMass = document.getElementById("hud-mass");
-  hudBurned = document.getElementById("hud-burned");
-  hudTick = document.getElementById("hud-tick");
   programEl = document.getElementById("program");
   cellSelect = document.getElementById("cell-select");
+  consoleEl = document.getElementById("console");
+  toggleBtn = document.getElementById("btn-toggle-console");
   canvas = document.getElementById("dish");
   if (!canvas || !canvas.getContext) {
     setStatus("canvas unavailable", "error");
     return;
   }
   ctx = canvas.getContext("2d");
+  setupCanvas();
+
+  toggleBtn.addEventListener("click", function () {
+    setConsoleOpen(consoleEl.hidden);
+  });
+  document.getElementById("btn-close-console").addEventListener("click", function () {
+    setConsoleOpen(false);
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !consoleEl.hidden) {
+      setConsoleOpen(false);
+    }
+  });
 
   setStatus("loading kernel…");
   await init();
   seedDish();
   lastSnapshot = JSON.parse(world.snapshot());
-  updateHud(lastSnapshot);
 
   document.getElementById("btn-run").addEventListener("click", onRun);
   document.getElementById("btn-reset").addEventListener("click", onReset);
@@ -307,12 +348,16 @@ async function main() {
     });
   });
 
-  window.addEventListener("resize", resize);
-  resize();
+  window.addEventListener("resize", setupCanvas);
   requestAnimationFrame(frame);
 }
 
 main().catch(function (err) {
   console.error(err);
-  setStatus("kernel failed to load: " + (err && err.message ? err.message : err), "error");
+  var el = document.getElementById("status");
+  if (el) {
+    el.textContent = "kernel failed to load: " + (err && err.message ? err.message : err);
+    el.className = "status error";
+  }
+  setConsoleOpen(true);
 });
