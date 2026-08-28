@@ -37,14 +37,13 @@ const CELL_COLORS = [
 ];
 const INERT_COLOR = "#8a6a2e";
 const WORLD_BG = "#0a1210";
-const EDGE_COLOR = "#1a2e24";
 const SELECT_COLOR = "#e8f0ea";
 const GHOST_ALPHA = 0.38;
 
 const TICKS_PER_FRAME = 1;
 const MS_PER_TICK = 50;
 /** Short-axis pixel count; long axis follows viewport aspect (square pixels). */
-const PIXEL_SHORT = 160;
+const PIXEL_SHORT = 480;
 
 let world = null;
 let selectedCell = 0;
@@ -89,14 +88,14 @@ function setConsoleOpen(open) {
 
 function seedWorld() {
   world = new JsWorld();
-  var a = world.spawnCell(5000, -28000, -12000);
-  var b = world.spawnCell(4000, 22000, 8000);
-  var c = world.spawnCell(3500, -5000, 28000);
+  var a = world.spawnCell(5000, -120000, -80000);
+  var b = world.spawnCell(4000, 100000, 60000);
+  var c = world.spawnCell(3500, -40000, 140000);
   world.setProgramText(a, DEMOS.wander);
   world.setProgramText(b, DEMOS.chase);
   world.setProgramText(c, DEMOS.sit);
   // Inert crumb already in the box — absorb is an explicit verb.
-  var dumper = world.spawnCell(800, 12000, -22000);
+  var dumper = world.spawnCell(800, 80000, -100000);
   world.dumpMatter(dumper, 400);
   world.setProgramText(dumper, DEMOS.sit);
   selectedCell = a;
@@ -151,11 +150,10 @@ function setupCanvas() {
   ctx.imageSmoothingEnabled = false;
 }
 
-function bodyRadiusPx(mass, worldWidth) {
+function bodyRadiusPx(mass, scale) {
   var r = Math.sqrt(mass * 2000);
   r = Math.max(5000, Math.min(r, 24000));
-  var worldSpan = Math.min(bufW, bufH) * 0.94;
-  return Math.max(3, Math.round((r / worldWidth) * worldSpan * 1.15));
+  return Math.max(3, Math.round(r * scale * 1.15));
 }
 
 function fillCircle(x, y, r, color, alpha) {
@@ -191,20 +189,6 @@ function strokeCircle(x, y, r, color, alpha) {
     }
   }
   ctx.globalAlpha = 1;
-}
-
-function drawWorldFrame(view) {
-  var left = Math.round(view.left);
-  var top = Math.round(view.top);
-  var w = Math.round(view.widthPx);
-  var h = Math.round(view.heightPx);
-  ctx.fillStyle = WORLD_BG;
-  ctx.fillRect(left, top, w, h);
-  ctx.fillStyle = EDGE_COLOR;
-  ctx.fillRect(left, top, w, 1);
-  ctx.fillRect(left, top + h - 1, w, 1);
-  ctx.fillRect(left, top, 1, h);
-  ctx.fillRect(left + w - 1, top, 1, h);
 }
 
 function worldToScreen(x, y, view) {
@@ -258,9 +242,9 @@ function draw() {
   ctx.fillRect(0, 0, bufW, bufH);
   if (!lastSnapshot) return;
 
-  var worldWidth = lastSnapshot.width || 200000;
-  var worldHeight = lastSnapshot.height || 200000;
-  var scale = Math.min((bufW * 0.94) / worldWidth, (bufH * 0.94) / worldHeight);
+  var worldWidth = lastSnapshot.width || 800000;
+  var worldHeight = lastSnapshot.height || 800000;
+  var scale = Math.max(bufW / worldWidth, bufH / worldHeight);
   var view = {
     cx: bufW / 2,
     cy: bufH / 2,
@@ -271,18 +255,16 @@ function draw() {
     top: bufH / 2 - (worldHeight * scale) / 2,
   };
 
-  drawWorldFrame(view);
-
   lastSnapshot.inert.forEach(function (d) {
     var pos = worldToScreen(d.x, d.y, view);
-    var pr = Math.max(1, Math.round(bodyRadiusPx(d.mass, worldWidth) * 0.65));
+    var pr = Math.max(1, Math.round(bodyRadiusPx(d.mass, scale) * 0.65));
     drawBlobWithWraps(pos.px, pos.py, pr, INERT_COLOR, false, view);
   });
 
   lastSnapshot.cells.forEach(function (c) {
     var color = CELL_COLORS[c.id % CELL_COLORS.length];
     var pos = worldToScreen(c.x, c.y, view);
-    var pr = bodyRadiusPx(c.mass, worldWidth);
+    var pr = bodyRadiusPx(c.mass, scale);
     drawBlobWithWraps(pos.px, pos.py, pr, color, c.id === selectedCell, view);
   });
 }

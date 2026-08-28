@@ -80,16 +80,16 @@ function passStringToWasm0(arg, malloc, realloc) {
     return ptr;
 }
 
+function getArrayU8FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
+}
+
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;
     getUint8ArrayMemory0().set(arg, ptr / 1);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
-}
-
-function getArrayU8FromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
 }
 
 const JsWorldFinalization = (typeof FinalizationRegistry === 'undefined')
@@ -111,24 +111,25 @@ export class JsWorld {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_jsworld_free(ptr, 0);
     }
-    constructor() {
-        const ret = wasm.jsworld_new();
-        this.__wbg_ptr = ret >>> 0;
-        JsWorldFinalization.register(this, this.__wbg_ptr, this);
-        return this;
+    /**
+     * Spawn a cell. Returns cell id, or throws on error.
+     * @param {number} mass
+     * @param {number} x
+     * @param {number} y
+     * @returns {number}
+     */
+    spawnCell(mass, x, y) {
+        const ret = wasm.jsworld_spawnCell(this.__wbg_ptr, mass, x, y);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
     }
     /**
      * @returns {number}
      */
-    worldWidth() {
-        const ret = wasm.jsworld_worldWidth(this.__wbg_ptr);
-        return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    worldHeight() {
-        const ret = wasm.jsworld_worldHeight(this.__wbg_ptr);
+    tickCount() {
+        const ret = wasm.jsworld_tickCount(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -136,6 +137,26 @@ export class JsWorld {
      */
     totalMass() {
         const ret = wasm.jsworld_totalMass(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Dump inert mass from a cell (JSON-friendly). Conserves total_mass.
+     * @param {number} cell_id
+     * @param {number} amount
+     * @returns {number}
+     */
+    dumpMatter(cell_id, amount) {
+        const ret = wasm.jsworld_dumpMatter(this.__wbg_ptr, cell_id, amount);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    worldWidth() {
+        const ret = wasm.jsworld_worldWidth(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -155,23 +176,25 @@ export class JsWorld {
     /**
      * @returns {number}
      */
-    tickCount() {
-        const ret = wasm.jsworld_tickCount(this.__wbg_ptr);
+    worldHeight() {
+        const ret = wasm.jsworld_worldHeight(this.__wbg_ptr);
         return ret;
     }
     /**
-     * Spawn a cell. Returns cell id, or throws on error.
-     * @param {number} mass
-     * @param {number} x
-     * @param {number} y
-     * @returns {number}
+     * Compile text → bytecode (for skin tooling / demos).
+     * @param {string} src
+     * @returns {Uint8Array}
      */
-    spawnCell(mass, x, y) {
-        const ret = wasm.jsworld_spawnCell(this.__wbg_ptr, mass, x, y);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
+    static compileProgram(src) {
+        const ptr0 = passStringToWasm0(src, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.jsworld_compileProgram(ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
         }
-        return ret[0] >>> 0;
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
     }
     /**
      * Install a text program on a cell.
@@ -199,34 +222,11 @@ export class JsWorld {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
-    /**
-     * Compile text → bytecode (for skin tooling / demos).
-     * @param {string} src
-     * @returns {Uint8Array}
-     */
-    static compileProgram(src) {
-        const ptr0 = passStringToWasm0(src, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.jsworld_compileProgram(ptr0, len0);
-        if (ret[3]) {
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v2;
-    }
-    /**
-     * Dump inert mass from a cell (JSON-friendly). Conserves total_mass.
-     * @param {number} cell_id
-     * @param {number} amount
-     * @returns {number}
-     */
-    dumpMatter(cell_id, amount) {
-        const ret = wasm.jsworld_dumpMatter(this.__wbg_ptr, cell_id, amount);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return ret[0] >>> 0;
+    constructor() {
+        const ret = wasm.jsworld_new();
+        this.__wbg_ptr = ret >>> 0;
+        JsWorldFinalization.register(this, this.__wbg_ptr, this);
+        return this;
     }
     tick() {
         wasm.jsworld_tick(this.__wbg_ptr);
