@@ -6,11 +6,11 @@ Two pieces, on purpose.
 
 ## Kernel
 
-Rust. Deterministic fixed-point 2D physics (not in this commit; the crate currently owns mass accounting, which is the load-bearing invariant).
+Rust. Deterministic fixed-point 2D physics. Mass accounting is load-bearing.
 
-Creatures are WASM programs. Mass is their fuel. Guest code does not get free compute: cycles spent are mass spent, burned to the house.
+Creatures run a tiny bytecode program inside the kernel (WASM guest modules can come later). Mass is their fuel. Guest code does not get free compute: cycles spent are mass spent, burned to the house.
 
-v1 of the kernel compiles to WASM and also runs natively. The web skin will eventually host the same crate. The multiplayer server will be that same crate, not a rewrite.
+v1 of the kernel compiles to WASM and also runs natively. The web skin hosts the same crate. The multiplayer server will be that same crate, not a rewrite.
 
 ### Seven verbs
 
@@ -32,9 +32,9 @@ Sleep is not a verb. Sleep is free.
 
 ## Skin
 
-The skin is a static page that looks at the dish. It is not the game. This milestone's skin is a landing shell: wordmark, dish, env badge, pointers at `/docs`. It ships as plain HTML/CSS/JS from a public Cloud Storage bucket.
+The skin is a static page that looks at the dish. It is not the game. This milestone's skin loads the kernel WASM, draws the dish on a canvas, and offers a small program editor (plus demo programs). It ships as plain HTML/CSS/JS plus `pkg/` from a public Cloud Storage bucket.
 
-No CDN fonts. No random network calls. Relative paths. The kernel is not wired to it yet.
+No CDN fonts. No random network calls. Relative paths. Serve over HTTP(S) so the browser can fetch the `.wasm` module (a `file://` open will not work).
 
 ## Later: server
 

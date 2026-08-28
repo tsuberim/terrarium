@@ -9,13 +9,18 @@ This milestone is cheap on purpose. Staging and prod are two public Cloud Storag
 | Staging | `gs://terrarium-506917-staging` | https://storage.googleapis.com/terrarium-506917-staging/index.html |
 | Production | `gs://terrarium-506917-prod` | https://storage.googleapis.com/terrarium-506917-prod/index.html |
 
-The skin lives in `apps/skin/` (`index.html`, `styles.css`, `main.js`). Deploy is a copy:
+The skin lives in `apps/skin/` (`index.html`, `styles.css`, `main.js`, `pkg/` WASM). Deploy is a copy:
 
 ```bash
 gcloud storage cp -r apps/skin/* gs://terrarium-506917-staging --cache-control="public, max-age=60"
 gcloud storage cp -r apps/skin/* gs://terrarium-506917-prod --cache-control="public, max-age=60"
 ```
 
+Rebuild the kernel WASM before deploy when the crate changes:
+
+```bash
+./scripts/build-wasm.sh
+```
 Objects must be publicly readable. Website configuration can wait; the `index.html` URLs above are enough.
 
 ## CI

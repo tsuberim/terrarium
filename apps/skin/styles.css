@@ -11,8 +11,10 @@
   --cyan: #7ed4cf;
   --dish: #08110e;
   --glass: rgba(180, 255, 214, 0.14);
+  --panel: rgba(8, 14, 12, 0.72);
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
 *,
@@ -95,13 +97,25 @@ main {
   color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.55;
-  margin: 0.4rem 0 1.6rem;
+  margin: 0.4rem 0 1.4rem;
+}
+
+.play {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  max-width: 920px;
+  margin-bottom: 1.8rem;
 }
 
 .stage {
-  display: grid;
-  place-items: center;
-  margin-bottom: 1.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
 }
 
 .dish-glass {
@@ -150,44 +164,6 @@ main {
   z-index: 1;
 }
 
-.css-blobs {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(8px);
-  opacity: 0.55;
-  animation: drift 18s ease-in-out infinite;
-}
-
-.b1 {
-  width: 22%; height: 22%; left: 28%; top: 32%;
-  background: radial-gradient(circle at 40% 40%, #8cffc0, #1a4a32 70%, transparent 75%);
-}
-.b2 {
-  width: 16%; height: 16%; left: 54%; top: 46%;
-  background: radial-gradient(circle at 40% 40%, #e7c07a, #5a3a18 70%, transparent 75%);
-  animation-duration: 22s;
-  animation-delay: -6s;
-}
-.b3 {
-  width: 12%; height: 12%; left: 42%; top: 58%;
-  background: radial-gradient(circle at 40% 40%, #8fe8e2, #1a4444 70%, transparent 75%);
-  animation-duration: 16s;
-  animation-delay: -3s;
-}
-
-@keyframes drift {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  35% { transform: translate(8%, -6%) scale(1.08); }
-  70% { transform: translate(-6%, 7%) scale(0.94); }
-}
-
 .tick {
   position: absolute;
   z-index: 3;
@@ -201,6 +177,178 @@ main {
 .tick-s { bottom: 8%; left: 50%; transform: translateX(-50%); }
 .tick-e { right: 7%; top: 50%; transform: translateY(-50%); }
 .tick-w { left: 8%; top: 50%; transform: translateY(-50%); }
+
+.hud {
+  display: flex;
+  gap: 1.2rem;
+  margin: 0;
+  padding: 0;
+}
+.hud > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 5.5rem;
+}
+.hud dt {
+  margin: 0;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hud dd {
+  margin: 0.2rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  color: var(--glow);
+  font-variant-numeric: tabular-nums;
+}
+.hud dd.burn {
+  color: var(--amber);
+}
+
+.console {
+  flex: 1 1 280px;
+  max-width: 360px;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.console-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.console-head select {
+  flex: 1;
+  background: #0a100e;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.demos {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.demos button,
+.actions button {
+  font-family: var(--font);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--cyan);
+  cursor: pointer;
+}
+
+.demos button:hover,
+.actions button:hover {
+  border-color: var(--cyan);
+  color: var(--ink);
+}
+
+.demos button.active {
+  border-color: var(--glow);
+  color: var(--glow);
+  background: rgba(125, 255, 177, 0.08);
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.actions .primary {
+  background: rgba(125, 255, 177, 0.12);
+  border-color: var(--glow);
+  color: var(--glow);
+  font-weight: 600;
+}
+
+#program {
+  width: 100%;
+  resize: vertical;
+  min-height: 12rem;
+  background: #050807;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.65rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  tab-size: 2;
+}
+
+#program:focus {
+  outline: 1px solid rgba(125, 255, 177, 0.35);
+  border-color: rgba(125, 255, 177, 0.35);
+}
+
+.status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.status.error { color: #e08a8a; }
+.status.ok { color: var(--glow); }
+
+.cheatsheet {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.cheatsheet summary {
+  cursor: pointer;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.cheatsheet pre {
+  margin: 0.5rem 0 0;
+  padding: 0.55rem 0.6rem;
+  background: #050807;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 
 .axioms {
   list-style: none;
@@ -241,6 +389,11 @@ footer p {
   letter-spacing: 0.08em;
 }
 
+@media (max-width: 720px) {
+  .play { flex-direction: column; align-items: center; }
+  .console { max-width: min(78vw, 420px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .blob { animation: none; }
+  /* kernel still ticks; canvas just redraws without easing flourishes */
 }

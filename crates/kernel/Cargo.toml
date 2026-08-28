@@ -2,10 +2,18 @@
 name = "terrarium-kernel"
 version = "0.1.0"
 edition = "2021"
-description = "Terrarium world kernel: closed-box mass, WASM creatures later, conservation load-bearing."
+description = "Terrarium world kernel: closed-box mass, dish physics, bytecode guests, conservation load-bearing."
 repository = "https://github.com/tsuberim/terrarium"
 license = "UNLICENSED"
 publish = false
 
 [lib]
+crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
+
+[dependencies]
+wasm-bindgen = "=0.2.100"
+
+[profile.release]
+opt-level = "s"
+lto = true
