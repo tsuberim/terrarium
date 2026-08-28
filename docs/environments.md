@@ -32,7 +32,7 @@ GitHub Actions, on pull requests and on push to `main`:
 
 That is all CI does. No image builds. No deploys inside the test workflow.
 
-Failures post to **`#ci`** when the `SLACK_WEBHOOK_CI` repository secret is set (Slack incoming webhook for that channel).
+Failures post to **`#ci`** (`C0BT9UDTQJX`) when the `SLACK_BOT_TOKEN` repository secret is set (Remy bot token; see below).
 
 ## Deploy (when GCP is wired)
 
@@ -40,18 +40,17 @@ Workflows on `main` (staging) and on tags `v*` (prod) authenticate with **Worklo
 
 GitHub Actions must use WIF. Never commit keys. Never paste a service-account JSON into GitHub Secrets.
 
-Deploy results (success or failure) post to **`#deploys`** when the `SLACK_WEBHOOK_DEPLOYS` repository secret is set.
+Deploy results (success or failure) post to **`#deploys`** (`C0BT9UDEVS7`) when `SLACK_BOT_TOKEN` is set.
 
-## Slack webhooks (CI and deploys)
+## Slack (CI and deploys)
 
-Create two Slack **incoming webhooks** (one per channel):
+GitHub Actions post as **Remy** via the Slack Web API (`chat.postMessage`). No incoming webhooks.
 
-| Secret | Channel |
-| --- | --- |
-| `SLACK_WEBHOOK_CI` | `#ci` |
-| `SLACK_WEBHOOK_DEPLOYS` | `#deploys` |
+| Secret | Bot | Channels |
+| --- | --- | --- |
+| `SLACK_BOT_TOKEN` | Remy | `#ci`, `#deploys` |
 
-Add them under GitHub → repo → Settings → Secrets and variables → Actions. Webhook URLs are secrets — never commit them. The composite action at `.github/actions/slack-notify` skips quietly if a secret is missing.
+Add the secret under GitHub → repo → Settings → Secrets and variables → Actions. The operator bot token lives in `~/keys/slack-remy.bot` (see [secrets.md](secrets.md)) — never commit it. The composite action at `.github/actions/slack-notify` skips quietly if the secret is missing.
 
 ## Secrets
 
