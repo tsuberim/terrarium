@@ -37,8 +37,41 @@ Set up automations where they help (e.g. CI alerts → `#ci`).
 
 ## Access
 
-- **GitHub:** PAT in env secrets. Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). You control it. **Push to `main`. No PRs** — you're responsible for the repo.
-- **GCP:** creds in env secrets, project `terrarium-506917`. **Watch cost.** Staging/prod are cheap GCS buckets — keep it that way unless we explicitly decide otherwise.
+### GitHub
+
+Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). You control it. **Push to `main`. No PRs.**
+
+The cloud agent environment wires GitHub auth for you — `gh` is logged in and `git` remote already has a token. You don't need to hunt for or export a PAT.
+
+**Check it works:**
+```bash
+gh auth status
+gh repo view tsuberim/terrarium
+```
+
+**Day-to-day:**
+```bash
+git checkout main && git pull
+# edit, test
+git add … && git commit -m "…"
+git push origin main
+```
+
+**GitHub API / repo ops** — prefer `gh` over curl:
+```bash
+gh api repos/tsuberim/terrarium/actions/runs --jq '.workflow_runs[0].conclusion'
+gh run list --repo tsuberim/terrarium
+gh run view <id> --log-failed
+```
+
+**Rules:**
+- Never print, commit, or paste tokens (`gh auth status` output included).
+- Never open PRs unless explicitly asked.
+- CI must be green before you ship (see below).
+
+### GCP
+
+Creds in env secrets, project `terrarium-506917`. **Watch cost.** Staging/prod are cheap GCS buckets — keep it that way unless we explicitly decide otherwise.
 
 ## Docs
 
