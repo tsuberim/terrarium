@@ -32,3 +32,19 @@ jobs:
             gs://terrarium-506917-prod/ \
             --cache-control="public, max-age=60" \
             --project=terrarium-506917
+
+  notify:
+    name: slack (#deploys)
+    needs: [deploy]
+    if: always() && needs.deploy.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post prod deploy result
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_DEPLOYS }}
+          text: |
+            ${{ needs.deploy.result == 'success' && format(':white_check_mark: Production is live — `{0}`.', github.ref_name) || format(':x: Production deploy failed — `{0}`.', github.ref_name) }}
+            https://storage.googleapis.com/terrarium-506917-prod/index.html
+            <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>

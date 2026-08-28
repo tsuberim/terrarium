@@ -32,11 +32,26 @@ GitHub Actions, on pull requests and on push to `main`:
 
 That is all CI does. No image builds. No deploys inside the test workflow.
 
+Failures post to **`#ci`** when the `SLACK_WEBHOOK_CI` repository secret is set (Slack incoming webhook for that channel).
+
 ## Deploy (when GCP is wired)
 
 Workflows on `main` (staging) and on tags `v*` (prod) authenticate with **Workload Identity Federation** and then `gcloud storage cp` the skin. They use repository variables `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT`. If those are not set yet, the copy job is skipped; CI still has to be green.
 
 GitHub Actions must use WIF. Never commit keys. Never paste a service-account JSON into GitHub Secrets.
+
+Deploy results (success or failure) post to **`#deploys`** when the `SLACK_WEBHOOK_DEPLOYS` repository secret is set.
+
+## Slack webhooks (CI and deploys)
+
+Create two Slack **incoming webhooks** (one per channel):
+
+| Secret | Channel |
+| --- | --- |
+| `SLACK_WEBHOOK_CI` | `#ci` |
+| `SLACK_WEBHOOK_DEPLOYS` | `#deploys` |
+
+Add them under GitHub → repo → Settings → Secrets and variables → Actions. Webhook URLs are secrets — never commit them. The composite action at `.github/actions/slack-notify` skips quietly if a secret is missing.
 
 ## Secrets
 

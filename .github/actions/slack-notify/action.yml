@@ -1,0 +1,27 @@
+name: Slack notify
+description: Post a message to Slack via incoming webhook
+
+inputs:
+  webhook:
+    description: Slack incoming webhook URL (empty skips the post)
+    required: false
+    default: ""
+  text:
+    description: Message text (Slack mrkdwn)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        WEBHOOK: ${{ inputs.webhook }}
+        TEXT: ${{ inputs.text }}
+      run: |
+        set -euo pipefail
+        if [ -z "$WEBHOOK" ]; then
+          echo "No webhook configured; skipping Slack notify."
+          exit 0
+        fi
+        payload="$(jq -n --arg text "$TEXT" '{text: $text}')"
+        curl -sf -X POST -H 'Content-type: application/json' -d "$payload" "$WEBHOOK"

@@ -32,3 +32,19 @@ jobs:
             gs://terrarium-506917-staging/ \
             --cache-control="public, max-age=60" \
             --project=terrarium-506917
+
+  notify:
+    name: slack (#deploys)
+    needs: [deploy]
+    if: always() && needs.deploy.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post staging deploy result
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_DEPLOYS }}
+          text: |
+            ${{ needs.deploy.result == 'success' && ':white_check_mark: Staging is live.' || ':x: Staging deploy failed.' }}
+            https://storage.googleapis.com/terrarium-506917-staging/index.html
+            <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>

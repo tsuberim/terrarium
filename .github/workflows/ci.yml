@@ -38,3 +38,19 @@ jobs:
           do
             test -f "$f" || { echo "missing $f"; exit 1; }
           done
+
+  notify-failure:
+    name: slack (#ci)
+    needs: [kernel, docs]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Post failure to #ci
+        uses: ./.github/actions/slack-notify
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_CI }}
+          text: |
+            :x: *CI failed* — ${{ github.workflow }}
+            ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) || format('`{0}`', github.ref_name) }} · ${{ github.sha }}
+            <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>
