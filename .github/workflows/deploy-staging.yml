@@ -1,0 +1,34 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+# Copy static skin to a public GCS bucket. No Docker, no Cloud Run, no load balancer.
+# Job is skipped until WIF variables exist; CI remains the green/red signal.
+jobs:
+  deploy:
+    name: gcloud storage cp (staging)
+    if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Copy skin to gs://terrarium-506917-staging
+        run: |
+          gcloud storage cp \
+            apps/skin/index.html \
+            apps/skin/styles.css \
+            apps/skin/main.js \
+            gs://terrarium-506917-staging/ \
+            --cache-control="public, max-age=60" \
+            --project=terrarium-506917

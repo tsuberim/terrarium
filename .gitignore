@@ -1,0 +1,37 @@
+# Operator keys live only in ~/keys/ on the operator machine. Never the repo.
+/keys/
+keys/
+*.pem
+*.p12
+*.pfx
+*.key
+
+# Local env and secret material
+.env
+.env.*
+!.env.example
+
+# Service account JSON and related credential dumps. Never commit these.
+*service-account*.json
+*serviceaccount*.json
+*-sa.json
+sa-*.json
+*credentials*.json
+gha-creds-*.json
+*-key.json
+application_default_credentials.json
+
+# Rust
+target/
+
+# JS / static build leftovers (skin is plain files today)
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

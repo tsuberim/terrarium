@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test kernel
+        run: cargo test --manifest-path crates/kernel/Cargo.toml
+
+  docs:
+    name: required docs exist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docs
+        run: |
+          set -e
+          for f in \
+            README.md \
+            docs/README.md \
+            docs/vision.md \
+            docs/architecture.md \
+            docs/environments.md \
+            docs/secrets.md \
+            docs/journey.md \
+            docs/current-state.md
+          do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done

@@ -1,0 +1,11 @@
+[package]
+name = "terrarium-kernel"
+version = "0.1.0"
+edition = "2021"
+description = "Terrarium world kernel: closed-box mass, WASM creatures later, conservation load-bearing."
+repository = "https://github.com/tsuberim/terrarium"
+license = "UNLICENSED"
+publish = false
+
+[lib]
+path = "src/lib.rs"

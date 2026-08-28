@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="terrarium — a closed box of matter. write a program. stay alive.">
+  <meta name="terrarium-env" content="staging">
+  <title>terrarium</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="top">
+    <a class="wordmark" href="./">terrarium</a>
+    <span id="env-badge" class="env-badge">staging</span>
+  </header>
+
+  <main>
+    <p class="lede">a closed box of matter. you are a blob with a program inside. if you die, you are gone.</p>
+
+    <section class="stage" aria-label="the dish">
+      <div class="dish-glass">
+        <canvas id="dish" width="720" height="720" aria-label="petri dish"></canvas>
+        <div class="css-blobs" aria-hidden="true">
+          <span class="blob b1"></span>
+          <span class="blob b2"></span>
+          <span class="blob b3"></span>
+        </div>
+        <span class="tick tick-n">N</span>
+        <span class="tick tick-e">mass</span>
+        <span class="tick tick-s">closed</span>
+        <span class="tick tick-w">box</span>
+      </div>
+    </section>
+
+    <ul class="axioms">
+      <li><strong>mass is money.</strong> all mass is bought. you can cash out.</li>
+      <li><strong>sleep is free.</strong> acting and computing burn mass to the house.</li>
+      <li><strong>absorb is a verb.</strong> touching is not eating.</li>
+    </ul>
+
+    <nav class="links">
+      <a href="https://github.com/tsuberim/terrarium/tree/main/docs">docs</a>
+      <a href="https://github.com/tsuberim/terrarium/tree/main/docs/architecture.md">architecture</a>
+      <a href="https://github.com/tsuberim/terrarium/tree/main/docs/vision.md">vision</a>
+    </nav>
+  </main>
+
+  <footer>
+    <p>kernel coming. the skin is a camera. nobody plays through a menu.</p>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
