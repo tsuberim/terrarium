@@ -15,6 +15,6 @@ mod wasm_api;
 pub use program::{compile_text, decode_program, encode_program, Instr, Program, MAX_OPS_PER_TICK};
 pub use wasm_api::JsWorld;
 pub use world::{
-    CellId, CellView, InertId, InertView, KernelError, Mass, World, WorldSnapshot, DISH_RADIUS,
-    SENSE_COST,
+    CellId, CellView, InertId, InertView, KernelError, Mass, World, WorldSnapshot, SENSE_COST,
+    WORLD_RADIUS,
 };

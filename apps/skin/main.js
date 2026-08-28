@@ -36,7 +36,7 @@ const CELL_COLORS = [
   "#3dbf7a",
 ];
 const INERT_COLOR = "#8a6a2e";
-const DISH_BG = "#0a1210";
+const WORLD_BG = "#0a1210";
 const VOID_BG = "#020403";
 const RING_COLOR = "#1a2e24";
 const SELECT_COLOR = "#e8f0ea";
@@ -87,7 +87,7 @@ function setConsoleOpen(open) {
   }
 }
 
-function seedDish() {
+function seedWorld() {
   world = new JsWorld();
   var a = world.spawnCell(5000, -28000, -12000);
   var b = world.spawnCell(4000, 22000, 8000);
@@ -103,7 +103,7 @@ function seedDish() {
   refreshCellSelect();
   programEl.value = DEMOS.wander;
   markDemo("wander");
-  setStatus("dish seeded. wander on cell " + a + ".", "ok");
+  setStatus("world seeded. wander on cell " + a + ".", "ok");
 }
 
 function cellLabel(id) {
@@ -151,14 +151,14 @@ function setupCanvas() {
   ctx.imageSmoothingEnabled = false;
 }
 
-function dishRadiusPx() {
+function worldRadiusPx() {
   return Math.round(Math.min(bufW, bufH) * 0.46);
 }
 
 function bodyRadiusPx(mass, worldRadius) {
   var r = Math.sqrt(mass * 2000);
   r = Math.max(5000, Math.min(r, 24000));
-  return Math.max(3, Math.round((r / worldRadius) * dishRadiusPx() * 1.15));
+  return Math.max(3, Math.round((r / worldRadius) * worldRadiusPx() * 1.15));
 }
 
 function fillCircle(x, y, r, color) {
@@ -199,13 +199,13 @@ function draw() {
   if (!lastSnapshot) return;
 
   var radius = lastSnapshot.radius || 100000;
-  var dishR = dishRadiusPx();
-  var scale = dishR / radius;
+  var worldR = worldRadiusPx();
+  var scale = worldR / radius;
   var cx = bufW / 2;
   var cy = bufH / 2;
 
-  fillCircle(cx, cy, dishR, DISH_BG);
-  strokeCircle(cx, cy, dishR, RING_COLOR);
+  fillCircle(cx, cy, worldR, WORLD_BG);
+  strokeCircle(cx, cy, worldR, RING_COLOR);
 
   lastSnapshot.inert.forEach(function (d) {
     var px = cx + d.x * scale;
@@ -284,7 +284,7 @@ function ensureLivingSelection() {
 function onRun() {
   if (!world) return;
   if (!ensureLivingSelection()) {
-    setStatus("no living cells — reset the dish.", "error");
+    setStatus("no living cells — reset the world.", "error");
     return;
   }
   var src = programEl.value;
@@ -298,7 +298,7 @@ function onRun() {
 }
 
 function onReset() {
-  seedDish();
+  seedWorld();
   lastSnapshot = JSON.parse(world.snapshot());
 }
 
@@ -309,7 +309,7 @@ async function main() {
   cellSelect = document.getElementById("cell-select");
   consoleEl = document.getElementById("console");
   toggleBtn = document.getElementById("btn-toggle-console");
-  canvas = document.getElementById("dish");
+  canvas = document.getElementById("world");
   if (!canvas || !canvas.getContext) {
     setStatus("canvas unavailable", "error");
     return;
@@ -331,7 +331,7 @@ async function main() {
 
   setStatus("loading kernel…");
   await init();
-  seedDish();
+  seedWorld();
   lastSnapshot = JSON.parse(world.snapshot());
 
   document.getElementById("btn-run").addEventListener("click", onRun);

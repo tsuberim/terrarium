@@ -3,7 +3,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::program::{compile_text, decode_program, encode_program};
-use crate::world::{Mass, World, DISH_RADIUS};
+use crate::world::{Mass, World, WORLD_RADIUS};
 
 /// JS-facing world handle.
 #[wasm_bindgen]
@@ -16,12 +16,12 @@ impl JsWorld {
     #[wasm_bindgen(constructor)]
     pub fn new() -> JsWorld {
         JsWorld {
-            inner: World::with_radius(DISH_RADIUS),
+            inner: World::with_radius(WORLD_RADIUS),
         }
     }
 
-    #[wasm_bindgen(js_name = dishRadius)]
-    pub fn dish_radius(&self) -> i32 {
+    #[wasm_bindgen(js_name = worldRadius)]
+    pub fn world_radius(&self) -> i32 {
         self.inner.radius()
     }
 
@@ -33,6 +33,11 @@ impl JsWorld {
     #[wasm_bindgen(js_name = houseBurned)]
     pub fn house_burned(&self) -> f64 {
         self.inner.house_burned().get() as f64
+    }
+
+    #[wasm_bindgen(js_name = spawnedMass)]
+    pub fn spawned_mass(&self) -> f64 {
+        self.inner.spawned_mass().get() as f64
     }
 
     #[wasm_bindgen(js_name = tickCount)]
@@ -100,6 +105,8 @@ impl JsWorld {
         out.push_str(&s.total_mass.get().to_string());
         out.push_str(",\"house_burned\":");
         out.push_str(&s.house_burned.get().to_string());
+        out.push_str(",\"spawned_mass\":");
+        out.push_str(&s.spawned_mass.get().to_string());
         out.push_str(",\"radius\":");
         out.push_str(&s.radius.to_string());
         out.push_str(",\"cells\":[");
@@ -142,4 +149,3 @@ impl Default for JsWorld {
         Self::new()
     }
 }
-

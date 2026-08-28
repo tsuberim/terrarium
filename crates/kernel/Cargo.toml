@@ -2,7 +2,7 @@
 name = "terrarium-kernel"
 version = "0.1.0"
 edition = "2021"
-description = "Terrarium world kernel: closed-box mass, dish physics, bytecode guests, conservation load-bearing."
+description = "Terrarium world kernel: closed-box mass, fixed-point physics, bytecode guests, conservation load-bearing."
 repository = "https://github.com/tsuberim/terrarium"
 license = "UNLICENSED"
 publish = false
