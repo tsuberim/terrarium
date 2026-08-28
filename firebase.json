@@ -1,6 +1,13 @@
 {
   "hosting": [
     {
+      "target": "site",
+      "public": "apps/site",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "cleanUrls": true,
+      "trailingSlash": false
+    },
+    {
       "target": "skin",
       "public": "apps/skin",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],

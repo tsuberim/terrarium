@@ -14,18 +14,54 @@ Status tags:
 - **in progress** — someone is building it
 - **requested** — agreed direction, not done yet
 
+## Platform framing
+
+**Status: shipped** (docs + initial surfaces)
+
+Terrarium is a **platform**, not only a browser game:
+
+| Layer | What it is |
+| --- | --- |
+| **Game world** | Auth-free kernel + always-on host. Mass conservation, verbs, toroidal geometry. |
+| **Account / API** | Credits ledger, scoped API tokens, `POST /v1/spawn`, Firebase Auth for humans. |
+| **Hosting** | Static browser shell (landing, play camera, console) on Firebase Hosting; legacy GCS skin deploy until cutover. |
+
+Vision stays a programming game. The **product** is the platform around it — spawn rail, credits, dashboard, persistent host.
+
+## Browser app shell
+
+**Status: shipped** (v1 — landing, about, play, console; polish ongoing)
+
+One product, sparse chrome, short copy. System fonts. No clutter.
+
+| Surface | App | Role |
+| --- | --- | --- |
+| **Landing** | `apps/site` | Brief intro — what Terrarium is, why mass = money, link to play and console. |
+| **About** | `apps/site/about.html` | Deeper read — kernel vs skin, verbs, torus, platform API. |
+| **Play** | `apps/skin` | Fullscreen retro camera on the sim. Primary surface. No billing chrome. |
+| **Console** | `apps/dashboard` | Firebase Auth, credits, API tokens, billing stub. |
+
+Shared nav (`apps/shared/shell.css`, `links.js`) ties the surfaces together. Cross-app URLs are set via `<meta name="terrarium-*">` tags per deploy target (home, about, play, console).
+
+Design rules:
+
+- Elegant, minimalist — clean typography, concise sentences
+- Play stays edge-to-edge; chrome floats, does not shrink the sim
+- Console matches landing palette; no API contract changes for polish
+
 ## Fullscreen retro camera
 
 **Status: shipped**
 
-The skin is a fullscreen retro camera on the sim. No chrome, no dashboard.
+The skin is a fullscreen retro camera on the sim. No stats HUD.
 
 - **Edge-to-edge viewport** — the torus fills the browser window (cover scale). No letterboxed frame, no inset margins shrinking the sim. Chrome (wordmark / program overlay) floats on top and must not reduce the drawable area.
-- **Bigger world** — `WORLD_WIDTH` / `WORLD_HEIGHT` are large enough that the torus feels like an open map, not a tiny dish. Wrapping stays; no circular boundary.
-- **Higher-res pixel framebuffer** — more pixels on the short axis than the early 160px prototype (currently 480px short axis, aspect-following long axis). Still nearest-neighbor upscale (`image-rendering: pixelated`); no smooth anti-aliased blobs. CRT scanlines optional overlay.
+- **Bigger world** — `WORLD_WIDTH` / `WORLD_HEIGHT` are 800_000 fixed-point units each. Wrapping stays; no circular boundary.
+- **Higher-res pixel framebuffer** — 480px on the short axis, aspect-following long axis (PR #14). Nearest-neighbor upscale (`image-rendering: pixelated`); CRT scanlines optional overlay.
 - Minimalist — almost nothing else on screen besides the sim
 - No stats / HUD — no tick counter, mass totals, house burned, FPS, or other overlays on the raw sim
 - Hideable program overlay — wander / chase / sit demos and the paste-a-program editor stay available, but tuck away so writing a creature program does not break the fullscreen feel
+- Wordmark + console link in floating chrome; home/about via meta URLs
 
 Kernel rules unchanged. The camera gets prettier; the box does not.
 
@@ -45,7 +81,7 @@ Mass conservation and kernel verbs stay as in vision — this is geometry and ca
 
 ## Billing, API tokens, and public spawn
 
-**Status: in progress** (Firebase Auth + platform architecture folded in)
+**Status: in progress** (API + dashboard v1 shipped; host wiring + Stripe + Firebase deploy cutover elsewhere)
 
 Players hold **credits** (account balance). Spawning a creature spends credits at a 1:1 rate with kernel mass — spawn is cash-in. The kernel's closed-box ledger still applies inside the world; credits are the rail that pays for `spawn_cell_at`.
 
@@ -56,7 +92,7 @@ Players hold **credits** (account balance). Spawning a creature spends credits a
 | **Skin** | Fullscreen retro camera. Destination: Firebase Hosting client, WebSocket viewer to always-on host. No billing chrome. |
 | **Dashboard** | Firebase Hosting SPA. Firebase Auth for humans; client of `/dashboard/api/*` only. Balance, API tokens, billing stub. |
 | **Public API** | HTTP JSON under `/v1/*`, authenticated with scoped API tokens minted after login. |
-| **Host** | Always-on native `World` (PR #4). API spawn rail connects to it; kernel stays auth-free. |
+| **Host** | Always-on native `World`. API spawn rail connects to it; kernel stays auth-free. |
 
 ### Identity
 
@@ -90,13 +126,14 @@ Players hold **credits** (account balance). Spawning a creature spends credits a
 
 Responses: `401` bad/missing token or scope, `402` insufficient credits, `403` faucet disabled (prod), `400` invalid input.
 
-### Dashboard (v1)
+### Dashboard / console (v1)
 
 - Sign in with Firebase Auth (or dev sign-in locally).
 - View credit balance and environment.
 - Mint / list / revoke scoped API tokens.
 - **Billing / top-up:** stub — Stripe coming soon.
 - **Free credit faucet** (staging and local/dev only): hidden/disabled in production.
+- Shared product nav with landing and play.
 
 ### Staging vs production — free mint
 
@@ -110,5 +147,5 @@ Responses: `401` bad/missing token or scope, `402` insufficient credits, `403` f
 
 - Live Stripe checkout (seam only).
 - Cash-out / attach / split.
-- Full API→host WebSocket integration (architecture described; API still in-process world for v1).
-- Firebase Hosting deploy workflows (config only; GCS workflows remain until switched).
+- Full API→host WebSocket integration (architecture described; separate agent).
+- Firebase Hosting deploy workflows (config in repo; GCS workflows remain until switched).

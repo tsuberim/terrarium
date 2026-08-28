@@ -5,6 +5,7 @@
   "targets": {
     "terrarium-506917": {
       "hosting": {
+        "site": ["terrarium-site-staging"],
         "skin": ["terrarium-skin-staging"],
         "dashboard": ["terrarium-dashboard-staging"]
       }

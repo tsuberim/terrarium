@@ -3,14 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Terrarium — Account</title>
+  <meta name="terrarium-home" content="/">
+  <meta name="terrarium-about" content="/about.html">
+  <meta name="terrarium-play" content="https://storage.googleapis.com/terrarium-506917-staging/index.html">
+  <meta name="terrarium-console" content="/dashboard/">
+  <title>Terrarium — Console</title>
+  <link rel="stylesheet" href="shell.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <nav id="shell-nav" class="shell-nav" aria-label="Primary"></nav>
+
   <main class="panel">
-    <header>
-      <h1>Terrarium</h1>
-      <p class="tagline">Credits, API tokens, billing</p>
+    <header class="page-head">
+      <h1>Console</h1>
+      <p class="lede">Credits, API tokens, billing.</p>
       <p class="env" id="env-label"></p>
     </header>
 
@@ -19,48 +26,52 @@
       <p id="onboard-copy" class="muted"></p>
       <div id="firebase-signin" class="hidden">
         <button id="google-signin" type="button">Sign in with Google</button>
-        <button id="sign-out" type="button" class="danger hidden">Sign out</button>
+        <button id="sign-out" type="button" class="ghost hidden">Sign out</button>
       </div>
-      <button id="dev-signin" type="button" class="hidden">Dev sign-in (local only)</button>
+      <button id="dev-signin" type="button" class="ghost hidden">Dev sign-in</button>
     </section>
 
     <section id="account" class="card hidden">
       <h2>Balance</h2>
-      <p class="balance"><span id="credits">—</span> credits</p>
+      <p class="balance"><span id="credits">—</span> <span class="balance-unit">credits</span></p>
       <p class="muted" id="account-id"></p>
     </section>
 
     <section id="faucet-section" class="card hidden">
-      <h2>Free credits</h2>
-      <p class="muted">Staging and local only. Production disables this faucet.</p>
-      <button id="faucet" type="button">Mint test credits</button>
+      <h2>Test credits</h2>
+      <p class="muted">Staging and local only.</p>
+      <button id="faucet" type="button">Mint credits</button>
     </section>
 
     <section id="billing-section" class="card hidden">
       <h2>Billing</h2>
-      <p class="muted">Top up with real payment — coming soon.</p>
-      <button id="checkout" type="button" disabled>Stripe checkout (coming soon)</button>
+      <p class="muted">Top up — Stripe coming soon.</p>
+      <button id="checkout" type="button" disabled>Checkout</button>
       <p class="notice" id="billing-notice"></p>
     </section>
 
     <section id="tokens-section" class="card hidden">
       <h2>API tokens</h2>
-      <p class="muted">Machine tokens for <code>POST /v1/spawn</code>. Scoped: <code>spawn</code>, <code>read</code>.</p>
-      <form id="mint-form">
+      <p class="muted">For <code>POST /v1/spawn</code>. Scopes: <code>spawn</code>, <code>read</code>.</p>
+      <form id="mint-form" class="token-form">
         <input id="token-label" type="text" placeholder="Label" value="default" maxlength="64">
         <label class="scope"><input type="checkbox" id="scope-spawn" checked> spawn</label>
         <label class="scope"><input type="checkbox" id="scope-read" checked> read</label>
-        <button type="submit">Mint token</button>
+        <button type="submit">Mint</button>
       </form>
       <div id="new-token" class="secret hidden"></div>
       <ul id="token-list"></ul>
     </section>
 
     <section class="card">
-      <h2>Quick test</h2>
+      <h2>Spawn example</h2>
       <pre id="curl-example" class="code"></pre>
     </section>
   </main>
+  <script type="module">
+    import { injectShellNav } from "./links.js";
+    injectShellNav("shell-nav", "console");
+  </script>
   <script src="app.js" type="module"></script>
 </body>
 </html>
