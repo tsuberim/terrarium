@@ -37,7 +37,7 @@ Set up automations where they help (e.g. CI alerts → `#ci`).
 
 ## Access
 
-- **GitHub:** PAT in env secrets. Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). You control it.
+- **GitHub:** PAT in env secrets. Repo: [github.com/tsuberim/terrarium](https://github.com/tsuberim/terrarium). You control it. **Push to `main`. No PRs** — you're responsible for the repo.
 - **GCP:** creds in env secrets, project `terrarium-506917`. **Watch cost.** Staging/prod are cheap GCS buckets — keep it that way unless we explicitly decide otherwise.
 
 ## Docs
