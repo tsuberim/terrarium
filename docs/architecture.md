@@ -23,7 +23,7 @@ Terrarium is four layers plus identity. The **kernel** is physics and mass accou
 └────────────────────────┘
 ```
 
-**Destination:** one always-on native process owns the authoritative `World`. Browsers are viewers and control surfaces only. **Legacy (still on main today):** the skin can tick kernel WASM in-tab and static files deploy to GCS — both are transitional until host + Firebase Hosting land.
+**Destination:** one always-on native process owns the authoritative `World`. Browsers are viewers and control surfaces only.
 
 ## Kernel
 
@@ -51,20 +51,19 @@ Sleep is not a verb. Sleep is free.
 
 ## Host (always-on game process)
 
-Crate: `crates/host` (see open PR #4 — native host + WebSocket skin). **Not merged to main yet**; architecture assumes it is the sim process of record.
+Crate: `crates/host`. **Shipped on main.**
 
 - Owns one `World`, seeds it, calls `tick` on a fixed interval whether or not a browser is open.
-- Serves the skin static files (today from the same process; destination: Firebase Hosting with WS to host).
 - Pushes world snapshots to clients over **WebSocket** (`/ws`); accepts `set_program`, `reset`.
-- Scale-to-zero would wipe in-memory state, so production uses **min instances 1, max 1** on a cheap container (Cloud Run or equivalent — not a farm).
-
-The host does **not** own billing. Spawn paid for with credits goes through the API, which calls into the shared world (today in-process on `crates/api`; later a call from API → host).
+- **`/internal/spawn`** and **`/internal/snapshot`** — bearer-authenticated when `TERRARIUM_HOST_TOKEN` is set; used by the API credits rail.
+- Scale-to-zero would wipe in-memory state, so production uses **min instances 1, max 1** on Cloud Run.
+- Serves `apps/skin` static files locally when `SKIN_DIR` is set; production skin is on Firebase Hosting.
 
 ## Skin
 
-Fullscreen retro **camera** — not the game. Destination: static app on **Firebase Hosting**, connecting to the host via WebSocket/SSE for snapshots. No sim ticking in the tab.
+Fullscreen retro **camera** — not the game. Static app on **Firebase Hosting**, connecting to the host via WebSocket for snapshots. No sim ticking in the tab.
 
-**Legacy today:** `apps/skin` loads kernel WASM and ticks locally; deployed to GCS buckets. That path is deprecated once host + Firebase Hosting are wired.
+Kernel WASM (`scripts/build-wasm.sh`) remains for optional local tooling; production skin does not load it.
 
 ## Dashboard
 
@@ -121,8 +120,7 @@ credits (SQLite)  ──spawn──►  World::spawn_cell_at  ──►  mass in
 | Human identity | **Firebase Auth** | ID tokens to API; no passwords in our DB |
 | Static clients | **Firebase Hosting** | Skin + dashboard SPAs |
 | Always-on sim | **Host** (`crates/host`) | Native kernel, WebSocket |
-| Credits / tokens / spawn rail | **API** (`crates/api`) | SQLite; merges into host process later |
-| Legacy static deploy | GCS buckets | **TODO:** migrate workflows to Firebase Hosting (see `firebase.json`, `docs/environments.md`) |
+| Credits / tokens / spawn rail | **API** (`crates/api`) | SQLite; calls host when `TERRARIUM_HOST_URL` set |
 
 Public Firebase web config (`apiKey`, `authDomain`, `projectId`) is not secret — served from `/dashboard/api/config` or checked-in example. Service account keys stay in `~/keys/` only.
 

@@ -10,7 +10,7 @@
     {
       "target": "skin",
       "public": "apps/skin",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "pkg/**"],
       "headers": [
         {
           "source": "**/*.wasm",
@@ -21,7 +21,7 @@
     {
       "target": "dashboard",
       "public": "apps/dashboard",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "pkg/**"],
       "rewrites": [
         {
           "source": "**",

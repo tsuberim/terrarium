@@ -6,9 +6,11 @@ mod firebase;
 mod identity;
 mod routes;
 mod scopes;
+mod world;
 
 pub use config::{Config, Environment, FirebaseWebConfig};
 pub use db::{spawn_tick_loop, ApiTokenRow, Db, WorldHost};
+pub use world::{RemoteWorldHost, WorldBackend};
 pub use error::{ApiError, ApiResult};
 pub use identity::IdentityService;
 pub use scopes::TokenScopes;
@@ -26,7 +28,7 @@ use tower_http::trace::TraceLayer;
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<Db>,
-    pub world: Arc<WorldHost>,
+    pub world: WorldBackend,
     pub config: Config,
     pub identity: Arc<IdentityService>,
 }

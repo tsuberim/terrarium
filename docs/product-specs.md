@@ -24,7 +24,7 @@ Terrarium is a **platform**, not only a browser game:
 | --- | --- |
 | **Game world** | Auth-free kernel + always-on host. Mass conservation, verbs, toroidal geometry. |
 | **Account / API** | Credits ledger, scoped API tokens, `POST /v1/spawn`, Firebase Auth for humans. |
-| **Hosting** | Static browser shell (landing, play camera, console) on Firebase Hosting; legacy GCS skin deploy until cutover. |
+| **Hosting** | Static browser shell (landing, play camera, console) on Firebase Hosting; Cloud Run host + API. |
 
 Vision stays a programming game. The **product** is the platform around it — spawn rail, credits, dashboard, persistent host.
 
@@ -81,7 +81,7 @@ Mass conservation and kernel verbs stay as in vision — this is geometry and ca
 
 ## Billing, API tokens, and public spawn
 
-**Status: in progress** (API + dashboard v1 shipped; host wiring + Stripe + Firebase deploy cutover elsewhere)
+**Status: shipped** (API + dashboard + host + Firebase Hosting deploy on main)
 
 Players hold **credits** (account balance). Spawning a creature spends credits at a 1:1 rate with kernel mass — spawn is cash-in. The kernel's closed-box ledger still applies inside the world; credits are the rail that pays for `spawn_cell_at`.
 
@@ -92,7 +92,7 @@ Players hold **credits** (account balance). Spawning a creature spends credits a
 | **Skin** | Fullscreen retro camera. Destination: Firebase Hosting client, WebSocket viewer to always-on host. No billing chrome. |
 | **Dashboard** | Firebase Hosting SPA. Firebase Auth for humans; client of `/dashboard/api/*` only. Balance, API tokens, billing stub. |
 | **Public API** | HTTP JSON under `/v1/*`, authenticated with scoped API tokens minted after login. |
-| **Host** | Always-on native `World`. API spawn rail connects to it; kernel stays auth-free. |
+| **Host** | Always-on native `World`. API spawn rail delegates via `/internal/spawn`. |
 
 ### Identity
 
@@ -147,5 +147,3 @@ Responses: `401` bad/missing token or scope, `402` insufficient credits, `403` f
 
 - Live Stripe checkout (seam only).
 - Cash-out / attach / split.
-- Full API→host WebSocket integration (architecture described; separate agent).
-- Firebase Hosting deploy workflows (config in repo; GCS workflows remain until switched).

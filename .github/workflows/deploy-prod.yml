@@ -9,10 +9,90 @@ permissions:
   contents: read
   id-token: write
 
-# Copy static skin to the public prod GCS bucket. No Docker, no Cloud Run.
+env:
+  GCP_PROJECT: terrarium-506917
+  GCP_REGION: us-central1
+  HOST_SERVICE: terrarium-host-prod
+  API_SERVICE: terrarium-api-prod
+
 jobs:
-  deploy:
-    name: gcloud storage cp (prod)
+  deploy-host:
+    name: Cloud Run host (prod)
+    if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      host_url: ${{ steps.host.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy host
+        id: host
+        env:
+          TERRARIUM_HOST_TOKEN: ${{ secrets.TERRARIUM_HOST_TOKEN }}
+        run: |
+          gcloud run deploy "$HOST_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --source=. \
+            --allow-unauthenticated \
+            --min-instances=1 \
+            --max-instances=1 \
+            --memory=256Mi \
+            --cpu=1 \
+            --no-cpu-throttling \
+            --timeout=3600 \
+            --set-env-vars="TERRARIUM_ENV=production,TERRARIUM_HOST_TOKEN=${TERRARIUM_HOST_TOKEN}" \
+            --quiet
+          URL=$(gcloud run services describe "$HOST_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+  deploy-api:
+    name: Cloud Run API (prod)
+    needs: [deploy-host]
+    if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      api_url: ${{ steps.api.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy API
+        id: api
+        env:
+          TERRARIUM_HOST_TOKEN: ${{ secrets.TERRARIUM_HOST_TOKEN }}
+        run: |
+          gcloud run deploy "$API_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --source=crates/api \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --cpu=1 \
+            --timeout=300 \
+            --set-env-vars="TERRARIUM_ENV=production,FIREBASE_PROJECT_ID=terrarium-506917,TERRARIUM_HOST_URL=${{ needs.deploy-host.outputs.host_url }},TERRARIUM_HOST_TOKEN=${TERRARIUM_HOST_TOKEN}" \
+            --quiet
+          URL=$(gcloud run services describe "$API_SERVICE" \
+            --project="$GCP_PROJECT" \
+            --region="$GCP_REGION" \
+            --format='value(status.url)')
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+  deploy-hosting:
+    name: Firebase Hosting (prod)
+    needs: [deploy-host, deploy-api]
     if: ${{ vars.GCP_WIF_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
     runs-on: ubuntu-latest
     environment: production
@@ -22,22 +102,31 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-          audience: https://github.com/tsuberim/terrarium
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Copy skin to gs://terrarium-506917-prod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Patch static meta tags
+        env:
+          TERRARIUM_WS_HOST: ${{ needs.deploy-host.outputs.host_url }}
+          TERRARIUM_API_URL: ${{ needs.deploy-api.outputs.api_url }}
+          TERRARIUM_PLAY_URL: https://terrarium-skin-prod.web.app
+          TERRARIUM_SITE_URL: https://terrarium-site-prod.web.app
+          TERRARIUM_CONSOLE_URL: https://terrarium-dashboard-prod.web.app
+          TERRARIUM_ENV: production
+        run: bash scripts/patch-hosting-meta.sh
+      - name: Deploy Firebase Hosting
         run: |
-          gcloud storage cp \
-            apps/skin/index.html \
-            apps/skin/styles.css \
-            apps/skin/main.js \
-            gs://terrarium-506917-prod/ \
-            --cache-control="public, max-age=60" \
-            --project=terrarium-506917
+          npm install -g firebase-tools
+          firebase deploy \
+            --only hosting:terrarium-site-prod,hosting:terrarium-skin-prod,hosting:terrarium-dashboard-prod \
+            --project="$GCP_PROJECT" \
+            --non-interactive
 
   notify:
     name: slack (#deploys)
-    needs: [deploy]
-    if: always() && needs.deploy.result != 'skipped'
+    needs: [deploy-host, deploy-api, deploy-hosting]
+    if: always() && needs.deploy-host.result != 'skipped'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +136,8 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           channel: C0BT9UDEVS7
           text: |
-            ${{ needs.deploy.result == 'success' && format(':white_check_mark: Production is live — `{0}`.', github.ref_name) || format(':x: Production deploy failed — `{0}`.', github.ref_name) }}
-            https://storage.googleapis.com/terrarium-506917-prod/index.html
+            ${{ needs.deploy-hosting.result == 'success' && format(':white_check_mark: Production is live — `{0}`.', github.ref_name) || format(':x: Production deploy failed — `{0}`.', github.ref_name) }}
+            Skin: https://terrarium-skin-prod.web.app
+            Dashboard: https://terrarium-dashboard-prod.web.app
+            Host: ${{ needs.deploy-host.outputs.host_url }}
             <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>

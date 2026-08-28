@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use http_body_util::BodyExt;
-use terrarium_api::{app, AppState, Config, Db, IdentityService, WorldHost, TokenScopes};
+use terrarium_api::{app, AppState, Config, Db, IdentityService, WorldBackend, WorldHost, TokenScopes};
 use tower::ServiceExt;
 
 fn test_state(env: &str) -> AppState {
@@ -15,7 +15,7 @@ fn test_state(env: &str) -> AppState {
     config.dev_auth = true;
     AppState {
         db: Arc::new(Db::open(&config.database_path).unwrap()),
-        world: Arc::new(WorldHost::new()),
+        world: WorldBackend::Local(Arc::new(WorldHost::new())),
         identity: Arc::new(IdentityService::new(&config)),
         config,
     }
