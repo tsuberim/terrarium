@@ -1,0 +1,142 @@
+/* Shared Terrarium browser shell — sparse nav, dark green palette. System fonts only. */
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0f0c;
+  --panel: #121a14;
+  --border: #2a3828;
+  --text: #e4ece0;
+  --muted: #849878;
+  --accent: #6dff9a;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.shell-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+
+.shell-nav .brand {
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: lowercase;
+  color: var(--text);
+  text-decoration: none;
+  margin-right: auto;
+}
+
+.shell-nav .brand:hover { color: var(--accent); }
+
+.shell-nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.shell-nav a:hover { color: var(--text); }
+
+.shell-nav a[aria-current="page"] {
+  color: var(--accent);
+}
+
+.shell-main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+.shell-main h1 {
+  font-size: clamp(1.6rem, 4vw, 2rem);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.lede {
+  color: var(--muted);
+  font-size: 1.05rem;
+  margin: 0 0 2rem;
+}
+
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 2rem 0;
+}
+
+.cta {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border-radius: 4px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.cta-primary {
+  background: rgba(109, 255, 154, 0.12);
+  border-color: rgba(109, 255, 154, 0.35);
+  color: var(--accent);
+}
+
+.cta:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.shell-main section {
+  margin-top: 2.5rem;
+}
+
+.shell-main h2 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.65rem;
+}
+
+.shell-main p {
+  margin: 0 0 0.85rem;
+  color: var(--text);
+}
+
+.shell-main ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+}
+
+.shell-main li { margin-bottom: 0.4rem; }
+
+.shell-main code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  color: var(--accent);
+}
+
+@media (max-width: 520px) {
+  .shell-nav { gap: 0.85rem; flex-wrap: wrap; }
+  .shell-nav .brand { width: 100%; margin-right: 0; }
+}

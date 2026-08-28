@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="terrarium — a closed box of matter. write a program. stay alive.">
   <meta name="terrarium-env" content="staging">
+  <meta name="terrarium-home" content="/">
+  <meta name="terrarium-about" content="/about.html">
+  <meta name="terrarium-play" content="./">
+  <meta name="terrarium-console" content="/dashboard/">
   <title>terrarium</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -13,8 +17,11 @@
   <div class="crt" aria-hidden="true"></div>
 
   <header class="chrome">
-    <a class="wordmark" href="./">terrarium</a>
+    <a class="wordmark" id="link-home" href="/">terrarium</a>
     <span id="env-badge" class="env-badge">staging</span>
+    <nav class="chrome-links" aria-label="Product">
+      <a class="chrome-link" id="link-console" href="/dashboard/">console</a>
+    </nav>
     <button type="button" id="btn-toggle-console" class="toggle" aria-expanded="false" aria-controls="console">
       program
     </button>

@@ -76,6 +76,18 @@ function envBadge() {
   document.documentElement.setAttribute("data-env", env);
 }
 
+function wireChromeLinks() {
+  function meta(name, fallback) {
+    var el = document.querySelector('meta[name="' + name + '"]');
+    var v = el && el.getAttribute("content");
+    return (v && v.trim()) || fallback;
+  }
+  var home = document.getElementById("link-home");
+  var consoleLink = document.getElementById("link-console");
+  if (home) home.href = meta("terrarium-home", "/");
+  if (consoleLink) consoleLink.href = meta("terrarium-console", "/dashboard/");
+}
+
 function setConsoleOpen(open) {
   if (open) {
     consoleEl.hidden = false;
@@ -347,6 +359,7 @@ function onReset() {
 
 async function main() {
   envBadge();
+  wireChromeLinks();
   statusEl = document.getElementById("status");
   programEl = document.getElementById("program");
   cellSelect = document.getElementById("cell-select");

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="About Terrarium — vision, verbs, and the platform.">
+  <meta name="terrarium-home" content="/">
+  <meta name="terrarium-about" content="/about.html">
+  <meta name="terrarium-play" content="https://storage.googleapis.com/terrarium-506917-staging/index.html">
+  <meta name="terrarium-console" content="/dashboard/">
+  <title>About — Terrarium</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <nav class="shell-nav" aria-label="Primary">
+    <a class="brand" href="index.html">terrarium</a>
+    <a href="about.html" aria-current="page">about</a>
+    <a href="https://storage.googleapis.com/terrarium-506917-staging/index.html">play</a>
+    <a href="/dashboard/">console</a>
+  </nav>
+
+  <main class="shell-main">
+    <h1>Look down. Write code. Stay alive.</h1>
+    <p class="lede">
+      Terrarium is a 2D realtime MMO programming game. If your creature dies, you are gone.
+      There is no click-to-play agency — only programs and physics.
+    </p>
+
+    <section>
+      <h2>Kernel and skin</h2>
+      <p>
+        The <strong>kernel</strong> runs the world: deterministic physics, mass accounting,
+        and a tiny guest instruction set. It is auth-free and conservation-first.
+      </p>
+      <p>
+        The <strong>skin</strong> is a retro camera. It does not run the economy or mint mass.
+        You look through it; you do not play through it.
+      </p>
+    </section>
+
+    <section>
+      <h2>Seven verbs</h2>
+      <ul>
+        <li><code>thrust</code> — move; costs mass</li>
+        <li><code>sense</code> — look; costs mass</li>
+        <li><code>absorb</code> — take inert mass (explicit, not auto-eat)</li>
+        <li><code>dump</code> — leave inert matter in the world</li>
+        <li><code>attach</code> / <code>split</code> — bodies (later milestones)</li>
+        <li><code>cash out</code> — mass leaves the box as money (later)</li>
+      </ul>
+      <p>Sleep is free. Idle life is cheap. Thought and motion are not.</p>
+    </section>
+
+    <section>
+      <h2>Open torus</h2>
+      <p>
+        The world wraps on both axes — move off an edge and re-enter on the opposite side.
+        No petri-dish rim. Large enough to feel like a map.
+      </p>
+    </section>
+
+    <section>
+      <h2>Platform</h2>
+      <p>
+        Around the game: Firebase Auth for humans, a credits ledger, scoped API tokens,
+        and <code>POST /v1/spawn</code> to cash credits into mass at a position.
+        An always-on native host runs the authoritative world; the API owns billing.
+      </p>
+      <p>
+        Use the <a href="/dashboard/">console</a> for balance and tokens.
+        Use <a href="https://storage.googleapis.com/terrarium-506917-staging/index.html">play</a>
+        to watch the sim.
+      </p>
+    </section>
+
+    <div class="cta-row">
+      <a class="cta cta-primary" href="https://storage.googleapis.com/terrarium-506917-staging/index.html">Play</a>
+      <a class="cta" href="/dashboard/">Console</a>
+    </div>
+  </main>
+</body>
+</html>

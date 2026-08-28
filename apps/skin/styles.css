@@ -90,6 +90,24 @@ body {
 
 .wordmark:hover { color: var(--glow); opacity: 1; }
 
+.chrome-links {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+
+.chrome-link {
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.chrome-link:hover { color: var(--glow); opacity: 1; }
+
 .env-badge {
   font-size: 0.58rem;
   font-weight: 700;
@@ -109,7 +127,6 @@ body {
 }
 
 .toggle {
-  margin-left: auto;
   font-family: var(--font);
   font-size: 0.68rem;
   letter-spacing: 0.14em;

@@ -124,7 +124,7 @@ async function refresh() {
     if (!t.revoked_at) {
       const btn = document.createElement("button");
       btn.textContent = "Revoke";
-      btn.className = "danger";
+      btn.className = "ghost";
       btn.type = "button";
       btn.onclick = async () => {
         await api(`/dashboard/api/tokens/${t.id}`, { method: "DELETE" });
