@@ -1,89 +1,94 @@
 # Environments
 
-GCP project: **`terrarium-506917`**. Region: **`us-central1`**.
+GCP / Firebase project: **`terrarium-506917`**. Region: **`us-central1`**.
 
-This milestone is cheap on purpose. The **skin** is static files on public GCS buckets. The **API + dashboard** run as one lightweight process (local dev or a single Cloud Run service on staging — not a farm).
+## Destination vs legacy
 
-| Name | Skin (GCS) | API (when deployed) |
+| | Destination | Legacy (main today) |
 | --- | --- | --- |
-| Staging | https://storage.googleapis.com/terrarium-506917-staging/index.html | Cloud Run `terrarium-api-staging` (optional; see below) |
-| Production | https://storage.googleapis.com/terrarium-506917-prod/index.html | Cloud Run `terrarium-api-prod` (optional; faucet **off**) |
-| Local | http://127.0.0.1:8080/ (`python3 -m http.server --directory apps/skin`) | http://127.0.0.1:3000/ (`./scripts/run-api.sh`; faucet **on**) |
+| Skin + dashboard static files | **Firebase Hosting** | GCS buckets (`gcloud storage cp`) |
+| Sim process | **Host** (`crates/host`, PR #4) WebSocket | WASM ticks in browser tab |
+| Human auth | **Firebase Auth** | Dev session tokens (`trm_sess_…`) |
+| API | Cloud Run or co-located with host | `./scripts/run-api.sh` locally |
 
-| Bucket | Purpose |
+`firebase.json` + `.firebaserc` are checked in. **TODO:** switch GitHub deploy workflows from GCS to `firebase deploy` — not done on this branch.
+
+### Firebase Hosting (config only)
+
+```bash
+# operator machine — after firebase login
+firebase deploy --only hosting:skin --project terrarium-506917      # staging target TBD
+firebase deploy --only hosting:dashboard --project terrarium-506917
+```
+
+Hosting targets in `firebase.json`: `skin` → `apps/skin`, `dashboard` → `apps/dashboard`.
+
+### Legacy GCS (still wired in CI)
+
+| Bucket | URL |
 | --- | --- |
-| `gs://terrarium-506917-staging` | Skin static files |
-| `gs://terrarium-506917-prod` | Skin static files |
-
-The skin lives in `apps/skin/` (`index.html`, `styles.css`, `main.js`, `pkg/` WASM). Deploy is a copy:
+| `gs://terrarium-506917-staging` | https://storage.googleapis.com/terrarium-506917-staging/index.html |
+| `gs://terrarium-506917-prod` | https://storage.googleapis.com/terrarium-506917-prod/index.html |
 
 ```bash
 gcloud storage cp -r apps/skin/* gs://terrarium-506917-staging --cache-control="public, max-age=60"
-gcloud storage cp -r apps/skin/* gs://terrarium-506917-prod --cache-control="public, max-age=60"
+./scripts/build-wasm.sh   # when kernel changed
 ```
 
-Rebuild the kernel WASM before deploy when the crate changes:
+## Local development
 
 ```bash
-./scripts/build-wasm.sh
-```
-Objects must be publicly readable. Website configuration can wait; the `index.html` URLs above are enough.
-
-## API (local)
-
-```bash
-cp .env.example .env   # TERRARIUM_ENV=local → free mint on
-./scripts/run-api.sh   # http://127.0.0.1:3000/dashboard/
+cp .env.example .env
+./scripts/run-api.sh          # API + dashboard fallback at :3000
+python3 -m http.server 8080 --directory apps/skin   # legacy WASM skin
 ```
 
-QA flow: open dashboard → create account → faucet credits → mint API token → `curl -X POST …/v1/spawn` with Bearer token.
+| Service | URL | Notes |
+| --- | --- | --- |
+| API | http://127.0.0.1:3000/ | JSON + dev dashboard static |
+| Dashboard | http://127.0.0.1:3000/dashboard/ | Dev sign-in when Firebase unset |
+| Skin (legacy) | http://127.0.0.1:8080/ | WASM in-tab |
 
-## API (staging deploy — optional)
+QA: dashboard → dev sign-in (or Firebase) → faucet → mint scoped token → `curl POST /v1/spawn`.
 
-One Cloud Run service, scale-to-zero, SQLite on `/tmp` (ephemeral — fine for staging QA). Set `TERRARIUM_ENV=staging` so the faucet works. No Stripe keys required.
+## API env vars
+
+See `.env.example`. Key vars:
+
+| Variable | Purpose |
+| --- | --- |
+| `TERRARIUM_ENV` | `local` / `staging` / `production` — controls free-credit faucet |
+| `FIREBASE_PROJECT_ID` | When set, dashboard requires Firebase ID tokens |
+| `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN` | Public web config served to dashboard (not secrets) |
+| `TERRARIUM_DEV_AUTH` | `1` (default) allows dev session tokens when Firebase unset |
+
+Staging Cloud Run example:
 
 ```bash
-# from repo root, after cargo build
 gcloud run deploy terrarium-api-staging \
   --source crates/api \
   --region us-central1 \
   --project terrarium-506917 \
-  --set-env-vars TERRARIUM_ENV=staging \
+  --set-env-vars TERRARIUM_ENV=staging,FIREBASE_PROJECT_ID=terrarium-506917 \
   --allow-unauthenticated
 ```
 
-Production deploy is the same with `TERRARIUM_ENV=production` (faucet disabled).
+Production: same with `TERRARIUM_ENV=production` (faucet **off**).
 
 ## CI
 
-GitHub Actions, on pull requests and on push to `main`:
+GitHub Actions on PR and push to `main`:
 
-1. `cargo test --manifest-path crates/kernel/Cargo.toml`
-2. `cargo test --manifest-path crates/api/Cargo.toml`
-3. Required docs files exist
+1. `cargo test -p terrarium-kernel`
+2. `cargo test -p terrarium-api` (dev auth — no Firebase keys in CI)
+3. Required docs exist
 
-That is all CI does. No image builds. No deploys inside the test workflow.
+Failures post to **`#ci`** when `SLACK_BOT_TOKEN` is set.
 
-Failures post to **`#ci`** (`C0BT9UDTQJX`) when the `SLACK_BOT_TOKEN` repository secret is set (Remy bot token; see below).
+## Deploy workflows (legacy GCS)
 
-## Deploy (when GCP is wired)
-
-Workflows on `main` (staging) and on tags `v*` (prod) authenticate with **Workload Identity Federation** and then `gcloud storage cp` the skin. They use repository variables `GCP_WIF_PROVIDER` and `GCP_SERVICE_ACCOUNT`, and pass `audience: https://github.com/tsuberim/terrarium` to `google-github-actions/auth@v2` (must match the GCP OIDC provider's allowed audiences). If the variables are not set yet, the copy job is skipped; CI still has to be green.
-
-GitHub Actions must use WIF. Never commit keys. Never paste a service-account JSON into GitHub Secrets.
-
-Deploy results (success or failure) post to **`#deploys`** (`C0BT9UDEVS7`) when `SLACK_BOT_TOKEN` is set.
-
-## Slack (CI and deploys)
-
-GitHub Actions post as **Remy** via the Slack Web API (`chat.postMessage`). No incoming webhooks.
-
-| Secret | Bot | Channels |
-| --- | --- | --- |
-| `SLACK_BOT_TOKEN` | Remy | `#ci`, `#deploys` |
-
-Add the secret under GitHub → repo → Settings → Secrets and variables → Actions. The operator bot token lives in `~/keys/slack-remy.bot` (see [secrets.md](secrets.md)) — never commit it. The composite action at `.github/actions/slack-notify` skips quietly if the secret is missing.
+Workflows on `main` / tags `v*` use WIF + `gcloud storage cp` for skin only. See [secrets.md](secrets.md). Firebase Hosting deploy is a follow-up.
 
 ## Secrets
 
-Operator keys live only in `~/keys/` on the operator machine. See [secrets.md](secrets.md).
+Operator keys in `~/keys/` only. See [secrets.md](secrets.md).

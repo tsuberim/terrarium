@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "terrarium-506917"
+  },
+  "targets": {
+    "terrarium-506917": {
+      "hosting": {
+        "skin": ["terrarium-skin-staging"],
+        "dashboard": ["terrarium-dashboard-staging"]
+      }
+    }
+  }
+}

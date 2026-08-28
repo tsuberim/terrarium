@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use terrarium_api::{app, spawn_tick_loop, AppState, Config, Db, WorldHost};
+use terrarium_api::{app, spawn_tick_loop, AppState, Config, Db, IdentityService, WorldHost};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -12,12 +12,14 @@ async fn main() {
     let config = Config::from_env();
     let db = Arc::new(Db::open(&config.database_path).expect("open database"));
     let world = Arc::new(WorldHost::new());
+    let identity = Arc::new(IdentityService::new(&config));
     spawn_tick_loop(world.clone());
 
     let state = AppState {
         db,
         world,
         config: config.clone(),
+        identity,
     };
 
     let router = app(state);
@@ -27,6 +29,8 @@ async fn main() {
     tracing::info!(
         env = config.env.name(),
         free_mint = config.env.allows_free_mint(),
+        firebase = config.firebase_project_id.is_some(),
+        dev_auth = config.dev_auth,
         addr = %config.listen_addr,
         "terrarium-api listening"
     );

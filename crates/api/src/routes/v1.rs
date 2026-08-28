@@ -16,12 +16,16 @@ pub async fn health() -> &'static str {
 pub async fn create_account(
     State(state): State<AppState>,
 ) -> ApiResult<Json<CreateAccountResponse>> {
-    let (account_id, session_token) = state.db.create_account()?;
+    if state.identity.firebase_configured() || !state.identity.dev_auth_enabled() {
+        return Err(ApiError::Forbidden);
+    }
+    let (account_id, session_token) = state.db.create_dev_account()?;
     Ok(Json(CreateAccountResponse {
         account_id,
         session_token,
         environment: state.config.env.name().to_string(),
         free_mint_enabled: state.config.env.allows_free_mint(),
+        auth_mode: "dev".to_string(),
     }))
 }
 
@@ -31,6 +35,7 @@ pub struct CreateAccountResponse {
     session_token: String,
     environment: String,
     free_mint_enabled: bool,
+    auth_mode: String,
 }
 
 #[derive(Deserialize)]
@@ -62,7 +67,8 @@ pub async fn spawn(
 ) -> ApiResult<(StatusCode, Json<SpawnResponse>)> {
     let token = bearer_from_header(headers.get("authorization").and_then(|v| v.to_str().ok()))
         .ok_or(ApiError::Unauthorized)?;
-    let account_id = state.db.account_for_api_token(token)?;
+    let (account_id, scopes) = state.db.account_for_api_token(token)?;
+    scopes.require_spawn()?;
     if body.mass == 0 {
         return Err(ApiError::BadRequest("mass must be greater than zero".into()));
     }
@@ -102,7 +108,8 @@ pub async fn world_snapshot(
 ) -> ApiResult<Json<serde_json::Value>> {
     let token = bearer_from_header(headers.get("authorization").and_then(|v| v.to_str().ok()))
         .ok_or(ApiError::Unauthorized)?;
-    let _account = state.db.account_for_api_token(token)?;
+    let (_account_id, scopes) = state.db.account_for_api_token(token)?;
+    scopes.require_read()?;
     let json = state.world.snapshot_json()?;
     let value: serde_json::Value =
         serde_json::from_str(&json).map_err(|_| ApiError::Internal)?;
