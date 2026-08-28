@@ -5,8 +5,8 @@ This folder is the source of truth for terrarium: intent, architecture, environm
 | Doc | What it is |
 | --- | --- |
 | [vision.md](vision.md) | What the game is, and the rules that do not move |
-| [architecture.md](architecture.md) | Kernel, skin, mass accounting, the seven verbs |
-| [environments.md](environments.md) | CI, staging, prod, GCP project, how deploys stay cheap |
+| [architecture.md](architecture.md) | Kernel, native host, skin client, mass accounting, the seven verbs |
+| [environments.md](environments.md) | CI, Cloud Run staging/prod, GCP project, how deploys stay cheap |
 | [secrets.md](secrets.md) | Keys live in `~/keys/` only. Never the repo, never copies in GitHub secrets |
 | [journey.md](journey.md) | Development log |
 | [current-state.md](current-state.md) | Honest snapshot of what exists right now |
