@@ -43,8 +43,8 @@ const SELECT_COLOR = "#e8f0ea";
 
 const TICKS_PER_FRAME = 1;
 const MS_PER_TICK = 50;
-/** Low-res framebuffer; CSS scales with image-rendering: pixelated */
-const PIXEL_RES = 160;
+/** Short-axis pixel count; long axis follows viewport aspect (square pixels). */
+const PIXEL_SHORT = 160;
 
 let world = null;
 let selectedCell = 0;
@@ -58,6 +58,8 @@ let consoleEl;
 let toggleBtn;
 let canvas;
 let ctx;
+let bufW = PIXEL_SHORT;
+let bufH = PIXEL_SHORT;
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg || "";
@@ -133,15 +135,30 @@ function markDemo(name) {
 }
 
 function setupCanvas() {
-  canvas.width = PIXEL_RES;
-  canvas.height = PIXEL_RES;
+  var vw = Math.max(1, window.innerWidth || 1);
+  var vh = Math.max(1, window.innerHeight || 1);
+  if (vw >= vh) {
+    bufH = PIXEL_SHORT;
+    bufW = Math.max(PIXEL_SHORT, Math.round(PIXEL_SHORT * (vw / vh)));
+  } else {
+    bufW = PIXEL_SHORT;
+    bufH = Math.max(PIXEL_SHORT, Math.round(PIXEL_SHORT * (vh / vw)));
+  }
+  if (canvas.width !== bufW || canvas.height !== bufH) {
+    canvas.width = bufW;
+    canvas.height = bufH;
+  }
   ctx.imageSmoothingEnabled = false;
+}
+
+function dishRadiusPx() {
+  return Math.round(Math.min(bufW, bufH) * 0.46);
 }
 
 function bodyRadiusPx(mass, worldRadius) {
   var r = Math.sqrt(mass * 2000);
-  r = Math.max(4000, Math.min(r, 22000));
-  return Math.max(2, Math.round((r / worldRadius) * (PIXEL_RES * 0.46)));
+  r = Math.max(5000, Math.min(r, 24000));
+  return Math.max(3, Math.round((r / worldRadius) * dishRadiusPx() * 1.15));
 }
 
 function fillCircle(x, y, r, color) {
@@ -177,16 +194,15 @@ function strokeCircle(x, y, r, color) {
 }
 
 function draw() {
-  var n = PIXEL_RES;
   ctx.fillStyle = VOID_BG;
-  ctx.fillRect(0, 0, n, n);
+  ctx.fillRect(0, 0, bufW, bufH);
   if (!lastSnapshot) return;
 
   var radius = lastSnapshot.radius || 100000;
-  var scale = (n * 0.46) / radius;
-  var cx = n / 2;
-  var cy = n / 2;
-  var dishR = Math.round(n * 0.46);
+  var dishR = dishRadiusPx();
+  var scale = dishR / radius;
+  var cx = bufW / 2;
+  var cy = bufH / 2;
 
   fillCircle(cx, cy, dishR, DISH_BG);
   strokeCircle(cx, cy, dishR, RING_COLOR);
@@ -332,6 +348,7 @@ async function main() {
     });
   });
 
+  window.addEventListener("resize", setupCanvas);
   requestAnimationFrame(frame);
 }
 
