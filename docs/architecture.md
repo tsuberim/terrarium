@@ -38,9 +38,37 @@ This milestone's skin is a fullscreen retro camera: kernel WASM, a low-res pixel
 
 No CDN fonts. No random network calls. Relative paths. Serve over HTTP(S) so the browser can fetch the `.wasm` module (a `file://` open will not work).
 
-## Later: server
+## API service (v1)
 
-Same kernel, authoritative, multiplayer. Not a second simulation. Guests still WASM, mass still fuel, conservation still load-bearing. How that process is hosted is a later, cheap decision. It is not Cloud Run, GKE, or a VM farm in this milestone.
+Rust crate: `crates/api`. Lightweight HTTP server (Axum + SQLite) that sits beside the kernel and will later become the always-on sim host.
+
+Three responsibilities in v1:
+
+1. **Account credits** — off-world ledger. Spawn spends credits; faucet (staging/local only) tops up for QA.
+2. **API tokens** — mint/revoke from the dashboard; authenticate `/v1/*`.
+3. **Authoritative world slice** — runs `terrarium-kernel` natively in-process, ticks in a background task, executes `spawn_cell_at` when credits are spent.
+
+The skin stays a static camera (GCS). The **dashboard** is a separate static app served at `/dashboard/` by the API process — not chrome on the sim.
+
+```
+Browser (skin)          Browser (dashboard)
+     │                         │
+     │ WASM kernel             │ session token
+     ▼                         ▼
+  local World              crates/api
+                               │
+                    credits + tokens (SQLite)
+                               │
+                         native World (kernel)
+```
+
+Mass is money at both layers: credits pay for spawn (cash-in); inside the box, `spawned_mass == total_mass + house_burned` still holds.
+
+Config via env vars (see `.env.example`). Secrets never in the repo.
+
+## Later: full server
+
+Same kernel, authoritative, multiplayer. The v1 API process is the seed — not a second simulation. Guests still WASM, mass still fuel, conservation still load-bearing. Hosting stays cheap: one Cloud Run service or a small VM, not a farm.
 
 ## Mass accounting
 

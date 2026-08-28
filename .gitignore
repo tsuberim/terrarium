@@ -23,6 +23,8 @@ application_default_credentials.json
 
 # Rust
 target/
+terrarium.db
+terrarium.db-*
 
 # JS / static build leftovers (skin is plain files today)
 node_modules/

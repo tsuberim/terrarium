@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terrarium — Account</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="panel">
+    <header>
+      <h1>Terrarium</h1>
+      <p class="tagline">Credits, API tokens, billing</p>
+      <p class="env" id="env-label"></p>
+    </header>
+
+    <section id="onboard" class="card hidden">
+      <h2>Get started</h2>
+      <p>Create an account to hold credits and mint API tokens.</p>
+      <button id="create-account" type="button">Create account</button>
+    </section>
+
+    <section id="account" class="card hidden">
+      <h2>Balance</h2>
+      <p class="balance"><span id="credits">—</span> credits</p>
+      <p class="muted" id="account-id"></p>
+    </section>
+
+    <section id="faucet-section" class="card hidden">
+      <h2>Free credits</h2>
+      <p class="muted">Staging and local only. Production disables this faucet.</p>
+      <button id="faucet" type="button">Mint test credits</button>
+    </section>
+
+    <section id="billing-section" class="card hidden">
+      <h2>Billing</h2>
+      <p class="muted">Top up with real payment — coming soon.</p>
+      <button id="checkout" type="button" disabled>Stripe checkout (coming soon)</button>
+      <p class="notice" id="billing-notice"></p>
+    </section>
+
+    <section id="tokens-section" class="card hidden">
+      <h2>API tokens</h2>
+      <p class="muted">Use <code>Authorization: Bearer …</code> on <code>POST /v1/spawn</code>.</p>
+      <form id="mint-form">
+        <input id="token-label" type="text" placeholder="Label" value="default" maxlength="64">
+        <button type="submit">Mint token</button>
+      </form>
+      <div id="new-token" class="secret hidden"></div>
+      <ul id="token-list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Quick test</h2>
+      <pre id="curl-example" class="code"></pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

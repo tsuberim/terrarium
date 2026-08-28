@@ -17,6 +17,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test kernel
         run: cargo test --manifest-path crates/kernel/Cargo.toml
+      - name: Test API
+        run: cargo test --manifest-path crates/api/Cargo.toml
 
   docs:
     name: required docs exist
@@ -35,6 +37,7 @@ jobs:
             docs/secrets.md \
             docs/journey.md \
             docs/current-state.md \
+            docs/product-specs.md \
             docs/product-specs.md
           do
             test -f "$f" || { echo "missing $f"; exit 1; }
