@@ -29,7 +29,7 @@ fn creature_at(x: i32, y: i32, code: &'static str) -> Creature {
         id: "c".into(),
         x,
         y,
-        energy: 5_000_000,
+        energy: 4_000_000,
         health: config.max_health,
         max_health: config.max_health,
         owner_uid: "u".into(),
@@ -150,7 +150,7 @@ fn predator_chases_distant_prey() {
     ];
     tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
     let pred = creatures.iter().find(|c| c.id == "c").expect("predator alive");
-    assert_eq!(pred.x, 1);
+    assert_eq!(pred.x, 2);
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn scavenger_chases_distant_corpse() {
     );
     let mut creatures = vec![creature_at(0, 0, SCAVENGER)];
     tick_world(&mut creatures, &mut tiles, &default_config(), 1);
-    assert_eq!(creatures[0].x, 1);
+    assert_eq!(creatures[0].x, 2);
 }
 
 #[test]
@@ -298,7 +298,7 @@ fn prey_flees_east_threat() {
     ];
     tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
     let prey = creatures.iter().find(|c| c.id == "c").expect("prey alive");
-    assert_eq!(prey.x, -1);
+    assert_eq!(prey.x, -2);
 }
 
 #[test]

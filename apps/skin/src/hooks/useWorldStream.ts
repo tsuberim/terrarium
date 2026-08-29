@@ -60,7 +60,7 @@ export function useWorldStream() {
 
   useEffect(() => {
     const prune = window.setInterval(() => {
-      const cutoff = Date.now() - 600;
+      const cutoff = Date.now() - 2500;
       setFxEvents((prev) => prev.filter((e) => e.at > cutoff));
     }, 200);
     return () => window.clearInterval(prune);
@@ -101,7 +101,7 @@ export function useWorldStream() {
       setTick(msg.tick);
       if (msg.events?.length) {
         const now = Date.now();
-        setFxEvents((prev) => [...prev, ...msg.events!.map((e) => ({ ...e, at: now }))].slice(-48));
+        setFxEvents((prev) => [...prev, ...msg.events!.map((e) => ({ ...e, at: now }))].slice(-96));
       }
     };
 

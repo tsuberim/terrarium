@@ -11,14 +11,16 @@ pub const SIG_ALARM: i32 = 0x01;
 /// Predator hunt ping — marks active chase.
 pub const SIG_HUNT: i32 = 0x02;
 
-/// Bud a clone when energy exceeds this (10× corpse floor).
-pub const SPAWN_THRESHOLD: i64 = 10_000_000;
+/// Bud a clone when energy exceeds this (5× corpse floor).
+pub const SPAWN_THRESHOLD: i64 = 5_000_000;
 /// Energy transferred to each child (corpse floor).
 pub const SPAWN_GIFT: i32 = 1_000_000;
 
 const VISION: i32 = 5;
 const SENSE_SIZE: usize = 24;
 const RECV_SIZE: usize = 36;
+/// Host actions per sim tick (move/eat/hit/spawn each count as one).
+const ACTIONS_PER_TICK: u32 = 2;
 
 /// Hex neighbors: E, NE, NW, W, SW, SE offsets (q, r).
 const ADJACENT: [(i32, i32); 6] = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)];
@@ -130,6 +132,21 @@ fn step_axial(q: i32, r: i32, dir: i32) -> (i32, i32) {
     }
 }
 
+fn finish_tick() {
+    unsafe { host::sleep() };
+}
+
+fn run_actions(mut step: impl FnMut() -> bool) {
+    let mut n = 0u32;
+    while n < ACTIONS_PER_TICK {
+        if !step() {
+            break;
+        }
+        n += 1;
+    }
+    finish_tick();
+}
+
 fn act_adjacent(dir: i32, strike: bool) {
     unsafe {
         if strike {
@@ -137,16 +154,15 @@ fn act_adjacent(dir: i32, strike: bool) {
         } else {
             host::eat(dir);
         }
-        host::sleep();
     }
 }
 
-fn wander() {
+fn wander_step() -> bool {
     let dir = unsafe { host::random_byte() } % 6;
     unsafe {
         host::step(dir as i32);
-        host::sleep();
     }
+    true
 }
 
 /// Clone self on a random empty adjacent hex when well-fed.
@@ -162,7 +178,7 @@ fn maybe_clone() -> bool {
             let (dq, dr) = ADJACENT[dir as usize];
             if sense_kind(dq, dr) == 0 {
                 host::spawn(dir, SPAWN_GIFT);
-                host::sleep();
+                finish_tick();
                 return true;
             }
             i += 1;
@@ -229,23 +245,21 @@ fn seek_food(corpse: bool, node: bool, wander_if_empty: bool) -> bool {
 
     if found {
         step_toward(best_q, best_r);
-        unsafe { host::sleep() };
         return true;
     }
 
     if wander_if_empty {
-        wander();
-        return true;
+        return wander_step();
     }
     false
 }
 
-/// Scan vision for `target` kind; `strike` hits live creatures, else eats.
-pub fn tick(target: i32, strike: bool) {
+/// One hunt step toward `target`; `strike` hits live creatures, else eats.
+fn hunt_step(target: i32, strike: bool) -> bool {
     for (dq, dr) in ADJACENT {
         if sense_kind(dq, dr) == target {
             act_adjacent(dir_of(dq, dr), strike);
-            return;
+            return true;
         }
     }
 
@@ -265,8 +279,7 @@ pub fn tick(target: i32, strike: bool) {
                         }
                     }
                     step_toward(q, r);
-                    unsafe { host::sleep() };
-                    return;
+                    return true;
                 }
                 (q, r) = step_axial(q, r, walk[face as usize]);
                 s += 1;
@@ -276,30 +289,14 @@ pub fn tick(target: i32, strike: bool) {
         d += 1;
     }
 
-    wander();
+    wander_step()
 }
 
-/// Graze nodes and corpses, then hunt live prey.
-pub fn predator_tick() {
-    if maybe_clone() {
-        return;
+/// Scan vision for `target` kind; `strike` hits live creatures, else eats.
+pub fn tick(target: i32, strike: bool) {
+    if hunt_step(target, strike) {
+        finish_tick();
     }
-    if seek_food(true, true, false) {
-        return;
-    }
-    tick(KIND_CREATURE, true);
-}
-
-/// Rush prey alarms, else forage corpses and energy nodes.
-pub fn scavenger_tick() {
-    if maybe_clone() {
-        return;
-    }
-    if follow_signal(SIG_ALARM) {
-        unsafe { host::sleep() };
-        return;
-    }
-    seek_food(true, true, true);
 }
 
 fn flee_from(dq: i32, dr: i32) -> bool {
@@ -310,9 +307,57 @@ fn flee_from(dq: i32, dr: i32) -> bool {
     unsafe {
         host::step(away);
         host::signal_broadcast(SIG_ALARM);
-        host::sleep();
     }
     true
+}
+
+fn predator_step() -> bool {
+    if seek_food(true, true, false) {
+        return true;
+    }
+    hunt_step(KIND_CREATURE, true)
+}
+
+fn scavenger_step() -> bool {
+    if follow_signal(SIG_ALARM) {
+        return true;
+    }
+    seek_food(true, true, true)
+}
+
+fn prey_step() -> bool {
+    for (dq, dr) in ADJACENT {
+        if flee_from(dq, dr) {
+            return true;
+        }
+    }
+    if seek_food(false, true, false) {
+        return true;
+    }
+    wander_step()
+}
+
+fn hawk_step() -> bool {
+    if follow_signal(SIG_ALARM) {
+        return true;
+    }
+    seek_food(true, true, true)
+}
+
+/// Graze nodes and corpses, then hunt live prey.
+pub fn predator_tick() {
+    if maybe_clone() {
+        return;
+    }
+    run_actions(|| predator_step());
+}
+
+/// Rush prey alarms, else forage corpses and energy nodes.
+pub fn scavenger_tick() {
+    if maybe_clone() {
+        return;
+    }
+    run_actions(|| scavenger_step());
 }
 
 /// Flee predators; graze energy nodes when safe.
@@ -320,15 +365,7 @@ pub fn prey_tick() {
     if maybe_clone() {
         return;
     }
-    for (dq, dr) in ADJACENT {
-        if flee_from(dq, dr) {
-            return;
-        }
-    }
-    if seek_food(false, true, false) {
-        return;
-    }
-    unsafe { host::sleep() };
+    run_actions(|| prey_step());
 }
 
 /// Rush prey alarms, else forage like a scavenger.
@@ -336,9 +373,5 @@ pub fn hawk_tick() {
     if maybe_clone() {
         return;
     }
-    if follow_signal(SIG_ALARM) {
-        unsafe { host::sleep() };
-        return;
-    }
-    seek_food(true, true, true);
+    run_actions(|| hawk_step());
 }

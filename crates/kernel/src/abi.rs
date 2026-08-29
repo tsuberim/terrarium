@@ -43,6 +43,8 @@ pub fn corpse_yield_energy(creature_energy: i64) -> i64 {
 }
 
 /// Max WASM opcodes (including host imports) per creature per sim tick.
-pub const OPCODES_PER_TICK: u64 = 10_000;
+pub const OPCODES_PER_TICK: u64 = 25_000;
 /// In-game energy charged per opcode executed.
 pub const ENERGY_PER_OPCODE: i64 = 1;
+/// Action surcharge (move, hit, dig, place, idle regen) — quarter glim keeps creatures active longer.
+pub const ACTION_ENERGY: i64 = ENERGY_SCALE / 4;

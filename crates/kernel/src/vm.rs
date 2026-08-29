@@ -135,7 +135,7 @@ pub fn run_tick(
 
     let mut blocked_moves: HashMap<usize, bool> = HashMap::new();
     for (cell, ids) in &move_targets {
-        if ids.len() > 1 {
+        if ids.len() > 1 && ids.iter().any(|id| *id != ids[0]) {
             for id in ids {
                 blocked_moves.insert(*id, true);
             }

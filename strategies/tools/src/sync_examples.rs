@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &target.join("strategy_predator.wasm"),
         "predator",
         "Predator",
-        "Hunts prey; eats corpses and energy nodes; hunt ping (0x02); clones when energy > 10M",
+        "Hunts prey; eats corpses and energy nodes; hunt ping (0x02); clones when energy > 5M",
         "PREDATOR",
     )?;
     sync_one(
@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &target.join("strategy_scavenger.wasm"),
         "scavenger",
         "Scavenger",
-        "Rushes prey alarms (0x01), forages corpses and energy nodes; clones when energy > 10M",
+        "Rushes prey alarms (0x01), forages corpses and energy nodes; clones when energy > 5M",
         "SCAVENGER",
     )?;
     sync_one(
@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &target.join("strategy_prey.wasm"),
         "prey",
         "Prey",
-        "Flees predators, grazes energy nodes, alarms (0x01); clones when energy > 10M",
+        "Flees predators, grazes energy nodes, alarms (0x01); clones when energy > 5M",
         "PREY",
     )?;
     sync_one(
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &target.join("strategy_hawk.wasm"),
         "hawk",
         "Hawk",
-        "Rushes prey alarms (0x01), forages corpses and nodes; clones when energy > 10M",
+        "Rushes prey alarms (0x01), forages corpses and nodes; clones when energy > 5M",
         "HAWK",
     )?;
 

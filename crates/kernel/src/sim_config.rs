@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::abi::{ENERGY_SCALE, ENERGY_PER_OPCODE, OPCODES_PER_TICK, CORPSE_ENERGY};
+use crate::abi::{ACTION_ENERGY, ENERGY_SCALE, ENERGY_PER_OPCODE, OPCODES_PER_TICK, CORPSE_ENERGY};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimConfig {
@@ -36,20 +36,20 @@ impl Default for SimConfig {
             corpse_energy: CORPSE_ENERGY,
             opcodes_per_tick: OPCODES_PER_TICK,
             energy_per_opcode: ENERGY_PER_OPCODE,
-            move_extra: ENERGY_SCALE,
-            dig_extra: ENERGY_SCALE,
-            place_extra: ENERGY_SCALE,
-            hit_extra: ENERGY_SCALE,
+            move_extra: ACTION_ENERGY,
+            dig_extra: ACTION_ENERGY,
+            place_extra: ACTION_ENERGY,
+            hit_extra: ACTION_ENERGY,
             signal_inbox_cap: 8,
             max_health: 100,
             hit_damage: 34,
             health_regen: 5,
-            health_regen_cost: ENERGY_SCALE,
-            node_nominal_energy: ENERGY_SCALE,
-            node_spawn_interval: 10,
-            node_spawn_attempts: 3,
-            max_active_nodes: 48,
-            node_spawn_radius: 24,
+            health_regen_cost: ACTION_ENERGY,
+            node_nominal_energy: ENERGY_SCALE * 2,
+            node_spawn_interval: 5,
+            node_spawn_attempts: 6,
+            max_active_nodes: 80,
+            node_spawn_radius: 32,
         }
     }
 }

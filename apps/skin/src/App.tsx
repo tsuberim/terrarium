@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { EventFeed } from "./components/EventFeed";
 import { DeployDialog } from "./components/DeployDialog";
 import { DevPanel } from "./components/DevPanel";
 import { HudOverlay } from "./components/HudOverlay";
@@ -229,6 +230,8 @@ export default function App() {
         onSignIn={() => void signIn()}
         onSignOut={() => void signOutUser()}
         onFaucet={() => void faucet()}
+        serverOnline={connected}
+        serverBusy={busy}
       />
       <JumpDialog
         open={jumpOpen}
@@ -247,6 +250,7 @@ export default function App() {
         onDeploy={(code, extra, wasmB64) => void submitDeploy(code, extra, wasmB64)}
         onClose={() => setDeployCell(null)}
       />
+      <EventFeed events={fxEvents} />
       <DevPanel config={simConfig} onConfigChange={setSimConfig} />
     </div>
   );

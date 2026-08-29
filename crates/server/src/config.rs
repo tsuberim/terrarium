@@ -10,6 +10,12 @@ pub struct Config {
     pub faucet_enabled: bool,
     pub faucet_max: i64,
     pub deploy_cost: i64,
+    /// Seed predators/prey/hawks when the world DB has no creatures (default on).
+    pub seed_ecosystem: bool,
+    /// Firebase UIDs allowed to wake/sleep Cloud Run (comma-separated in `ADMIN_UIDS`).
+    pub admin_uids: Vec<String>,
+    /// `min-instances` when the server is toggled "on" from the admin UI.
+    pub server_min_instances_on: i32,
 }
 
 impl Config {
@@ -33,6 +39,18 @@ impl Config {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(100 * terrarium_kernel::ENERGY_SCALE),
+            seed_ecosystem: env_bool("SEED_ECOSYSTEM", true),
+            admin_uids: env::var("ADMIN_UIDS")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect(),
+            server_min_instances_on: env::var("SERVER_MIN_INSTANCES_ON")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(1),
         })
     }
 }

@@ -11,17 +11,17 @@ const DEFAULTS: SimConfig = {
   r_vis: 5,
   r_sig: 5,
   corpse_energy: 1_000_000,
-  opcodes_per_tick: 10_000,
+  opcodes_per_tick: 25_000,
   energy_per_opcode: 1,
-  move_extra: 100_000,
-  dig_extra: 100_000,
-  place_extra: 100_000,
-  hit_extra: 100_000,
+  move_extra: 25_000,
+  dig_extra: 25_000,
+  place_extra: 25_000,
+  hit_extra: 25_000,
   signal_inbox_cap: 8,
   max_health: 100,
   hit_damage: 34,
   health_regen: 5,
-  health_regen_cost: 100_000,
+  health_regen_cost: 25_000,
 };
 
 export function DevPanel({ config, onConfigChange }: Props) {

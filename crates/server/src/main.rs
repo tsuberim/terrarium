@@ -16,6 +16,7 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 use uuid::Uuid;
 
 mod auth;
+mod cloud_run;
 mod config;
 mod engine;
 mod ws;
@@ -83,6 +84,26 @@ struct ClearWorldResponse {
 }
 
 #[derive(Serialize)]
+struct ServerPowerStatusResponse {
+    power_control_available: bool,
+    is_admin: bool,
+    min_instances: Option<i32>,
+    enabled: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct ServerPowerRequest {
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+struct ServerPowerResponse {
+    ok: bool,
+    enabled: bool,
+    min_instances: i32,
+}
+
+#[derive(Serialize)]
 struct DeployResponse {
     id: String,
     x: i64,
@@ -133,6 +154,13 @@ fn build_app(state: AppState) -> Router {
         .route("/dev/clear-world", post(clear_world))
         .layer(middleware::from_fn(dev_only));
 
+    let admin = Router::new()
+        .route("/admin/server-power", get(get_server_power).post(set_server_power))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_firebase_user,
+        ));
+
     let protected = Router::new()
         .route("/me", get(me))
         .route("/faucet", post(faucet))
@@ -146,6 +174,7 @@ fn build_app(state: AppState) -> Router {
         .route("/world", get(world))
         .route("/world/ws", get(ws::world_ws))
         .merge(protected)
+        .merge(admin)
         .merge(dev);
 
     let routes = Router::new()
@@ -261,6 +290,86 @@ async fn clear_world(State(state): State<AppState>) -> impl IntoResponse {
         Err(err) => {
             tracing::error!(error = %err, "clear world failed");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+fn is_admin(config: &Config, uid: &str) -> bool {
+    config.admin_uids.iter().any(|id| id == uid)
+}
+
+async fn get_server_power(
+    State(state): State<AppState>,
+    Extension(user): Extension<FirebaseUser>,
+) -> impl IntoResponse {
+    let admin = is_admin(&state.config, &user.uid);
+    let Some(power) = cloud_run::CloudRunPower::from_env() else {
+        return Json(ServerPowerStatusResponse {
+            power_control_available: false,
+            is_admin: admin,
+            min_instances: None,
+            enabled: None,
+        })
+        .into_response();
+    };
+
+    match power.min_instances().await {
+        Ok(min) => Json(ServerPowerStatusResponse {
+            power_control_available: true,
+            is_admin: admin,
+            enabled: Some(min > 0),
+            min_instances: Some(min),
+        })
+        .into_response(),
+        Err(err) => {
+            tracing::warn!(error = %err, "server power status failed");
+            Json(ServerPowerStatusResponse {
+                power_control_available: true,
+                is_admin: admin,
+                min_instances: None,
+                enabled: None,
+            })
+            .into_response()
+        }
+    }
+}
+
+async fn set_server_power(
+    State(state): State<AppState>,
+    Extension(user): Extension<FirebaseUser>,
+    Json(body): Json<ServerPowerRequest>,
+) -> impl IntoResponse {
+    if !is_admin(&state.config, &user.uid) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(power) = cloud_run::CloudRunPower::from_env() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "server power control not configured" })),
+        )
+            .into_response();
+    };
+
+    let min = if body.enabled {
+        state.config.server_min_instances_on.max(0)
+    } else {
+        0
+    };
+
+    match power.set_min_instances(min).await {
+        Ok(()) => Json(ServerPowerResponse {
+            ok: true,
+            enabled: body.enabled,
+            min_instances: min,
+        })
+        .into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "set server power failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": err.to_string() })),
+            )
+                .into_response()
         }
     }
 }

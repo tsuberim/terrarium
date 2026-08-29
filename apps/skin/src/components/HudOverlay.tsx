@@ -2,6 +2,7 @@ import type { SpriteMode } from "../lib/creatureSprite";
 import type { Creature } from "../lib/api";
 import { GlimAmount } from "./GlimAmount";
 import { formatGlimString } from "../lib/glim";
+import { ServerPowerControl } from "./ServerPowerControl";
 
 type Props = {
   online: boolean;
@@ -23,6 +24,8 @@ type Props = {
   onSignIn: () => void;
   onSignOut: () => void;
   onFaucet: () => void;
+  serverOnline: boolean;
+  serverBusy: boolean;
 };
 
 export function HudOverlay({
@@ -45,6 +48,8 @@ export function HudOverlay({
   onSignIn,
   onSignOut,
   onFaucet,
+  serverOnline,
+  serverBusy,
 }: Props) {
   const followLabel = followId ? `${followId.slice(0, 8)}…` : null;
   const statusText = error
@@ -130,6 +135,12 @@ export function HudOverlay({
             })}
           </ul>
         )}
+
+        <ServerPowerControl
+          signedIn={signedIn}
+          online={serverOnline}
+          busy={serverBusy}
+        />
       </div>
 
       <div className="pointer-events-auto absolute right-3 top-3 sm:right-4 sm:top-4">

@@ -10,6 +10,8 @@ pub struct EnergyLedger {
 impl EnergyLedger {
     pub const FREE_MINT_RATIO_NUM: i64 = 1;
     pub const FREE_MINT_RATIO_DEN: i64 = 2;
+    /// Virtual destruction credited on empty-world bootstrap so food nodes can spawn immediately.
+    pub const BOOTSTRAP_DESTROYED: i64 = 20_000_000;
 
     pub fn free_budget(&self) -> i64 {
         (self.destroyed * Self::FREE_MINT_RATIO_NUM / Self::FREE_MINT_RATIO_DEN)

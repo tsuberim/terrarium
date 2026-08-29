@@ -352,9 +352,10 @@ export function WorldCanvas({
 
       const fxNow = Date.now();
       for (const fx of fxRef.current) {
-        const age = (fxNow - fx.at) / 500;
+        const fxMs = fx.type === "hit" || fx.type === "death" ? 900 : fx.type === "spawn" || fx.type === "eat" ? 750 : 600;
+        const age = (fxNow - fx.at) / fxMs;
         if (age >= 1) continue;
-        const alpha = 1 - age;
+        const alpha = 1 - age ** 1.4;
         ctx.save();
         ctx.translate(panX, panY);
         ctx.scale(zoom, zoom);
@@ -389,38 +390,51 @@ export function WorldCanvas({
           }
         } else if (fx.type === "spawn") {
           const { x: px, y: py } = cellCenter(fx.x, fx.y);
-          ctx.strokeStyle = `rgba(74, 232, 194, ${alpha * 0.5})`;
-          ctx.lineWidth = 1.5 / zoom;
+          ctx.strokeStyle = `rgba(74, 232, 194, ${alpha * 0.85})`;
+          ctx.lineWidth = 2.5 / zoom;
           ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * 0.5 * (1 + age * 0.5), 0, Math.PI * 2);
+          ctx.arc(px, py, HEX_RADIUS * (0.45 + age * 0.9), 0, Math.PI * 2);
           ctx.stroke();
+          ctx.fillStyle = `rgba(74, 232, 194, ${alpha * 0.2})`;
+          ctx.beginPath();
+          ctx.arc(px, py, HEX_RADIUS * 0.35, 0, Math.PI * 2);
+          ctx.fill();
         } else if (fx.type === "hit") {
           const target = cellCenter(fx.x, fx.y);
           const actor = creaturesFxRef.current.find((c) => c.id === fx.actor_id);
           if (actor) {
             const pos = displayPos.current.get(actor.id) ?? { x: actor.x, y: actor.y };
             const from = cellCenter(pos.x, pos.y);
-            ctx.strokeStyle = `rgba(255, 72, 72, ${alpha * 0.9})`;
-            ctx.lineWidth = 2.5 / zoom;
+            ctx.strokeStyle = `rgba(255, 72, 72, ${alpha})`;
+            ctx.lineWidth = 3.5 / zoom;
             ctx.beginPath();
             ctx.moveTo(from.x, from.y);
             ctx.lineTo(target.x, target.y);
             ctx.stroke();
           }
-          ctx.fillStyle = `rgba(255, 90, 60, ${alpha * 0.55})`;
+          ctx.fillStyle = `rgba(255, 90, 60, ${alpha * 0.7})`;
           ctx.beginPath();
-          ctx.arc(target.x, target.y, HEX_RADIUS * (0.35 + age * 0.5), 0, Math.PI * 2);
+          ctx.arc(target.x, target.y, HEX_RADIUS * (0.4 + age * 0.85), 0, Math.PI * 2);
           ctx.fill();
+          ctx.strokeStyle = `rgba(255, 220, 180, ${alpha * 0.5})`;
+          ctx.lineWidth = 1.5 / zoom;
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, HEX_RADIUS * (0.25 + age * 0.35), 0, Math.PI * 2);
+          ctx.stroke();
         } else if (fx.type === "eat") {
           const { x: px, y: py } = cellCenter(fx.x, fx.y);
-          ctx.strokeStyle = `rgba(232, 168, 74, ${alpha * 0.75})`;
-          ctx.lineWidth = 2 / zoom;
+          ctx.strokeStyle = `rgba(232, 168, 74, ${alpha * 0.9})`;
+          ctx.lineWidth = 2.5 / zoom;
           ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * (0.55 - age * 0.35), 0, Math.PI * 2);
+          ctx.arc(px, py, HEX_RADIUS * (0.65 - age * 0.4), 0, Math.PI * 2);
           ctx.stroke();
-          ctx.fillStyle = `rgba(232, 168, 74, ${alpha * 0.25})`;
+          ctx.fillStyle = `rgba(232, 168, 74, ${alpha * 0.35})`;
           ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * 0.25, 0, Math.PI * 2);
+          ctx.arc(px, py, HEX_RADIUS * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `rgba(255, 230, 160, ${alpha * 0.45})`;
+          ctx.beginPath();
+          ctx.arc(px, py, HEX_RADIUS * 0.12, 0, Math.PI * 2);
           ctx.fill();
         } else if (fx.type === "death") {
           const { x: px, y: py } = cellCenter(fx.x, fx.y);
