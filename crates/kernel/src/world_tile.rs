@@ -1,13 +1,17 @@
 use std::collections::HashMap;
 
-use crate::isa::tile;
+use crate::abi::tile;
+use crate::events::DeathReason;
 
 pub type WorldTiles = HashMap<(i32, i32), WorldTile>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldTile {
     Solid,
-    Corpse { energy: i64 },
+    Corpse {
+        energy: i64,
+        death_reason: DeathReason,
+    },
 }
 
 impl WorldTile {
@@ -19,22 +23,23 @@ impl WorldTile {
     }
 }
 
-pub fn place_corpse(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64) {
+pub fn place_corpse(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64, death_reason: DeathReason) {
     if energy < 0 {
         return;
     }
     match tiles.get(&(x, y)).copied() {
         Some(WorldTile::Solid) => {}
-        Some(WorldTile::Corpse { energy: existing }) => {
+        Some(WorldTile::Corpse { energy: existing, .. }) => {
             tiles.insert(
                 (x, y),
                 WorldTile::Corpse {
                     energy: existing + energy,
+                    death_reason,
                 },
             );
         }
         None => {
-            tiles.insert((x, y), WorldTile::Corpse { energy });
+            tiles.insert((x, y), WorldTile::Corpse { energy, death_reason });
         }
     }
 }

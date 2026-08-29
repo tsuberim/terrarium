@@ -28,11 +28,11 @@ impl Config {
             faucet_max: env::var("FAUCET_MAX")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(10_000),
+                .unwrap_or(100 * terrarium_kernel::ENERGY_SCALE),
             deploy_cost: env::var("DEPLOY_COST")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(100),
+                .unwrap_or(100 * terrarium_kernel::ENERGY_SCALE),
         })
     }
 }

@@ -1,4 +1,5 @@
 import type { Creature, WorldTile } from "./api";
+import { formatDeathReason } from "./death";
 
 export function describeCell(
   x: number,
@@ -16,6 +17,11 @@ export function describeCell(
   const tile = tiles.find((t) => t.x === x && t.y === y);
   if (!tile) return "Empty ground";
   if (tile.kind === 1) return "Solid wall";
-  if (tile.kind === 3) return `Corpse · ${tile.energy ?? 0} energy`;
+  if (tile.kind === 3) {
+    const reason = tile.death_reason ? formatDeathReason(tile.death_reason) : null;
+    return reason
+      ? `Corpse · ${tile.energy ?? 0} energy · ${reason}`
+      : `Corpse · ${tile.energy ?? 0} energy`;
+  }
   return "Unknown";
 }

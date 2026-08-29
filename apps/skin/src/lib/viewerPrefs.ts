@@ -9,6 +9,7 @@ export type ViewerPrefs = {
   followId: string | null;
   focus: NavFocus | null;
   zoom: number;
+  spriteMode: "id" | "hash";
 };
 
 const DEFAULT: ViewerPrefs = {
@@ -16,6 +17,7 @@ const DEFAULT: ViewerPrefs = {
   followId: null,
   focus: null,
   zoom: 1,
+  spriteMode: "id",
 };
 
 function clampZoom(z: number) {
@@ -37,6 +39,7 @@ export function loadViewerPrefs(): ViewerPrefs {
           ? { x: parsed.focus.x, y: parsed.focus.y }
           : null,
       zoom: typeof parsed.zoom === "number" ? clampZoom(parsed.zoom) : DEFAULT.zoom,
+      spriteMode: parsed.spriteMode === "hash" ? "hash" : "id",
     };
   } catch {
     return DEFAULT;

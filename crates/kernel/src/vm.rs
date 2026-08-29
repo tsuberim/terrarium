@@ -1,13 +1,22 @@
-use crate::isa::{self, op, tile, STACK_MAX};
-use crate::world_tile::{place_corpse, sense_kind, set_cell, blocks_movement, WorldTile, WorldTiles};
-use crate::CORPSE_ENERGY;
+//! Creature runtime — one WASM tick per sim tick, think → act → world-tick.
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StepOutcome {
-    Continue,
-    Sleep,
-    Halt,
-    Dead,
+use std::collections::HashMap;
+
+use uuid::Uuid;
+
+use crate::abi::{dir, tile};
+use crate::events::{DeathReason, TickResult, WorldEvent};
+use crate::host::{self, PendingAction, ThinkResult};
+use crate::sim_config::SimConfig;
+use crate::world_tile::{place_corpse, sense_kind, set_cell, blocks_movement, WorldTile, WorldTiles};
+
+#[derive(Clone, Debug)]
+pub struct Signal {
+    pub from_id: String,
+    pub from_x: i32,
+    pub from_y: i32,
+    pub byte: u8,
+    pub broadcast: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -17,437 +26,442 @@ pub struct Creature {
     pub y: i32,
     pub energy: i64,
     pub owner_uid: String,
-    pub bytecode: Vec<u8>,
-    pub pc: usize,
-    pub stack: Vec<i32>,
+    pub parent_id: Option<String>,
+    pub wasm: Vec<u8>,
+    pub code: String,
     pub alive: bool,
+    pub inbox: Vec<Signal>,
+    pub death_reason: Option<DeathReason>,
+    /// Sim tick when the creature was deployed or spawned.
+    pub born_tick: u64,
 }
 
-const INSTRUCTION_COST: i64 = 1;
-const MOVE_EXTRA: i64 = 1;
-const DIG_EXTRA: i64 = 1;
-const PLACE_EXTRA: i64 = 1;
-
-pub fn tick_creature(creature: &mut Creature, world: &mut WorldView<'_>) -> StepOutcome {
-    if !creature.alive || creature.energy <= CORPSE_ENERGY {
-        creature.alive = false;
-        return StepOutcome::Dead;
-    }
-
-    loop {
-        match step(creature, world) {
-            StepOutcome::Continue => {
-                if !creature.alive {
-                    return StepOutcome::Dead;
-                }
-                continue;
-            }
-            other => return other,
-        }
+pub(crate) fn mark_dead(creature: &mut Creature, reason: DeathReason) {
+    creature.alive = false;
+    if creature.death_reason.is_none() {
+        creature.death_reason = Some(reason);
     }
 }
 
-fn step(creature: &mut Creature, world: &mut WorldView<'_>) -> StepOutcome {
-    let Some(opcode) = creature.bytecode.get(creature.pc).copied() else {
-        return StepOutcome::Halt;
-    };
-
-    if opcode != op::SLEEP && creature.energy < INSTRUCTION_COST {
-        return StepOutcome::Sleep;
-    }
-
-    match opcode {
-        op::HALT => StepOutcome::Halt,
-        op::SLEEP => {
-            creature.pc += 1;
-            StepOutcome::Sleep
-        }
-        op::MOVE => {
-            if !pay(creature, INSTRUCTION_COST + MOVE_EXTRA) {
-                return StepOutcome::Sleep;
-            }
-            let Some(dir) = read_dir(creature) else {
-                return StepOutcome::Sleep;
-            };
-            world.try_move(creature.id.as_str(), dir);
-            creature.pc += 2;
-            StepOutcome::Continue
-        }
-        op::DIG => {
-            if !pay(creature, INSTRUCTION_COST + DIG_EXTRA) {
-                return StepOutcome::Sleep;
-            }
-            let Some(dir) = read_dir(creature) else {
-                return StepOutcome::Sleep;
-            };
-            if let Some((x, y)) = adjacent(creature.x, creature.y, dir) {
-                world.set_tile(x, y, tile::EMPTY);
-            }
-            creature.pc += 2;
-            StepOutcome::Continue
-        }
-        op::PLACE => {
-            if !pay(creature, INSTRUCTION_COST + PLACE_EXTRA) {
-                return StepOutcome::Sleep;
-            }
-            let Some(dir) = read_dir(creature) else {
-                return StepOutcome::Sleep;
-            };
-            if let Some((x, y)) = adjacent(creature.x, creature.y, dir) {
-                if world.tile_at(x, y) == tile::EMPTY && world.creature_at(x, y).is_none() {
-                    world.set_tile(x, y, tile::SOLID);
-                }
-            }
-            creature.pc += 2;
-            StepOutcome::Continue
-        }
-        op::EAT => {
-            if !pay(creature, INSTRUCTION_COST) {
-                return StepOutcome::Sleep;
-            }
-            let Some(dir) = read_dir(creature) else {
-                return StepOutcome::Sleep;
-            };
-            if let Some((x, y)) = adjacent(creature.x, creature.y, dir) {
-                if let Some(gained) = world.take_corpse_energy(x, y) {
-                    creature.energy += gained;
-                }
-            }
-            creature.pc += 2;
-            StepOutcome::Continue
-        }
-        op::SENSE => {
-            if !pay(creature, INSTRUCTION_COST) {
-                return StepOutcome::Sleep;
-            }
-            let Some(dir) = read_dir(creature) else {
-                return StepOutcome::Sleep;
-            };
-            let kind = adjacent(creature.x, creature.y, dir)
-                .map(|(x, y)| world.sense_at(x, y))
-                .unwrap_or(tile::EMPTY);
-            if push(creature, kind).is_err() {
-                return StepOutcome::Sleep;
-            }
-            creature.pc += 2;
-            StepOutcome::Continue
-        }
-        op::ENERGY => {
-            if !pay(creature, INSTRUCTION_COST) {
-                return StepOutcome::Sleep;
-            }
-            if push(creature, creature.energy.clamp(0, i32::MAX as i64) as i32).is_err() {
-                return StepOutcome::Sleep;
-            }
-            creature.pc += 1;
-            StepOutcome::Continue
-        }
-        op::POP => {
-            if !pay(creature, INSTRUCTION_COST) {
-                return StepOutcome::Sleep;
-            }
-            if pop(creature).is_err() {
-                return StepOutcome::Sleep;
-            }
-            creature.pc += 1;
-            StepOutcome::Continue
-        }
-        op::DUP => {
-            if !pay(creature, INSTRUCTION_COST) {
-                return StepOutcome::Sleep;
-            }
-            let Some(&top) = creature.stack.last() else {
-                return StepOutcome::Sleep;
-            };
-            if push(creature, top).is_err() {
-                return StepOutcome::Sleep;
-            }
-            creature.pc += 1;
-            StepOutcome::Continue
-        }
-        op::PUSH => {
-            if !pay(creature, INSTRUCTION_COST) {
-                return StepOutcome::Sleep;
-            }
-            let Some(value) = read_i16(creature, creature.pc + 1) else {
-                return StepOutcome::Sleep;
-            };
-            if push(creature, value as i32).is_err() {
-                return StepOutcome::Sleep;
-            }
-            creature.pc += 3;
-            StepOutcome::Continue
-        }
-        op::JMP => jump(creature, false, false),
-        op::JZ => jump(creature, true, true),
-        op::JNZ => jump(creature, true, false),
-        op::EQ => binop(creature, |a, b| i32::from(a == b)),
-        op::LT => binop(creature, |a, b| i32::from(a < b)),
-        op::ADD => binop(creature, |a, b| a.wrapping_add(b)),
-        op::SUB => binop(creature, |a, b| b.wrapping_sub(a)),
-        op::SUICIDE => {
-            creature.alive = false;
-            StepOutcome::Dead
-        }
-        _ => StepOutcome::Sleep,
+fn death_event(creature: &Creature) -> WorldEvent {
+    WorldEvent::Death {
+        creature_id: creature.id.clone(),
+        owner_uid: creature.owner_uid.clone(),
+        x: creature.x,
+        y: creature.y,
+        reason: creature.death_reason.unwrap_or(DeathReason::WasmTrap),
     }
 }
 
-fn jump(creature: &mut Creature, cond: bool, on_zero: bool) -> StepOutcome {
-    if !pay(creature, INSTRUCTION_COST) {
-        return StepOutcome::Sleep;
+#[derive(Debug, Clone)]
+pub struct Snapshot {
+    pub positions: HashMap<String, (i32, i32)>,
+    pub id_at: HashMap<(i32, i32), String>,
+    pub energy: HashMap<String, i64>,
+}
+
+pub fn run_tick(
+    creatures: &mut Vec<Creature>,
+    tiles: &mut WorldTiles,
+    config: &SimConfig,
+    tick: u64,
+) -> TickResult {
+    let mut result = TickResult::default();
+    let snapshot = build_snapshot(creatures);
+    let engine = host::wasm_engine();
+
+    let mut pending: Vec<(usize, ThinkResult)> = Vec::new();
+    let mut suicide_ids: HashMap<String, ()> = HashMap::new();
+
+    for (i, creature) in creatures.iter_mut().enumerate() {
+        if !creature.alive {
+            continue;
+        }
+        if creature.energy <= config.corpse_energy {
+            mark_dead(creature, DeathReason::EnergyFloor);
+            result.events.push(death_event(creature));
+            continue;
+        }
+        let think = think_once(engine, creature, &snapshot, tiles, config, tick);
+        if !creature.alive {
+            result.events.push(death_event(creature));
+            continue;
+        }
+        if think.suicide {
+            suicide_ids.insert(creature.id.clone(), ());
+        }
+        pending.push((i, think));
     }
-    if cond {
-        let top = match pop(creature) {
-            Ok(v) => v,
-            Err(()) => return StepOutcome::Sleep,
+
+    let mut move_targets: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    for (i, think) in &pending {
+        for action in &think.actions {
+            if let PendingAction::Move { dir } = action {
+                let c = &creatures[*i];
+                if let Some((nx, ny)) = adjacent(c.x, c.y, *dir) {
+                    move_targets.entry((nx, ny)).or_default().push(*i);
+                }
+            }
+        }
+    }
+
+    let mut blocked_moves: HashMap<usize, bool> = HashMap::new();
+    for (cell, ids) in &move_targets {
+        if ids.len() > 1 {
+            for id in ids {
+                blocked_moves.insert(*id, true);
+            }
+            continue;
+        }
+        let i = ids[0];
+        let c = &creatures[i];
+        if blocks_movement(tiles, cell.0, cell.1) {
+            blocked_moves.insert(i, true);
+            continue;
+        }
+        if snapshot.id_at.contains_key(cell) {
+            let occupant = snapshot.id_at.get(cell).unwrap();
+            if occupant != &c.id {
+                blocked_moves.insert(i, true);
+            }
+        }
+    }
+
+    let mut spawns: Vec<(usize, PendingAction)> = Vec::new();
+    let mut signals: Vec<(usize, PendingAction)> = Vec::new();
+    let mut eats: Vec<(usize, u8)> = Vec::new();
+
+    for (i, think) in pending {
+        let c = &mut creatures[i];
+        if think.suicide {
+            mark_dead(c, DeathReason::Suicide);
+            let payout = (c.energy - config.corpse_energy).max(0);
+            if payout > 0 {
+                result.credit_payouts.push((c.owner_uid.clone(), payout));
+            }
+            continue;
+        }
+
+        for action in think.actions {
+            match action {
+                PendingAction::Move { dir } => {
+                    if *blocked_moves.get(&i).unwrap_or(&false) {
+                        continue;
+                    }
+                    if let Some((nx, ny)) = adjacent(c.x, c.y, dir) {
+                        c.x = nx;
+                        c.y = ny;
+                    }
+                }
+                PendingAction::Dig { dir } => {
+                    if let Some((x, y)) = adjacent(c.x, c.y, dir) {
+                        set_cell(tiles, x, y, tile::EMPTY);
+                    }
+                }
+                PendingAction::Place { dir } => {
+                    if let Some((x, y)) = adjacent(c.x, c.y, dir) {
+                        if sense_kind(tiles, x, y, false) == tile::EMPTY
+                            && !snapshot.id_at.contains_key(&(x, y))
+                        {
+                            set_cell(tiles, x, y, tile::SOLID);
+                        }
+                    }
+                }
+                PendingAction::Eat { dir } => eats.push((i, dir)),
+                PendingAction::Spawn { .. } => spawns.push((i, action)),
+                PendingAction::SignalTo { .. } | PendingAction::SignalBroadcast { .. } => {
+                    signals.push((i, action))
+                }
+            }
+        }
+    }
+
+    for (i, dir) in eats {
+        if !creatures[i].alive {
+            continue;
+        }
+        let Some((x, y)) = adjacent(creatures[i].x, creatures[i].y, dir) else {
+            continue;
         };
-        if (top == 0) != on_zero {
-            creature.pc += 3;
-            return StepOutcome::Continue;
+        if let Some(WorldTile::Corpse { energy, .. }) = tiles.get(&(x, y)).copied() {
+            tiles.remove(&(x, y));
+            creatures[i].energy += energy;
+            continue;
         }
-    }
-    let Some(offset) = read_i16(creature, creature.pc + 1) else {
-        return StepOutcome::Sleep;
-    };
-    let next = creature.pc as i32 + 3 + offset as i32;
-    if next < 0 || next as usize >= creature.bytecode.len() {
-        return StepOutcome::Sleep;
-    }
-    creature.pc = next as usize;
-    StepOutcome::Continue
-}
-
-fn binop(creature: &mut Creature, f: fn(i32, i32) -> i32) -> StepOutcome {
-    if !pay(creature, INSTRUCTION_COST) {
-        return StepOutcome::Sleep;
-    }
-    let Some(a) = pop(creature).ok() else {
-        return StepOutcome::Sleep;
-    };
-    let Some(b) = pop(creature).ok() else {
-        return StepOutcome::Sleep;
-    };
-    if push(creature, f(a, b)).is_err() {
-        return StepOutcome::Sleep;
-    }
-    creature.pc += 1;
-    StepOutcome::Continue
-}
-
-fn pay(creature: &mut Creature, cost: i64) -> bool {
-    if creature.energy < cost {
-        return false;
-    }
-    creature.energy -= cost;
-    if creature.energy <= CORPSE_ENERGY {
-        creature.alive = false;
-    }
-    true
-}
-
-fn push(creature: &mut Creature, value: i32) -> Result<(), ()> {
-    if creature.stack.len() >= STACK_MAX {
-        return Err(());
-    }
-    creature.stack.push(value);
-    Ok(())
-}
-
-fn pop(creature: &mut Creature) -> Result<i32, ()> {
-    creature.stack.pop().ok_or(())
-}
-
-fn read_dir(creature: &Creature) -> Option<u8> {
-    creature.bytecode.get(creature.pc + 1).copied()
-}
-
-fn read_i16(creature: &Creature, pc: usize) -> Option<i16> {
-    let bytes = creature.bytecode.get(pc..pc + 2)?;
-    Some(i16::from_le_bytes([bytes[0], bytes[1]]))
-}
-
-pub fn adjacent(x: i32, y: i32, dir: u8) -> Option<(i32, i32)> {
-    Some(match dir {
-        isa::dir::N => (x, y - 1),
-        isa::dir::E => (x + 1, y),
-        isa::dir::S => (x, y + 1),
-        isa::dir::W => (x - 1, y),
-        _ => return None,
-    })
-}
-
-pub struct WorldView<'a> {
-    positions: &'a mut Vec<(String, i32, i32)>,
-    tiles: &'a mut WorldTiles,
-}
-
-impl<'a> WorldView<'a> {
-    pub fn new(
-        positions: &'a mut Vec<(String, i32, i32)>,
-        tiles: &'a mut WorldTiles,
-    ) -> Self {
-        Self { positions, tiles }
+        let Some(victim_idx) = creatures.iter().position(|v| v.alive && v.x == x && v.y == y) else {
+            continue;
+        };
+        if victim_idx == i {
+            continue;
+        }
+        let gain = (creatures[victim_idx].energy - config.corpse_energy).max(0);
+        creatures[i].energy += gain;
+        mark_dead(&mut creatures[victim_idx], DeathReason::Eaten);
+        result.events.push(death_event(&creatures[victim_idx]));
     }
 
-    fn pos_index(&self, id: &str) -> Option<usize> {
-        self.positions.iter().position(|(cid, _, _)| cid == id)
-    }
-
-    pub fn creature_at(&self, x: i32, y: i32) -> Option<&str> {
-        self.positions
-            .iter()
-            .find(|(_, px, py)| *px == x && *py == y)
-            .map(|(id, _, _)| id.as_str())
-    }
-
-    pub fn tile_at(&self, x: i32, y: i32) -> i32 {
-        sense_kind(self.tiles, x, y, false)
-    }
-
-    pub fn sense_at(&self, x: i32, y: i32) -> i32 {
-        sense_kind(
-            self.tiles,
+    for (i, action) in spawns {
+        let PendingAction::Spawn { dir, energy } = action else {
+            continue;
+        };
+        let px = creatures[i].x;
+        let py = creatures[i].y;
+        let Some((x, y)) = adjacent(px, py, dir) else {
+            mark_dead(&mut creatures[i], DeathReason::SpawnFailed);
+            continue;
+        };
+        if snapshot.id_at.contains_key(&(x, y))
+            || blocks_movement(tiles, x, y)
+            || sense_kind(tiles, x, y, false) != tile::EMPTY
+        {
+            mark_dead(&mut creatures[i], DeathReason::SpawnFailed);
+            continue;
+        }
+        let parent_id = creatures[i].id.clone();
+        let owner_uid = creatures[i].owner_uid.clone();
+        let wasm = creatures[i].wasm.clone();
+        let code = creatures[i].code.clone();
+        if creatures[i].energy < energy {
+            mark_dead(&mut creatures[i], DeathReason::OutOfEnergy);
+            continue;
+        }
+        creatures[i].energy -= energy;
+        let child_id = Uuid::new_v4().to_string();
+        result.events.push(WorldEvent::Spawn {
+            creature_id: child_id.clone(),
+            parent_id: parent_id.clone(),
             x,
             y,
-            self.creature_at(x, y).is_some(),
-        )
+        });
+        creatures.push(Creature {
+            id: child_id,
+            x,
+            y,
+            energy,
+            owner_uid,
+            parent_id: Some(parent_id),
+            wasm,
+            code,
+            alive: true,
+            inbox: vec![],
+            death_reason: None,
+            born_tick: tick,
+        });
     }
 
-    pub fn set_tile(&mut self, x: i32, y: i32, kind: i32) {
-        set_cell(self.tiles, x, y, kind);
-    }
-
-    fn take_corpse_energy(&mut self, x: i32, y: i32) -> Option<i64> {
-        match self.tiles.get(&(x, y)).copied() {
-            Some(WorldTile::Corpse { energy }) => {
-                self.tiles.remove(&(x, y));
-                Some(energy)
+    let mut deliveries: Vec<(String, Signal)> = Vec::new();
+    for (i, action) in signals {
+        let sender_id = creatures[i].id.clone();
+        match action {
+            PendingAction::SignalTo {
+                to_id,
+                byte,
+                from_x,
+                from_y,
+            } => {
+                let Some(&(tx, ty)) = snapshot.positions.get(&to_id) else {
+                    mark_dead(&mut creatures[i], DeathReason::SignalUnknownTarget);
+                    continue;
+                };
+                let c = &creatures[i];
+                if !in_sig_range(c.x, c.y, tx, ty, config) {
+                    mark_dead(&mut creatures[i], DeathReason::SignalOutOfRange);
+                    continue;
+                }
+                let sig = Signal {
+                    from_id: sender_id.clone(),
+                    from_x,
+                    from_y,
+                    byte,
+                    broadcast: false,
+                };
+                deliveries.push((to_id.clone(), sig));
+                result.events.push(WorldEvent::Signal {
+                    from_id: sender_id,
+                    from_x,
+                    from_y,
+                    to_id: Some(to_id),
+                    byte,
+                    broadcast: false,
+                });
             }
-            _ => None,
+            PendingAction::SignalBroadcast {
+                byte,
+                from_x,
+                from_y,
+            } => {
+                let sender = &creatures[i];
+                let sx = sender.x;
+                let sy = sender.y;
+                for (cid, &(tx, ty)) in &snapshot.positions {
+                    if cid == &sender.id {
+                        continue;
+                    }
+                    if !in_sig_range(sx, sy, tx, ty, config) {
+                        continue;
+                    }
+                    deliveries.push((
+                        cid.clone(),
+                        Signal {
+                            from_id: sender_id.clone(),
+                            from_x,
+                            from_y,
+                            byte,
+                            broadcast: true,
+                        },
+                    ));
+                }
+                result.events.push(WorldEvent::Signal {
+                    from_id: sender_id,
+                    from_x,
+                    from_y,
+                    to_id: None,
+                    byte,
+                    broadcast: true,
+                });
+            }
+            _ => {}
         }
     }
 
-    pub fn try_move(&mut self, id: &str, dir: u8) {
-        let Some(idx) = self.pos_index(id) else {
-            return;
-        };
-        let (x, y) = (self.positions[idx].1, self.positions[idx].2);
-        let Some((nx, ny)) = adjacent(x, y, dir) else {
-            return;
-        };
-        if blocks_movement(self.tiles, nx, ny) {
-            return;
+    for (to_id, sig) in deliveries {
+        if let Some(c) = creatures.iter_mut().find(|c| c.id == to_id && c.alive) {
+            if c.inbox.len() >= config.signal_inbox_cap {
+                c.inbox.remove(0);
+            }
+            c.inbox.push(sig);
         }
-        if self
-            .positions
-            .iter()
-            .any(|(cid, px, py)| cid != id && *px == nx && *py == ny)
-        {
-            return;
-        }
-        self.positions[idx].1 = nx;
-        self.positions[idx].2 = ny;
     }
-}
 
-pub fn run_tick(creatures: &mut Vec<Creature>, tiles: &mut WorldTiles) {
-    let mut positions: Vec<(String, i32, i32)> = creatures
-        .iter()
-        .filter(|c| c.alive)
-        .map(|c| (c.id.clone(), c.x, c.y))
-        .collect();
+    for creature in creatures.iter() {
+        if creature.alive {
+            continue;
+        }
+        if suicide_ids.contains_key(&creature.id) {
+            result.events.push(death_event(creature));
+            continue;
+        }
+        if !result.events.iter().any(|e| {
+            matches!(e, WorldEvent::Death { creature_id, .. } if creature_id == &creature.id)
+        }) {
+            result.events.push(death_event(creature));
+        }
+    }
 
-    let mut dead: Vec<(i32, i32)> = Vec::new();
-
-    for creature in creatures.iter_mut().filter(|c| c.alive) {
-        let idx = positions.iter().position(|(id, _, _)| id == &creature.id);
-        if let Some(i) = idx {
-            creature.x = positions[i].1;
-            creature.y = positions[i].2;
+    let mut dead: Vec<(i32, i32, i64, DeathReason)> = Vec::new();
+    for creature in creatures.iter() {
+        if creature.alive || suicide_ids.contains_key(&creature.id) {
+            continue;
         }
-        let mut world = WorldView::new(&mut positions, tiles);
-        tick_creature(creature, &mut world);
-        if let Some(i) = positions.iter().position(|(id, _, _)| id == &creature.id) {
-            creature.x = positions[i].1;
-            creature.y = positions[i].2;
-        }
-        if !creature.alive {
-            dead.push((creature.x, creature.y));
-        }
+        dead.push((
+            creature.x,
+            creature.y,
+            creature.energy.max(config.corpse_energy),
+            creature.death_reason.unwrap_or(DeathReason::WasmTrap),
+        ));
     }
 
     creatures.retain(|c| c.alive);
 
-    for (x, y) in dead {
-        place_corpse(tiles, x, y, CORPSE_ENERGY);
+    for (x, y, energy, reason) in dead {
+        place_corpse(tiles, x, y, energy, reason);
     }
+
+    result
+}
+
+fn build_snapshot(creatures: &[Creature]) -> Snapshot {
+    let mut positions = HashMap::new();
+    let mut id_at = HashMap::new();
+    let mut energy = HashMap::new();
+    for c in creatures.iter().filter(|c| c.alive) {
+        positions.insert(c.id.clone(), (c.x, c.y));
+        id_at.insert((c.x, c.y), c.id.clone());
+        energy.insert(c.id.clone(), c.energy);
+    }
+    Snapshot {
+        positions,
+        id_at,
+        energy,
+    }
+}
+
+fn in_sig_range(sx: i32, sy: i32, tx: i32, ty: i32, config: &SimConfig) -> bool {
+    let dx = tx - sx;
+    let dy = ty - sy;
+    config.in_square(dx, dy, config.r_sig)
+}
+
+fn think_once(
+    engine: &wasmtime::Engine,
+    creature: &mut Creature,
+    snapshot: &Snapshot,
+    tiles: &WorldTiles,
+    config: &SimConfig,
+    tick: u64,
+) -> ThinkResult {
+    let Some(module) = host::cached_module(engine, &creature.wasm) else {
+        mark_dead(creature, DeathReason::InvalidProgram);
+        return ThinkResult::default();
+    };
+    host::run_creature_tick(engine, &module, creature, snapshot, tiles, config, tick)
+}
+
+pub fn adjacent(x: i32, y: i32, dir: u8) -> Option<(i32, i32)> {
+    Some(match dir {
+        d if d == dir::N as u8 => (x, y - 1),
+        d if d == dir::E as u8 => (x + 1, y),
+        d if d == dir::S as u8 => (x, y + 1),
+        d if d == dir::W as u8 => (x - 1, y),
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compile_wat;
     use crate::world_tile::WorldTiles;
-    use crate::assemble;
 
     #[test]
-    fn all_examples_assemble() {
+    fn all_examples_compile() {
         for example in crate::EXAMPLE_PROGRAMS {
-            assemble(example.code).unwrap_or_else(|err| {
-                panic!("example `{}` failed at line {}: {}", example.id, err.line, err.message)
+            compile_wat(example.code).unwrap_or_else(|err| {
+                panic!("example `{}` failed: {err}", example.id)
             });
         }
     }
 
     #[test]
-    fn tunnel_east_moves_over_ten_ticks() {
-        let code = crate::EXAMPLE_PROGRAMS
-            .iter()
-            .find(|e| e.id == "tunnel")
-            .unwrap()
-            .code;
+    fn one_tick_moves_east() {
+        const CODE: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 1
+    call $move
+    drop
+    call $sleep)
+)
+"#;
         let mut creatures = vec![Creature {
             id: "a".into(),
             x: 0,
             y: 0,
-            energy: 10_000,
+            energy: 1_000_000_000,
             owner_uid: "u".into(),
-            bytecode: assemble(code).unwrap(),
-            pc: 0,
-            stack: vec![],
+            parent_id: None,
+            wasm: compile_wat(CODE).unwrap(),
+            code: CODE.into(),
             alive: true,
+            inbox: vec![],
+            death_reason: None,
+            born_tick: 0,
         }];
         let mut tiles = WorldTiles::new();
-        for _ in 0..10 {
-            run_tick(&mut creatures, &mut tiles);
-        }
-        assert_eq!(creatures[0].x, 10);
-        assert_eq!(creatures[0].y, 0);
-    }
-
-    #[test]
-    fn idle_does_not_move() {
-        let code = crate::EXAMPLE_PROGRAMS
-            .iter()
-            .find(|e| e.id == "idle")
-            .unwrap()
-            .code;
-        let mut creatures = vec![Creature {
-            id: "a".into(),
-            x: 3,
-            y: 4,
-            energy: 100,
-            owner_uid: "u".into(),
-            bytecode: assemble(code).unwrap(),
-            pc: 0,
-            stack: vec![],
-            alive: true,
-        }];
-        let mut tiles = WorldTiles::new();
-        for _ in 0..5 {
-            run_tick(&mut creatures, &mut tiles);
-        }
-        assert_eq!(creatures[0].x, 3);
-        assert_eq!(creatures[0].y, 4);
+        let config = SimConfig::default();
+        run_tick(&mut creatures, &mut tiles, &config, 1);
+        assert_eq!(creatures[0].x, 1);
     }
 }

@@ -35,3 +35,13 @@ Frontend local config is written to `apps/skin/.env.local` by `setup-dev.sh` (gi
 | `FIREBASE_SERVICE_ACCOUNT` | JSON key for Firebase Hosting deploy action |
 
 Never commit `.env`, service account JSON, or Firebase keys.
+
+## Enable GitHub deploy
+
+Deploy jobs are **off by default**. After adding the secrets below, set a repository **variable** (Settings → Secrets and variables → Actions → Variables):
+
+| Variable | Value |
+|----------|--------|
+| `DEPLOY_ENABLED` | `true` |
+
+Without `DEPLOY_ENABLED=true`, pushes to `main` still run the Deploy workflow's test job but skip Cloud Run and Firebase Hosting. You can also trigger a full deploy manually from Actions → Deploy → Run workflow (requires `DEPLOY_ENABLED=true`).

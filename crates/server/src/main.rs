@@ -23,7 +23,7 @@ mod ws;
 use auth::FirebaseUser;
 use config::Config;
 use engine::{spawn_tick_loop, WorldEngine, WorldMessage};
-use terrarium_kernel::{assemble, vm::Creature, CORPSE_ENERGY};
+use terrarium_kernel::{compile_wat, vm::Creature, SimConfig, CORPSE_ENERGY, WatError};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -115,6 +115,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn build_app(state: AppState) -> Router {
+    let dev = Router::new()
+        .route("/dev/sim-config", get(get_sim_config).patch(patch_sim_config))
+        .layer(middleware::from_fn(dev_only));
+
     let protected = Router::new()
         .route("/me", get(me))
         .route("/faucet", post(faucet))
@@ -127,7 +131,8 @@ fn build_app(state: AppState) -> Router {
     let v1 = Router::new()
         .route("/world", get(world))
         .route("/world/ws", get(ws::world_ws))
-        .merge(protected);
+        .merge(protected)
+        .merge(dev);
 
     let routes = Router::new()
         .route("/health", get(health))
@@ -147,6 +152,30 @@ async fn health() -> Json<HealthResponse> {
         status: "ok",
         tick_hz: terrarium_kernel::TICK_HZ,
     })
+}
+
+async fn dev_only(req: Request, next: Next) -> Response {
+    let dev = std::env::var("DEV_MODE")
+        .ok()
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes"))
+        .unwrap_or(cfg!(debug_assertions));
+    if dev {
+        next.run(req).await
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+async fn get_sim_config(State(state): State<AppState>) -> Json<SimConfig> {
+    Json(state.engine.sim_config())
+}
+
+async fn patch_sim_config(
+    State(state): State<AppState>,
+    Json(body): Json<SimConfig>,
+) -> Json<SimConfig> {
+    state.engine.set_sim_config(body.clone());
+    Json(body)
 }
 
 async fn me(
@@ -337,8 +366,11 @@ async fn deploy_creature(
             "extra energy must be at least {min_extra}"
         )));
     }
-    let bytecode = assemble(code).map_err(|err| {
-        DeployError::InvalidProgram(format!("line {}: {}", err.line, err.message))
+    let wasm = compile_wat(code).map_err(|err| {
+        DeployError::InvalidProgram(match err {
+            WatError::Empty => "program is required".into(),
+            WatError::Parse(msg) => msg,
+        })
     })?;
 
     let cost = extra;
@@ -372,8 +404,10 @@ async fn deploy_creature(
         .await
         .map_err(deploy_internal)?;
 
+    let born_tick = state.engine.current_tick() as i64;
+
     sqlx::query(
-        "INSERT INTO creatures (id, owner_uid, x, y, energy, code, bytecode, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, 0, x'')",
+        "INSERT INTO creatures (id, owner_uid, x, y, energy, code, bytecode, born_tick, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, x'')",
     )
     .bind(&id)
     .bind(uid)
@@ -381,7 +415,8 @@ async fn deploy_creature(
     .bind(y)
     .bind(energy)
     .bind(code)
-    .bind(&bytecode)
+    .bind(&wasm)
+    .bind(born_tick)
     .execute(&mut *tx)
     .await
     .map_err(|err| {
@@ -403,10 +438,13 @@ async fn deploy_creature(
             x: x as i32,
             y: y as i32,
             energy,
-            bytecode,
-            pc: 0,
-            stack: vec![],
+            parent_id: None,
+            wasm,
+            code: code.to_string(),
             alive: true,
+            inbox: vec![],
+            death_reason: None,
+            born_tick: born_tick as u64,
         })
         .map_err(deploy_internal)?;
 

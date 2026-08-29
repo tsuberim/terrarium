@@ -6,7 +6,8 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use terrarium_kernel::{
-    assemble, run_tick, vm::Creature, WorldTile, WorldTiles, TICK_HZ, CORPSE_ENERGY,
+    compile_wat, run_tick, vm::Creature, DeathReason, SimConfig, WorldEvent, WorldTile, WorldTiles,
+    TICK_HZ,
 };
 use tokio::sync::broadcast;
 
@@ -22,6 +23,9 @@ pub struct CreaturePublic {
     pub y: i64,
     pub energy: i64,
     pub owner_uid: String,
+    /// WASM digest — same program shares the same hash.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_hash: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -31,6 +35,8 @@ pub struct TilePublic {
     pub kind: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub death_reason: Option<DeathReason>,
 }
 
 #[derive(Clone, Serialize)]
@@ -40,6 +46,7 @@ pub enum WorldMessage {
         tick: u64,
         deploy_cost: i64,
         corpse_energy: i64,
+        sim_config: SimConfig,
         creatures: Vec<CreaturePublic>,
         tiles: Vec<TilePublic>,
     },
@@ -49,6 +56,7 @@ pub enum WorldMessage {
         creatures_remove: Vec<String>,
         tiles_upsert: Vec<TilePublic>,
         tiles_remove: Vec<[i64; 2]>,
+        events: Vec<WorldEvent>,
     },
 }
 
@@ -72,6 +80,7 @@ pub struct WorldEngine {
     pub db: SqlitePool,
     deploy_cost: i64,
     persist_every: u64,
+    sim_config: RwLock<SimConfig>,
     events: broadcast::Sender<WorldMessage>,
 }
 
@@ -94,8 +103,17 @@ impl WorldEngine {
             db,
             deploy_cost: config.deploy_cost,
             persist_every,
+            sim_config: RwLock::new(SimConfig::default()),
             events,
         }))
+    }
+
+    pub fn sim_config(&self) -> SimConfig {
+        self.sim_config.read().clone()
+    }
+
+    pub fn set_sim_config(&self, config: SimConfig) {
+        *self.sim_config.write() = config;
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<WorldMessage> {
@@ -106,12 +124,26 @@ impl WorldEngine {
         self.deploy_cost
     }
 
+    pub fn current_tick(&self) -> u64 {
+        self.inner.read().tick
+    }
+
+    pub fn public_creatures(&self) -> Vec<CreaturePublic> {
+        self.inner
+            .read()
+            .creatures
+            .iter()
+            .map(creature_public)
+            .collect()
+    }
+
     pub fn snapshot(&self) -> WorldMessage {
         let state = self.inner.read();
         WorldMessage::Snapshot {
             tick: state.tick,
             deploy_cost: self.deploy_cost,
-            corpse_energy: CORPSE_ENERGY,
+            corpse_energy: self.sim_config.read().corpse_energy,
+            sim_config: self.sim_config.read().clone(),
             creatures: state.creatures.iter().map(creature_public).collect(),
             tiles: tiles_public(&state.tiles),
         }
@@ -137,6 +169,7 @@ impl WorldEngine {
             creatures_remove: vec![],
             tiles_upsert: vec![],
             tiles_remove: vec![],
+            events: vec![],
         };
         drop(state);
         let _ = self.events.send(msg);
@@ -156,12 +189,40 @@ impl WorldEngine {
 
         let mut creatures = std::mem::take(&mut state.creatures);
         let mut tiles = std::mem::take(&mut state.tiles);
-        run_tick(&mut creatures, &mut tiles);
+        let config = self.sim_config.read().clone();
+        let tick_result = run_tick(&mut creatures, &mut tiles, &config, tick);
         state.creatures = creatures;
         state.tiles = tiles;
         state.tick = tick;
 
-        let message = build_delta(tick, &before, &state.creatures, &before_tiles, &state.tiles);
+        if !tick_result.credit_payouts.is_empty() {
+            let db = self.db.clone();
+            let payouts = tick_result.credit_payouts.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build();
+                if let Ok(rt) = rt {
+                    rt.block_on(async {
+                        for (uid, amount) in payouts {
+                            let _ = sqlx::query(
+                                "UPDATE accounts SET credits = credits + ? WHERE firebase_uid = ?",
+                            )
+                            .bind(amount)
+                            .bind(&uid)
+                            .execute(&db)
+                            .await;
+                        }
+                    });
+                }
+            });
+        }
+
+        let mut message =
+            build_delta(tick, &before, &state.creatures, &before_tiles, &state.tiles);
+        if let WorldMessage::Delta { events, .. } = &mut message {
+            *events = tick_result.events;
+        }
         let persist = if tick % self.persist_every == 0 {
             Some(PersistSnapshot {
                 creatures: state.creatures.clone(),
@@ -223,7 +284,14 @@ fn build_delta(
         creatures_remove,
         tiles_upsert,
         tiles_remove,
+        events: vec![],
     }
+}
+
+fn program_hash(wasm: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(wasm);
+    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn creature_public(c: &Creature) -> CreaturePublic {
@@ -233,19 +301,29 @@ fn creature_public(c: &Creature) -> CreaturePublic {
         y: c.y as i64,
         energy: c.energy,
         owner_uid: c.owner_uid.clone(),
+        program_hash: Some(program_hash(&c.wasm)),
     }
 }
 
 fn tile_public(pos: (i32, i32), tile: WorldTile) -> TilePublic {
-    let (kind, energy) = match tile {
-        WorldTile::Solid => (1, None),
-        WorldTile::Corpse { energy } => (3, Some(energy)),
-    };
-    TilePublic {
-        x: pos.0 as i64,
-        y: pos.1 as i64,
-        kind,
-        energy,
+    match tile {
+        WorldTile::Solid => TilePublic {
+            x: pos.0 as i64,
+            y: pos.1 as i64,
+            kind: 1,
+            energy: None,
+            death_reason: None,
+        },
+        WorldTile::Corpse {
+            energy,
+            death_reason,
+        } => TilePublic {
+            x: pos.0 as i64,
+            y: pos.1 as i64,
+            kind: 3,
+            energy: Some(energy),
+            death_reason: Some(death_reason),
+        },
     }
 }
 
@@ -258,22 +336,27 @@ fn tiles_public(tiles: &WorldTiles) -> Vec<TilePublic> {
     out
 }
 
-const IDLE_BYTECODE_SOURCE: &str = "loop:\n  sleep\n  jmp loop\n";
+const IDLE_WAT: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (func (export "tick") (call $sleep))
+)
+"#;
 
 async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
-    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, Option<Vec<u8>>, i64, Option<Vec<u8>>, String)>(
-        "SELECT id, owner_uid, x, y, energy, bytecode, pc, stack, code FROM creatures ORDER BY id",
+    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, Option<Vec<u8>>, String, i64)>(
+        "SELECT id, owner_uid, x, y, energy, bytecode, code, born_tick FROM creatures ORDER BY id",
     )
     .fetch_all(db)
     .await?;
 
-    let idle = assemble(IDLE_BYTECODE_SOURCE)?;
+    let idle = compile_wat(IDLE_WAT)?;
 
     rows.into_iter()
-        .map(|(id, owner_uid, x, y, energy, bytecode, pc, stack, code)| {
-            let bytecode = match bytecode.filter(|b| !b.is_empty()) {
+        .map(|(id, owner_uid, x, y, energy, wasm_blob, code, born_tick)| {
+            let wasm = match wasm_blob.filter(|b| !b.is_empty()) {
                 Some(b) => b,
-                None => assemble(&code).unwrap_or_else(|_| idle.clone()),
+                None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
             };
             Ok(Creature {
                 id,
@@ -281,25 +364,28 @@ async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
                 x: x as i32,
                 y: y as i32,
                 energy,
-                bytecode,
-                pc: pc as usize,
-                stack: decode_stack(stack.as_deref().unwrap_or(&[])),
+                parent_id: None,
+                wasm,
+                code,
                 alive: true,
+                inbox: vec![],
+                death_reason: None,
+                born_tick: born_tick.max(0) as u64,
             })
         })
         .collect()
 }
 
 async fn load_tiles(db: &SqlitePool) -> anyhow::Result<WorldTiles> {
-    let rows = sqlx::query_as::<_, (i64, i64, i64, Option<i64>)>(
-        "SELECT x, y, kind, energy FROM world_tiles",
+    let rows = sqlx::query_as::<_, (i64, i64, i64, Option<i64>, Option<String>)>(
+        "SELECT x, y, kind, energy, death_reason FROM world_tiles",
     )
     .fetch_all(db)
     .await?;
 
     Ok(rows
         .into_iter()
-        .filter_map(|(x, y, kind, energy)| {
+        .filter_map(|(x, y, kind, energy, death_reason)| {
             let pos = (x as i32, y as i32);
             Some((
                 pos,
@@ -307,6 +393,10 @@ async fn load_tiles(db: &SqlitePool) -> anyhow::Result<WorldTiles> {
                     1 => WorldTile::Solid,
                     3 => WorldTile::Corpse {
                         energy: energy.unwrap_or(0),
+                        death_reason: death_reason
+                            .as_deref()
+                            .and_then(DeathReason::parse)
+                            .unwrap_or(DeathReason::WasmTrap),
                     },
                     _ => return None,
                 },
@@ -348,14 +438,13 @@ pub async fn persist_world(
 
     for creature in creatures {
         sqlx::query(
-            "UPDATE creatures SET x = ?, y = ?, energy = ?, pc = ?, stack = ?, bytecode = COALESCE(bytecode, ?) WHERE id = ?",
+            "UPDATE creatures SET x = ?, y = ?, energy = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
         )
         .bind(creature.x as i64)
         .bind(creature.y as i64)
         .bind(creature.energy)
-        .bind(creature.pc as i64)
-        .bind(encode_stack(&creature.stack))
-        .bind(&creature.bytecode)
+        .bind(&creature.wasm)
+        .bind(creature.born_tick as i64)
         .bind(&creature.id)
         .execute(&mut *tx)
         .await?;
@@ -363,32 +452,33 @@ pub async fn persist_world(
 
     sqlx::query("DELETE FROM world_tiles").execute(&mut *tx).await?;
     for ((x, y), tile) in tiles {
-        let (kind, energy): (i64, Option<i64>) = match tile {
-            WorldTile::Solid => (1, None),
-            WorldTile::Corpse { energy } => (3, Some(*energy)),
-        };
-        sqlx::query("INSERT INTO world_tiles (x, y, kind, energy) VALUES (?, ?, ?, ?)")
-            .bind(*x as i64)
-            .bind(*y as i64)
-            .bind(kind)
-            .bind(energy)
-            .execute(&mut *tx)
-            .await?;
+        match tile {
+            WorldTile::Solid => {
+                sqlx::query("INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 1, NULL, NULL)")
+                    .bind(*x as i64)
+                    .bind(*y as i64)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+            WorldTile::Corpse {
+                energy,
+                death_reason,
+            } => {
+                sqlx::query(
+                    "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 3, ?, ?)",
+                )
+                .bind(*x as i64)
+                .bind(*y as i64)
+                .bind(*energy)
+                .bind(death_reason.as_str())
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
     }
 
     tx.commit().await?;
     Ok(())
-}
-
-fn encode_stack(stack: &[i32]) -> Vec<u8> {
-    stack.iter().flat_map(|v| v.to_le_bytes()).collect()
-}
-
-fn decode_stack(bytes: &[u8]) -> Vec<i32> {
-    bytes
-        .chunks_exact(4)
-        .map(|chunk| i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
 }
 
 pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
@@ -437,7 +527,7 @@ pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
 #[cfg(test)]
 mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
-    use terrarium_kernel::{assemble, vm::Creature, EXAMPLE_PROGRAMS};
+    use terrarium_kernel::{compile_wat, vm::Creature, EXAMPLE_PROGRAMS};
 
     use super::*;
     use crate::config::Config;
@@ -456,8 +546,8 @@ mod tests {
                 database_url: "sqlite::memory:".into(),
                 firebase_project_id: "test".into(),
                 faucet_enabled: true,
-                faucet_max: 1000,
-                deploy_cost: 100,
+                faucet_max: 100 * terrarium_kernel::ENERGY_SCALE,
+                deploy_cost: 100 * terrarium_kernel::ENERGY_SCALE,
             },
         )
         .await
@@ -472,7 +562,7 @@ mod tests {
         code: &str,
         energy: i64,
     ) {
-        let bytecode = assemble(code).unwrap();
+        let wasm = compile_wat(code).unwrap();
         sqlx::query("INSERT INTO accounts (firebase_uid, credits) VALUES ('tester', 1000) ON CONFLICT DO NOTHING")
             .execute(&engine.db)
             .await
@@ -485,7 +575,7 @@ mod tests {
         .bind(y as i64)
         .bind(energy)
         .bind(code)
-        .bind(&bytecode)
+        .bind(&wasm)
         .execute(&engine.db)
         .await
         .unwrap();
@@ -496,10 +586,13 @@ mod tests {
                 x,
                 y,
                 energy,
-                bytecode,
-                pc: 0,
-                stack: vec![],
+                parent_id: None,
+                wasm,
+                code: code.into(),
                 alive: true,
+                inbox: vec![],
+                death_reason: None,
+                born_tick: 0,
             })
             .unwrap();
     }
@@ -509,10 +602,10 @@ mod tests {
         let engine = test_engine().await;
         let code = EXAMPLE_PROGRAMS
             .iter()
-            .find(|e| e.id == "tunnel")
+            .find(|e| e.id == "runner")
             .unwrap()
             .code;
-        seed_creature(&engine, "a", 0, 0, code, 1000).await;
+        seed_creature(&engine, "a", 0, 0, code, 100_000_000).await;
 
         engine.tick_step();
 
@@ -527,12 +620,12 @@ mod tests {
         let engine = test_engine().await;
         let code = EXAMPLE_PROGRAMS
             .iter()
-            .find(|e| e.id == "tunnel")
+            .find(|e| e.id == "runner")
             .unwrap()
             .code;
-        seed_creature(&engine, "a", 0, 0, code, 1000).await;
+        seed_creature(&engine, "a", 0, 0, code, 100_000_000).await;
 
-        for _ in 0..10 {
+        for _ in 0..30 {
             let step = engine.tick_step();
             if let Some(snapshot) = step.persist {
                 persist_world(&engine.db, &snapshot.creatures, &snapshot.tiles)
@@ -545,6 +638,6 @@ mod tests {
             .fetch_one(&engine.db)
             .await
             .unwrap();
-        assert_eq!(x, 10);
+        assert!(x >= 8, "expected tunnel progress, x={x}");
     }
 }

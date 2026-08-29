@@ -1,150 +1,262 @@
-//! Semantic tests for the VM — stack order, control flow, world interactions.
+//! Semantic tests for the WASM runtime.
 
-use crate::assemble;
-use crate::isa::tile;
+use crate::compile_wat;
+use crate::examples::{BEACON, IDLE, KAMIKAZE, PREDATOR, PREY, RUNNER, SCAVENGER};
+use crate::sim_config::SimConfig;
 use crate::vm::{run_tick, Creature};
 use crate::world_tile::{WorldTile, WorldTiles};
 use crate::CORPSE_ENERGY;
+use crate::DeathReason;
 
-fn creature_at(x: i32, y: i32, bytecode: Vec<u8>) -> Creature {
+fn default_config() -> SimConfig {
+    SimConfig::default()
+}
+
+fn creature_at(x: i32, y: i32, code: &'static str) -> Creature {
     Creature {
         id: "c".into(),
         x,
         y,
-        energy: 1000,
+        energy: 100_000_000,
         owner_uid: "u".into(),
-        bytecode,
-        pc: 0,
-        stack: vec![],
+        parent_id: None,
+        wasm: compile_wat(code).unwrap(),
+        code: code.into(),
         alive: true,
+        inbox: vec![],
+        death_reason: None,
+        born_tick: 0,
     }
 }
 
-fn run(source: &str, x: i32, y: i32, tiles: &mut WorldTiles) -> Creature {
-    let mut creatures = vec![creature_at(x, y, assemble(source).unwrap())];
-    run_tick(&mut creatures, tiles);
+fn run(code: &'static str, x: i32, y: i32, tiles: &mut WorldTiles) -> Creature {
+    let mut creatures = vec![creature_at(x, y, code)];
+    run_tick(&mut creatures, tiles, &default_config(), 1);
     creatures.remove(0)
 }
 
 #[test]
-fn stack_underflow_stalls_not_kills() {
-    let mut creatures = vec![creature_at(0, 0, vec![crate::isa::op::POP])];
-    run_tick(&mut creatures, &mut WorldTiles::new());
-    assert!(creatures[0].alive);
-    assert_eq!(creatures[0].pc, 0);
-}
-
-#[test]
-fn eq_pops_top_second() {
-    let code = "push 2\npush 1\neq\n";
-    let c = run(code, 0, 0, &mut WorldTiles::new());
-    assert_eq!(c.stack, vec![0]);
-    assert_eq!(c.pc, assemble(code).unwrap().len());
-}
-
-#[test]
-fn sub_is_b_minus_a() {
-    let code = "push 10\npush 3\nsub\n";
-    let c = run(code, 0, 0, &mut WorldTiles::new());
-    assert_eq!(c.stack, vec![7]);
+fn empty_wasm_kills() {
+    let mut creatures = vec![Creature {
+        wasm: vec![],
+        ..creature_at(0, 0, IDLE)
+    }];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert!(creatures.is_empty());
 }
 
 #[test]
 fn blocked_move_costs_energy_but_stays_put() {
     let mut tiles = WorldTiles::new();
     tiles.insert((1, 0), WorldTile::Solid);
-    let code = "move e\nsleep\n";
-    let before = 100_i64;
+    let before = 10_000_000_i64;
     let mut creatures = vec![Creature {
         energy: before,
-        ..creature_at(0, 0, assemble(code).unwrap())
+        ..creature_at(0, 0, RUNNER)
     }];
-    run_tick(&mut creatures, &mut tiles);
+    run_tick(&mut creatures, &mut tiles, &default_config(), 1);
     assert_eq!(creatures[0].x, 0);
-    assert_eq!(creatures[0].energy, before - 2);
+    assert!(creatures[0].energy < before);
+    assert!(creatures[0].energy >= before - 200_000);
 }
 
 #[test]
-fn wall_example_places_solid_north_when_open() {
-    let code = crate::EXAMPLE_PROGRAMS
-        .iter()
-        .find(|e| e.id == "wall")
-        .unwrap()
-        .code;
-    let mut tiles = WorldTiles::new();
-    run_tick(&mut creatures_vec(code, 0, 0), &mut tiles);
-    assert_eq!(tiles.get(&(0, -1)), Some(&WorldTile::Solid));
+fn opcode_gas_charges_energy() {
+    let config = SimConfig {
+        opcodes_per_tick: 64,
+        energy_per_opcode: 1,
+        ..SimConfig::default()
+    };
+    let before = 10_000_000_i64;
+    let mut creatures = vec![Creature {
+        energy: before,
+        ..creature_at(0, 0, IDLE)
+    }];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &config, 1);
+    let spent = before - creatures[0].energy;
+    assert!(spent > 0 && spent < 20, "idle should cost a few opcodes, spent={spent}");
 }
 
 #[test]
-fn wall_example_skips_place_when_already_solid_north() {
-    let code = crate::EXAMPLE_PROGRAMS
-        .iter()
-        .find(|e| e.id == "wall")
-        .unwrap()
-        .code;
-    let mut tiles = WorldTiles::new();
-    tiles.insert((0, -1), WorldTile::Solid);
-    run_tick(&mut creatures_vec(code, 0, 0), &mut tiles);
-    assert_eq!(tiles.len(), 1);
+fn out_of_gas_kills() {
+    let config = SimConfig {
+        opcodes_per_tick: 2,
+        energy_per_opcode: 1,
+        ..SimConfig::default()
+    };
+    let mut creatures = vec![creature_at(0, 0, PREY)];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &config, 1);
+    assert!(creatures.is_empty(), "prey exceeds 2-opcode budget");
 }
 
 #[test]
-fn sense_pushes_creature_on_occupied_cell() {
-    let mut creatures = vec![
-        creature_at(0, 0, assemble("sense e\nsleep\n").unwrap()),
-        Creature {
-            id: "other".into(),
-            x: 1,
+fn out_of_gas_records_reason() {
+    let config = SimConfig {
+        opcodes_per_tick: 2,
+        energy_per_opcode: 1,
+        ..SimConfig::default()
+    };
+    let mut creatures = vec![creature_at(0, 0, PREY)];
+    let result = run_tick(&mut creatures, &mut WorldTiles::new(), &config, 1);
+    assert!(creatures.is_empty(), "prey exceeds 2-opcode budget");
+    assert_eq!(
+        result.events,
+        vec![crate::WorldEvent::Death {
+            creature_id: "c".into(),
+            owner_uid: "u".into(),
+            x: 0,
             y: 0,
-            ..creature_at(0, 0, assemble("sleep\n").unwrap())
+            reason: crate::DeathReason::OutOfGas,
+        }]
+    );
+}
+
+#[test]
+fn predator_chases_distant_prey() {
+    let mut creatures = vec![
+        creature_at(0, 0, PREDATOR),
+        Creature {
+            id: "prey".into(),
+            x: 3,
+            y: 0,
+            ..creature_at(0, 0, IDLE)
         },
     ];
-    run_tick(&mut creatures, &mut WorldTiles::new());
-    assert_eq!(creatures[0].stack, vec![tile::CREATURE]);
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    let pred = creatures.iter().find(|c| c.id == "c").expect("predator alive");
+    assert_eq!(pred.x, 1);
 }
 
 #[test]
-fn death_leaves_corpse_with_const_energy() {
+fn predator_eats_adjacent_prey() {
+    let mut creatures = vec![
+        creature_at(0, 0, PREDATOR),
+        Creature {
+            id: "prey".into(),
+            x: 1,
+            y: 0,
+            energy: 5_000_000,
+            ..creature_at(0, 0, IDLE)
+        },
+    ];
+    let before = creatures[0].energy;
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert_eq!(creatures.len(), 1);
+    assert!(creatures[0].energy > before);
+    assert!(creatures.iter().all(|c| c.id != "prey"));
+}
+
+#[test]
+fn scavenger_chases_distant_corpse() {
+    let mut tiles = WorldTiles::new();
+    tiles.insert((4, 0), WorldTile::Corpse { energy: 1_000_000, death_reason: DeathReason::EnergyFloor });
+    let mut creatures = vec![creature_at(0, 0, SCAVENGER)];
+    run_tick(&mut creatures, &mut tiles, &default_config(), 1);
+    assert_eq!(creatures[0].x, 1);
+}
+
+#[test]
+fn prey_flees_east_threat() {
+    let mut creatures = vec![
+        creature_at(0, 0, PREY),
+        Creature {
+            id: "pred".into(),
+            x: 1,
+            y: 0,
+            ..creature_at(0, 0, IDLE)
+        },
+    ];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    let prey = creatures.iter().find(|c| c.id == "c").expect("prey alive");
+    assert_eq!(prey.x, -1);
+}
+
+#[test]
+fn suicide_pays_no_corpse() {
     let mut tiles = WorldTiles::new();
     let mut creatures = vec![Creature {
-        energy: CORPSE_ENERGY + 5,
-        bytecode: assemble("suicide\n").unwrap(),
-        ..creature_at(5, 5, vec![])
+        energy: CORPSE_ENERGY + 50,
+        ..creature_at(5, 5, KAMIKAZE)
     }];
-    run_tick(&mut creatures, &mut tiles);
+    // Drain energy below threshold via repeated ticks (kamikaze checks each tick)
+    creatures[0].energy = CORPSE_ENERGY + 50;
+    // Force low energy for immediate suicide
+    creatures[0].energy = 2_000_000;
+    let result = run_tick(&mut creatures, &mut tiles, &default_config(), 1);
     assert!(creatures.is_empty());
-    assert_eq!(
-        tiles.get(&(5, 5)),
-        Some(&WorldTile::Corpse { energy: CORPSE_ENERGY })
-    );
+    assert!(!tiles.contains_key(&(5, 5)));
+    let payout = result.credit_payouts[0].1;
+    assert!(payout > 800_000 && payout <= 1_100_000, "payout after opcode gas: {payout}");
 }
 
 #[test]
-fn dies_when_energy_reaches_floor() {
-    let mut tiles = WorldTiles::new();
+fn broadcast_delivers_to_neighbor() {
+    let mut creatures = vec![
+        creature_at(0, 0, BEACON),
+        Creature {
+            id: "b".into(),
+            x: 1,
+            y: 0,
+            ..creature_at(0, 0, IDLE)
+        },
+    ];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert_eq!(creatures[1].inbox.len(), 1);
+    assert_eq!(creatures[1].inbox[0].byte, 190);
+    assert!(creatures[1].inbox[0].broadcast);
+}
+
+#[test]
+fn uptime_reports_age_in_ticks() {
+    const CODE: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "uptime" (func $uptime (result i32)))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (func (export "tick")
+    call $uptime
+    i32.const 3
+    i32.ne
+    if (return) end
+    i32.const 1
+    call $move
+    drop
+    call $sleep)
+)
+"#;
     let mut creatures = vec![Creature {
-        energy: CORPSE_ENERGY + 1,
-        bytecode: assemble("move e\n").unwrap(),
-        ..creature_at(0, 0, vec![])
+        born_tick: 7,
+        wasm: compile_wat(CODE).unwrap(),
+        code: CODE.into(),
+        ..creature_at(0, 0, IDLE)
     }];
-    run_tick(&mut creatures, &mut tiles);
-    assert!(creatures.is_empty());
-    assert_eq!(
-        tiles.get(&(1, 0)),
-        Some(&WorldTile::Corpse { energy: CORPSE_ENERGY })
-    );
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 10);
+    assert_eq!(creatures[0].x, 1);
 }
 
 #[test]
-fn eat_transfers_corpse_energy() {
-    let mut tiles = WorldTiles::new();
-    tiles.insert((1, 0), WorldTile::Corpse { energy: CORPSE_ENERGY });
-    let c = run("eat e\nsleep\n", 0, 0, &mut tiles);
-    assert_eq!(c.energy, 1000 - 1 + CORPSE_ENERGY);
-    assert!(!tiles.contains_key(&(1, 0)));
+fn random_byte_import_works() {
+    const CODE: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "random_byte" (func $rand (result i32)))
+  (func (export "tick")
+    call $rand
+    drop
+    call $sleep)
+)
+"#;
+    let mut creatures = vec![Creature {
+        wasm: compile_wat(CODE).unwrap(),
+        code: CODE.into(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 7);
+    assert_eq!(creatures.len(), 1);
 }
 
-fn creatures_vec(code: &str, x: i32, y: i32) -> Vec<Creature> {
-    vec![creature_at(x, y, assemble(code).unwrap())]
+#[test]
+fn runner_wanders() {
+    let c = run(RUNNER, 0, 0, &mut WorldTiles::new());
+    assert!(c.x != 0 || c.y != 0);
 }

@@ -3,9 +3,78 @@ import { apiRoot } from "./config";
 
 export type Health = { status: string; tick_hz: number };
 export type Me = { uid: string; credits: number };
-export type Creature = { id: string; x: number; y: number; energy: number; owner_uid: string };
-export type WorldTile = { x: number; y: number; kind: number; energy?: number };
-export type World = { deploy_cost: number; corpse_energy: number; creatures: Creature[]; tiles: WorldTile[] };
+export type Creature = {
+  id: string;
+  x: number;
+  y: number;
+  energy: number;
+  owner_uid: string;
+  /** WASM digest — used when sprite mode is hash. */
+  program_hash?: string;
+};
+export type SimConfig = {
+  r_vis: number;
+  r_sig: number;
+  corpse_energy: number;
+  opcodes_per_tick: number;
+  energy_per_opcode: number;
+  move_extra: number;
+  dig_extra: number;
+  place_extra: number;
+  signal_inbox_cap: number;
+};
+
+export type WorldEvent =
+  | {
+      type: "signal";
+      from_id: string;
+      from_x: number;
+      from_y: number;
+      to_id?: string;
+      byte: number;
+      broadcast: boolean;
+    }
+  | {
+      type: "death";
+      creature_id: string;
+      owner_uid: string;
+      x: number;
+      y: number;
+      reason:
+        | "energy_floor"
+        | "out_of_energy"
+        | "out_of_gas"
+        | "empty_program"
+        | "invalid_program"
+        | "wasm_trap"
+        | "out_of_vision"
+        | "bad_direction"
+        | "spawn_energy_too_low"
+        | "signal_unknown_target"
+        | "signal_out_of_range"
+        | "suicide"
+        | "spawn_failed"
+        | "signal_failed"
+        | "eaten";
+    }
+  | { type: "spawn"; creature_id: string; parent_id: string; x: number; y: number };
+
+export type DeathReason = Extract<WorldEvent, { type: "death" }>["reason"];
+
+export type WorldTile = {
+  x: number;
+  y: number;
+  kind: number;
+  energy?: number;
+  death_reason?: DeathReason;
+};
+
+export type World = {
+  deploy_cost: number;
+  corpse_energy: number;
+  creatures: Creature[];
+  tiles: WorldTile[];
+};
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -42,4 +111,12 @@ export const postDeploy = (x: number, y: number, code: string, energy: number) =
   api<{ id: string; x: number; y: number; energy: number; credits: number }>("/v1/deploy", {
     method: "POST",
     body: JSON.stringify({ x, y, code, energy }),
+  });
+
+export const getSimConfig = () => api<SimConfig>("/v1/dev/sim-config");
+
+export const patchSimConfig = (config: SimConfig) =>
+  api<SimConfig>("/v1/dev/sim-config", {
+    method: "PATCH",
+    body: JSON.stringify(config),
   });

@@ -1,3 +1,4 @@
+import type { SpriteMode } from "../lib/creatureSprite";
 import type { Creature } from "../lib/api";
 
 type Props = {
@@ -7,11 +8,14 @@ type Props = {
   busy: boolean;
   view: "god" | "follow";
   followId: string | null;
+  spriteMode: SpriteMode;
   myCreatures: Creature[];
   cell: { x: number; y: number; label: string } | null;
   message: string | null;
+  deathNotice?: string | null;
   error?: string | null;
   onViewChange: (view: "god" | "follow") => void;
+  onSpriteModeChange: (mode: SpriteMode) => void;
   onJumpOpen: () => void;
   onFollowCreature: (id: string) => void;
   onSignIn: () => void;
@@ -26,11 +30,14 @@ export function HudOverlay({
   busy,
   view,
   followId,
+  spriteMode,
   myCreatures,
   cell,
   message,
+  deathNotice,
   error,
   onViewChange,
+  onSpriteModeChange,
   onJumpOpen,
   onFollowCreature,
   onSignIn,
@@ -42,7 +49,9 @@ export function HudOverlay({
     ? { kind: "error" as const, text: error }
     : cell
       ? { kind: "cell" as const, cell }
-      : view === "follow" && followLabel
+      : deathNotice
+        ? { kind: "death" as const, text: deathNotice }
+    : view === "follow" && followLabel
         ? { kind: "text" as const, text: `Following ${followLabel}` }
         : message
           ? { kind: "text" as const, text: message }
@@ -73,6 +82,26 @@ export function HudOverlay({
           <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen}>
             ⌕
           </button>
+        </div>
+
+        <div className="mt-1.5 flex items-center gap-1.5 border-t border-white/[0.05] pt-1.5">
+          <span className="shrink-0 text-[9px] uppercase tracking-wide text-white/25">Look</span>
+          <div className="hud-segment min-w-0 flex-1">
+            <button
+              type="button"
+              className={`hud-segment-btn flex-1 ${spriteMode === "id" ? "hud-segment-btn-active" : ""}`}
+              onClick={() => onSpriteModeChange("id")}
+            >
+              ID
+            </button>
+            <button
+              type="button"
+              className={`hud-segment-btn flex-1 ${spriteMode === "hash" ? "hud-segment-btn-active" : ""}`}
+              onClick={() => onSpriteModeChange("hash")}
+            >
+              Hash
+            </button>
+          </div>
         </div>
 
         {signedIn && myCreatures.length > 0 && (
@@ -108,7 +137,7 @@ export function HudOverlay({
           {signedIn ? (
             <>
               <button type="button" className="hud-action" onClick={onFaucet} disabled={busy}>
-                +100
+                +10M
               </button>
               <button type="button" className="hud-action" onClick={onSignOut} disabled={busy}>
                 Out
@@ -126,6 +155,8 @@ export function HudOverlay({
         <div className="status-bar">
           {statusText.kind === "error" ? (
             <span className="truncate text-red-400/80">{statusText.text}</span>
+          ) : statusText.kind === "death" ? (
+            <span className="truncate text-amber-300/75">{statusText.text}</span>
           ) : statusText.kind === "cell" ? (
             <>
               <span className="shrink-0 tabular-nums text-white/35">

@@ -1,82 +1,53 @@
-# Terrarium bytecode (v0)
+# Terrarium WASM (WAT)
 
-Creatures run a tiny stack machine. You write **assembly** (text); the server assembles it to bytecode on deploy. Code is immutable after deploy.
+Creatures are **WebAssembly modules** written in WAT. The server compiles WAT to WASM on deploy. Code is immutable after deploy.
 
-## Model
+## Module contract
 
-- **Stack:** 256 slots, 32-bit signed values. Overflow/underflow halts the creature for that tick.
-- **Directions:** `n` `e` `s` `w` (north = −y, east = +x). The world wraps (torus).
-- **Ticks:** The kernel runs at 10 Hz. Each executed instruction costs **1 energy** unless noted.
-- **Actions** (`move`, `dig`, `place`, `eat`) cost **extra energy** when the kernel applies them (TBD).
+- Import namespace `"terrarium"` (see host syscalls below)
+- Export `(func "tick")` — called once per sim tick
+- Export `(memory "memory")` if using `recv` / `signal_to` (needs ≥ 36 bytes at ptr 0)
 
-## Tile kinds (`sense` pushes)
+## Host syscalls
 
-| Value | Meaning |
-|------:|---------|
-| 0 | empty |
-| 1 | solid |
-| 2 | creature |
-| 3 | corpse |
+| Import | Signature | Effect |
+|--------|-----------|--------|
+| `sleep` | `() -> ()` | No-op, zero cost |
+| `energy` | `() -> i64` | Current energy |
+| `pos_x` / `pos_y` | `() -> i32` | Position |
+| `sense_at` | `(i32 dx, i32 dy) -> i32` | Tile kind in vision square |
+| `sense_energy` | `(i32 dx, i32 dy) -> i64` | Energy at cell |
+| `move` | `(i32 dir) -> i32` | Queue move (dirs: N=0 E=1 S=2 W=3) |
+| `dig` / `place` / `eat` | `(i32 dir) -> i32` | Queue action |
+| `spawn` | `(i32 dir, i32 energy) -> i32` | Bud clone |
+| `suicide` | `() -> ()` | Die, credit owner |
+| `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
+| `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal (16-byte UUID at ptr) |
+| `recv` | `(i32 ptr) -> i32` | 1 if message, else 0; writes 36-byte struct |
+| `random_byte` | `() -> i32` | Pseudorandom byte 0–255 (seeded by creature id + sim tick) |
+| `uptime` | `() -> i32` | Ticks alive since deploy/spawn |
 
-## Instructions
+## Tile kinds
 
-| Mnemonic | Bytes | Stack | Effect |
-|----------|------:|-------|--------|
-| `halt` | 1 | — | Stop until woken |
-| `sleep` | 1 | — | Yield tick (**0** energy) |
-| `move d` | 2 | — | Move one cell (`d` = n/e/s/w) |
-| `dig d` | 2 | — | Clear adjacent cell to empty |
-| `place d` | 2 | — | Set adjacent cell to solid |
-| `eat d` | 2 | — | Eat corpse / energy on adjacent cell |
-| `sense d` | 2 | → kind | Push tile kind adjacent to `d` |
-| `energy` | 1 | → n | Push this creature's energy |
-| `pop` | 1 | −1 | Drop stack top |
-| `dup` | 1 | +1 | Copy stack top |
-| `push n` | 3 | → n | Push 16-bit immediate |
-| `jmp label` | 3 | — | Relative jump |
-| `jz label` | 3 | −1 | Jump if top == 0 |
-| `jnz label` | 3 | −1 | Jump if top != 0 |
-| `eq` | 1 | −1 → 0/1 | `(a == b)` |
-| `lt` | 1 | −1 → 0/1 | `(a < b)` |
-| `add` | 1 | −1 → sum | |
-| `sub` | 1 | −1 → diff | `b - a` (pop `a` then `b`) |
-| `suicide` | 1 | — | Die; energy to owner |
+`empty=0`, `solid=1`, `creature=2`, `corpse=3`
 
-Labels: `name:` at line start. Comments: `; …`
+## Recv struct (little-endian, 36 bytes)
 
-## Example — idle
+| Offset | Field |
+|--------|-------|
+| 0 | has_msg (always 1 when returned) |
+| 4 | from_x |
+| 8 | from_y |
+| 12 | byte |
+| 16 | broadcast (0 or 1) |
+| 20 | from_id (16-byte UUID) |
 
-```asm
-loop:
-  sleep
-  jmp loop
-```
+Trap or out-of-energy → creature dies.
 
-## Example — tunnel east
+## Gas (EVM-style)
 
-```asm
-start:
-  move e
-  dig e
-  sleep
-  jmp start
-```
+Each creature tick gets a **gas budget** of `opcodes_per_tick` (default 10_000). Every WASM instruction and every `call` to a host import consumes 1 opcode. Used opcodes cost `energy_per_opcode` energy (default **1** — cheap at million-scale units).
 
-## Example — wall if blocked north
+Gas budget is also capped by affordable energy: `floor(energy / energy_per_opcode)`. Out of gas traps → death.
 
-```asm
-  sense n
-  push 1        ; solid
-  eq
-  jz place_it
-  jmp done
-place_it:
-  place n
-done:
-  sleep
-  jmp done
-```
-
-`jz place_it` runs when north is **not** solid.
-
-Programs run at 10 Hz after deploy. Each tick executes until `sleep` or `halt`.
+Move/dig/place still cost separate action energy (`move_extra`, etc.) beyond gas.

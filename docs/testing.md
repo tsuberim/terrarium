@@ -18,7 +18,8 @@ Same as CI: `cargo test --workspace`, release build, frontend build.
 
 ## Kernel tests
 
-- Every example program in `crates/kernel/src/examples.rs` must assemble (mirrors `apps/skin/src/lib/examples.ts`).
+- Every example program in `crates/kernel/src/examples.rs` must compile as WAT (mirrors `apps/skin/src/lib/examples.ts`).
+- Predator/scavenger examples are authored in Rust under `strategies/` and synced via `./scripts/build-strategies.sh` (dev-only; output is committed WAT).
 - VM tests run creatures for N ticks in memory — no DB, fast.
 
 ## Logic tests

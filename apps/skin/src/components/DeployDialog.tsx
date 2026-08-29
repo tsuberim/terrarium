@@ -107,7 +107,7 @@ export function DeployDialog({
         </div>
 
         <p className="mb-2 text-[10px] text-white/28">
-          Costs {extra} credits · {corpseEnergy} base + {extra} spendable
+          WAT module · costs {extra} credits · {corpseEnergy} base + {extra} spendable
         </p>
 
         <div className="mb-2 flex flex-wrap gap-1">
@@ -136,7 +136,7 @@ export function DeployDialog({
             setCode(e.target.value);
             if (error) setError(null);
           }}
-          placeholder={"loop:\n  sleep\n  jmp loop"}
+          placeholder={"(module\n  (import \"terrarium\" \"sleep\" (func $sleep))\n  (func (export \"tick\") (call $sleep))\n)"}
           spellCheck={false}
           rows={10}
           className="deploy-input"

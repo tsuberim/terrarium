@@ -1,5 +1,6 @@
 .agents/
 /target
+/strategies/target
 .env
 *.db
 .firebase/
