@@ -28,8 +28,9 @@ export function ServerPowerControl({ signedIn, online, busy, onWakeComplete }: P
     try {
       setStatus(await getServerPowerStatus());
       setError(null);
-    } catch {
+    } catch (err) {
       setStatus(null);
+      setError(err instanceof Error ? err.message : "Server status unavailable");
     }
   }, [signedIn]);
 
@@ -64,21 +65,24 @@ export function ServerPowerControl({ signedIn, online, busy, onWakeComplete }: P
     }
   };
 
-  const showWake = !online && !waking && !isLocalDev();
-  const showAdmin =
+  const isAdmin =
     !isLocalDev() &&
-    signedIn &&
-    status?.is_admin &&
-    status.power_control_available &&
-    online;
+    !!status?.is_admin &&
+    !!status.power_control_available;
 
-  if (!showWake && !showAdmin && !waking) return null;
+  const loadingAdmin = signedIn && !isLocalDev() && status === null && !error;
+  const showWake = !signedIn && !online && !waking && !isLocalDev();
+  const showAdmin = isAdmin && signedIn;
+
+  if (!showWake && !showAdmin && !waking && !loadingAdmin && !(signedIn && error)) return null;
 
   return (
     <div className="mt-1.5 border-t border-white/[0.05] pt-1.5">
       <div className="mb-1 text-[9px] uppercase tracking-wide text-white/25">Server</div>
         {waking ? (
           <span className="text-white/50">Waking… (cold start ~30s)</span>
+        ) : loadingAdmin ? (
+          <span className="text-white/30">Loading…</span>
         ) : showWake ? (
           <button
             type="button"

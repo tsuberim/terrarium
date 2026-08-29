@@ -14,6 +14,7 @@ pub struct CloudRunPower {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Scaling {
+    #[serde(default)]
     min_instance_count: i32,
 }
 
@@ -26,6 +27,13 @@ struct PatchBody {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ServiceResponse {
+    scaling: Option<Scaling>,
+    template: Option<ServiceTemplate>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ServiceTemplate {
     scaling: Option<Scaling>,
 }
 
@@ -87,7 +95,9 @@ impl CloudRunPower {
         }
         let body: ServiceResponse = resp.json().await.context("run.services.get JSON")?;
         Ok(body
-            .scaling
+            .template
+            .and_then(|t| t.scaling)
+            .or(body.scaling)
             .map(|s| s.min_instance_count)
             .unwrap_or(0))
     }
