@@ -15,9 +15,6 @@ See [devops.md](devops.md) for where these are used.
 | `GCP_REGION` | e.g. `us-central1` |
 | `ARTIFACT_REPO` | Artifact Registry repo, default `terrarium` |
 | `CLOUD_RUN_SERVICE` | Service name, default `terrarium-server` |
-| `ADMIN_UIDS` | Comma-separated Firebase UIDs for server On/Off in prod |
-| `SERVER_MIN_INSTANCES_ON` | `min-instances` when toggled on (default `1`) |
-| `MIN_INSTANCES` | Deploy-time default (`0` in `deploy-server.sh`) |
 
 Frontend local config is written to `apps/skin/.env.local` by `setup-dev.sh` (gitignored).
 

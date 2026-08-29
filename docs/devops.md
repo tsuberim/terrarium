@@ -65,7 +65,7 @@ Stop: Ctrl+C or `./scripts/dev-stop.sh`.
 
 | Component | Platform | Details |
 |-----------|----------|---------|
-| API | Cloud Run `terrarium-server` | `min-instances=0` default; use On/Off or `server-power.sh` |
+| API | Cloud Run `terrarium-server` | `min-instances=0` — scales to zero when idle |
 | UI | Firebase Hosting | Serves `apps/skin/dist` |
 | Container registry | Artifact Registry `terrarium` | `us-central1-docker.pkg.dev/.../server` |
 
@@ -93,26 +93,11 @@ CI does both on push to `main` (see below).
 
 | Setting | Typical monthly cost |
 |---------|---------------------|
-| **`min-instances=1`** (old default) | ~**$15–40** — one always-warm Cloud Run instance (512Mi–1CPU) |
-| **`min-instances=0`** (new default) | ~**$0–5** — pay only when someone hits the API; cold start ~15–45s |
+| **`min-instances=0`** (fixed) | ~**$0–5** — pay only when someone hits the API; cold start ~15–45s |
 | Firebase Hosting + Auth | Usually **$0** at hobby traffic |
 | Artifact Registry | **&lt;$1** |
 
-Deploy now sets **`MIN_INSTANCES=0`**. Use **Wake server** in the HUD when offline, or `./scripts/server-power.sh on` to keep it warm.
-
-### Server on/off
-
-**UI (admin):** Set `ADMIN_UIDS` to your Firebase uid(s) on Cloud Run. Grant the **runtime service account** `roles/run.admin` so the API can patch its own scaling. Signed-in admins see **On / Off** in the left HUD panel.
-
-**CLI:**
-
-```bash
-./scripts/server-power.sh off   # min-instances=0 — save money
-./scripts/server-power.sh on    # min-instances=1 — always warm
-./scripts/server-power.sh status
-```
-
-**Sleep note:** **Off** scales to zero after the request finishes; the world pauses until someone **Wake**s (anyone) or you run `server-power.sh on`.
+Deploy always sets **`min-instances=0`**. The sim sleeps when nobody is connected; opening the site cold-starts Cloud Run automatically.
 
 ### Persistence
 
@@ -142,7 +127,6 @@ Deploy concurrency group `deploy-prod` cancels in-progress deploys when new comm
 | `setup-dev.sh` | One-time local bootstrap |
 | `dev.sh` / `dev-stop.sh` | Start / stop local dev |
 | `deploy-server.sh` | Cloud Run deploy (local or CI) |
-| `server-power.sh` | CLI wake/sleep (`min-instances` 0 ↔ 1) |
 | `generate-config.sh` | Write `apps/skin/.env.production` for CI builds |
 
 ---

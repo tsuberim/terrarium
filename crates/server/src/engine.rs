@@ -128,6 +128,12 @@ impl WorldEngine {
         let sim_config = SimConfig::default();
 
         if creatures.is_empty() && config.seed_ecosystem {
+            // Recover from a partial seed (e.g. crash mid-bootstrap) — tiles can
+            // remain while creatures were never committed.
+            if !tiles.is_empty() {
+                sqlx::query("DELETE FROM world_tiles").execute(&db).await?;
+                tiles.clear();
+            }
             seed_ecosystem(&db, &sim_config, &mut creatures, &mut tiles, &mut ledger).await?;
         }
 
@@ -539,7 +545,8 @@ async fn seed_ecosystem(
     for ((x, y), tile) in tiles.iter() {
         if let WorldTile::EnergyNode { energy } = tile {
             sqlx::query(
-                "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)",
+                "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)
+                 ON CONFLICT(x, y) DO UPDATE SET kind = excluded.kind, energy = excluded.energy, death_reason = excluded.death_reason",
             )
             .bind(*x as i64)
             .bind(*y as i64)
@@ -789,8 +796,6 @@ mod tests {
                 faucet_max: 100 * terrarium_kernel::ENERGY_SCALE,
                 deploy_cost: 100 * terrarium_kernel::ENERGY_SCALE,
                 seed_ecosystem: false,
-                admin_uids: vec![],
-                server_min_instances_on: 1,
             },
         )
         .await

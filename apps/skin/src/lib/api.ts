@@ -3,12 +3,6 @@ import { apiRoot } from "./config";
 
 export type Health = { status: string; tick_hz: number };
 
-export type ServerPowerStatus = {
-  power_control_available: boolean;
-  is_admin: boolean;
-  min_instances: number | null;
-  enabled: boolean | null;
-};
 export type Me = { uid: string; credits: number };
 
 export type ApiKey = {
@@ -146,26 +140,6 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const getHealth = () => api<Health>("/health");
 
-/** Hit /health to cold-start Cloud Run (no auth; long timeout). */
-export async function wakeServer(): Promise<Health> {
-  const ctrl = new AbortController();
-  const timer = window.setTimeout(() => ctrl.abort(), 120_000);
-  try {
-    const res = await fetch(`${apiRoot()}/health`, { signal: ctrl.signal });
-    if (!res.ok) throw new Error("Server not responding");
-    return (await res.json()) as Health;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
-export const getServerPowerStatus = () => api<ServerPowerStatus>("/v1/admin/server-power");
-
-export const postServerPower = (enabled: boolean) =>
-  api<{ ok: boolean; enabled: boolean; min_instances: number }>("/v1/admin/server-power", {
-    method: "POST",
-    body: JSON.stringify({ enabled }),
-  });
 export const getMe = () => api<Me>("/v1/me");
 
 export const getApiKeys = () => api<{ keys: ApiKey[] }>("/v1/api-keys");

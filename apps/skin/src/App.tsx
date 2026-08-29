@@ -241,8 +241,6 @@ export default function App() {
         onSignOut={() => void signOutUser()}
         onFaucet={() => void faucet()}
         onApiKeysOpen={() => setApiKeysOpen(true)}
-        serverOnline={connected}
-        serverBusy={busy}
       />
       <JumpDialog
         open={jumpOpen}
