@@ -12,6 +12,21 @@ export function apiRoot() {
   return `${config.apiBase}/api`;
 }
 
+export function wsRoot() {
+  const override = import.meta.env.VITE_WS_BASE as string | undefined;
+  if (override) return override.replace(/\/$/, "");
+
+  // Dev: connect straight to the API — Vite's WS proxy is flaky, and avoids
+  // routing through :5173 for upgrades.
+  if (import.meta.env.DEV && !config.apiBase) {
+    const port = import.meta.env.VITE_API_PORT ?? "8080";
+    return `ws://127.0.0.1:${port}/api`;
+  }
+
+  const base = config.apiBase || window.location.origin;
+  return base.replace(/^http/, "ws") + "/api";
+}
+
 export function assertConfig() {
   const missing = Object.entries(config.firebase)
     .filter(([, value]) => !value)

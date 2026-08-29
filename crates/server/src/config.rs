@@ -9,6 +9,7 @@ pub struct Config {
     pub firebase_project_id: String,
     pub faucet_enabled: bool,
     pub faucet_max: i64,
+    pub deploy_cost: i64,
 }
 
 impl Config {
@@ -28,6 +29,10 @@ impl Config {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(10_000),
+            deploy_cost: env::var("DEPLOY_COST")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(100),
         })
     }
 }

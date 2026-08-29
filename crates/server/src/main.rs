@@ -13,17 +13,23 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
 
 mod auth;
 mod config;
+mod engine;
+mod ws;
 
 use auth::FirebaseUser;
 use config::Config;
+use engine::{spawn_tick_loop, WorldEngine, WorldMessage};
+use terrarium_kernel::{assemble, vm::Creature};
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     db: SqlitePool,
     config: Arc<Config>,
+    engine: Arc<WorldEngine>,
 }
 
 #[derive(Serialize)]
@@ -48,6 +54,31 @@ struct FaucetResponse {
     credits: i64,
 }
 
+#[derive(Serialize)]
+struct WorldResponse {
+    deploy_cost: i64,
+    creatures: Vec<engine::CreaturePublic>,
+    tiles: Vec<engine::TilePublic>,
+}
+
+#[derive(Deserialize)]
+struct DeployRequest {
+    x: i64,
+    y: i64,
+    code: String,
+}
+
+#[derive(Serialize)]
+struct DeployResponse {
+    id: String,
+    x: i64,
+    y: i64,
+    energy: i64,
+    credits: i64,
+}
+
+const MAX_CREATURE_CODE_LEN: usize = 32_768;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -63,9 +94,13 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     sqlx::migrate!().run(&db).await?;
 
+    let engine = WorldEngine::bootstrap(db.clone(), &config).await?;
+    spawn_tick_loop(engine.clone());
+
     let state = AppState {
         db,
         config: config.clone(),
+        engine,
     };
 
     let app = build_app(state);
@@ -77,17 +112,23 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn build_app(state: AppState) -> Router {
-    let api = Router::new()
+    let protected = Router::new()
         .route("/me", get(me))
         .route("/faucet", post(faucet))
+        .route("/deploy", post(deploy))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_firebase_user,
         ));
 
+    let v1 = Router::new()
+        .route("/world", get(world))
+        .route("/world/ws", get(ws::world_ws))
+        .merge(protected);
+
     let routes = Router::new()
         .route("/health", get(health))
-        .nest("/v1", api)
+        .nest("/v1", v1)
         .with_state(state);
 
     // /api/* for Firebase Hosting → Cloud Run rewrites; bare paths for local dev.
@@ -149,6 +190,52 @@ async fn faucet(
     }
 }
 
+async fn world(State(state): State<AppState>) -> impl IntoResponse {
+    match state.engine.snapshot() {
+        WorldMessage::Snapshot {
+            deploy_cost,
+            creatures,
+            tiles,
+            ..
+        } => Json(WorldResponse {
+            deploy_cost,
+            creatures,
+            tiles,
+        })
+        .into_response(),
+        WorldMessage::Delta { .. } => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn deploy(
+    State(state): State<AppState>,
+    Extension(user): Extension<FirebaseUser>,
+    Json(body): Json<DeployRequest>,
+) -> impl IntoResponse {
+    match deploy_creature(&state, &user.uid, body.x, body.y, &body.code).await {
+        Ok(res) => Json(res).into_response(),
+        Err(DeployError::InsufficientCredits) => (
+            StatusCode::PAYMENT_REQUIRED,
+            Json(serde_json::json!({ "error": "insufficient credits" })),
+        )
+            .into_response(),
+        Err(DeployError::Occupied) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "cell occupied" })),
+        )
+            .into_response(),
+        Err(DeployError::InvalidProgram(msg)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": msg })),
+        )
+            .into_response(),
+        Err(DeployError::Internal(err)) => {
+            tracing::error!(error = %err, "deploy failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 async fn require_firebase_user(
     State(state): State<AppState>,
     mut req: Request,
@@ -205,4 +292,115 @@ async fn ensure_account(db: &SqlitePool, uid: &str) -> anyhow::Result<()> {
     .execute(db)
     .await?;
     Ok(())
+}
+
+enum DeployError {
+    InsufficientCredits,
+    Occupied,
+    InvalidProgram(String),
+    Internal(anyhow::Error),
+}
+
+fn deploy_internal(err: impl Into<anyhow::Error>) -> DeployError {
+    DeployError::Internal(err.into())
+}
+
+async fn deploy_creature(
+    state: &AppState,
+    uid: &str,
+    x: i64,
+    y: i64,
+    code: &str,
+) -> Result<DeployResponse, DeployError> {
+    let code = code.trim();
+    if code.is_empty() {
+        return Err(DeployError::InvalidProgram("program is required".into()));
+    }
+    if code.len() > MAX_CREATURE_CODE_LEN {
+        return Err(DeployError::InvalidProgram("program too long".into()));
+    }
+    let bytecode = assemble(code).map_err(|err| {
+        DeployError::InvalidProgram(format!("line {}: {}", err.line, err.message))
+    })?;
+
+    let cost = state.config.deploy_cost;
+    let id = Uuid::new_v4().to_string();
+    let energy = cost;
+
+    if !state.engine.is_deployable(x, y) {
+        return Err(DeployError::Occupied);
+    }
+
+    let mut tx = state.db.begin().await.map_err(deploy_internal)?;
+
+    ensure_account(&state.db, uid)
+        .await
+        .map_err(deploy_internal)?;
+
+    let credits: i64 = sqlx::query_scalar("SELECT credits FROM accounts WHERE firebase_uid = ?")
+        .bind(uid)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(deploy_internal)?;
+
+    if credits < cost {
+        return Err(DeployError::InsufficientCredits);
+    }
+
+    sqlx::query("UPDATE accounts SET credits = credits - ? WHERE firebase_uid = ?")
+        .bind(cost)
+        .bind(uid)
+        .execute(&mut *tx)
+        .await
+        .map_err(deploy_internal)?;
+
+    sqlx::query(
+        "INSERT INTO creatures (id, owner_uid, x, y, energy, code, bytecode, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, 0, x'')",
+    )
+    .bind(&id)
+    .bind(uid)
+    .bind(x)
+    .bind(y)
+    .bind(energy)
+    .bind(code)
+    .bind(&bytecode)
+    .execute(&mut *tx)
+    .await
+    .map_err(|err| {
+        if let sqlx::Error::Database(db_err) = &err {
+            if db_err.is_unique_violation() {
+                return DeployError::Occupied;
+            }
+        }
+        DeployError::Internal(err.into())
+    })?;
+
+    tx.commit().await.map_err(deploy_internal)?;
+
+    state
+        .engine
+        .insert_creature(Creature {
+            id: id.clone(),
+            owner_uid: uid.to_string(),
+            x: x as i32,
+            y: y as i32,
+            energy,
+            bytecode,
+            pc: 0,
+            stack: vec![],
+            alive: true,
+        })
+        .map_err(deploy_internal)?;
+
+    let credits = account_credits(&state.db, uid)
+        .await
+        .map_err(deploy_internal)?;
+
+    Ok(DeployResponse {
+        id,
+        x,
+        y,
+        energy,
+        credits,
+    })
 }

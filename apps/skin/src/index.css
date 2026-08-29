@@ -10,10 +10,8 @@
   --color-mist: #8fa89a;
   --color-fog: #5c6e64;
   --color-line: #1a2822;
-  --font-display: "Instrument Serif", Georgia, serif;
-  --font-body: "DM Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-family-display: var(--font-display);
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Monaco, "Cascadia Code", monospace;
   --font-family-mono: var(--font-mono);
 }
 
@@ -28,10 +26,7 @@
   }
 
   body {
-    @apply m-0 min-h-screen bg-void;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(74, 232, 194, 0.06), transparent),
-      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(123, 109, 255, 0.04), transparent);
+    @apply m-0 overflow-hidden bg-void;
   }
 
   ::selection {
@@ -70,5 +65,102 @@
 
   .label {
     @apply text-[0.65rem] font-medium uppercase tracking-[0.14em] text-fog;
+  }
+
+  .hud-chip {
+    @apply pointer-events-auto flex items-center rounded-full border border-white/[0.06] bg-black/20 px-2 py-1 backdrop-blur-md;
+  }
+
+  .hud-dot {
+    @apply h-1.5 w-1.5 shrink-0 rounded-full bg-white/20;
+  }
+
+  .hud-dot-live {
+    @apply bg-biolume/80 shadow-[0_0_6px_rgba(74,232,194,0.45)];
+  }
+
+  .hud-pill {
+    @apply rounded-full border border-white/[0.06] bg-black/30 px-2 py-0.5 text-[10px] backdrop-blur-md;
+  }
+
+  .hud-panel {
+    @apply rounded-xl border border-white/[0.07] bg-black/40 backdrop-blur-md;
+  }
+
+  .hud-btn-sm {
+    @apply rounded-md px-1.5 py-0.5 text-[10px] text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:opacity-35;
+  }
+
+  .hud-btn {
+    @apply rounded-md border border-white/[0.05] bg-white/[0.03] px-2 py-1 text-[10px] text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:opacity-35;
+  }
+
+  .hud-btn-accent {
+    @apply border-biolume/20 bg-biolume/10 text-biolume/85 hover:bg-biolume/15 hover:text-biolume;
+  }
+
+  .hud-action {
+    @apply rounded-full px-1.5 py-0.5 text-[10px] text-white/45 transition-colors;
+    @apply hover:bg-white/[0.06] hover:text-white/75 disabled:opacity-35;
+  }
+
+  .hud-action-accent {
+    @apply text-biolume/75 hover:text-biolume;
+  }
+
+  .hud-segment {
+    @apply pointer-events-auto flex rounded-lg border border-white/[0.05] bg-black/20 p-px;
+  }
+
+  .hud-segment-btn {
+    @apply rounded-[0.4rem] px-2 py-1 text-[10px] text-white/40 transition-colors;
+    @apply hover:text-white/60;
+  }
+
+  .hud-segment-btn-active {
+    @apply bg-white/[0.08] text-white/65;
+  }
+
+  .hud-segment-btn-disabled {
+    @apply cursor-not-allowed opacity-25 hover:text-white/30;
+  }
+
+  .deploy-panel {
+    @apply rounded-2xl border border-white/[0.08] bg-black/50 p-3 shadow-[0_8px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-4;
+  }
+
+  .deploy-input {
+    @apply w-full resize-y rounded-xl border border-white/[0.06] bg-black/30 px-3 py-2 font-mono text-[11px] leading-relaxed text-white/75 outline-none;
+    @apply placeholder:text-white/20 focus:border-biolume/25 focus:ring-1 focus:ring-biolume/15;
+    min-height: 10rem;
+  }
+
+  .deploy-btn {
+    @apply rounded-full px-3 py-1 text-[10px] text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white/75 disabled:opacity-35;
+  }
+
+  .deploy-btn-primary {
+    @apply bg-biolume/10 text-biolume/90 hover:bg-biolume/15 hover:text-biolume;
+  }
+
+  .jump-row {
+    @apply flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04];
+  }
+
+  .jump-row-active {
+    @apply bg-white/[0.06];
+  }
+
+  .creature-row {
+    @apply flex items-center justify-between gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-white/[0.04];
+  }
+
+  .creature-row-active {
+    @apply bg-biolume/10 ring-1 ring-biolume/20;
+  }
+
+  .status-bar {
+    @apply pointer-events-none absolute bottom-3 left-1/2 flex max-w-[min(24rem,calc(100%-1.5rem))] -translate-x-1/2 items-center gap-2 rounded-full border border-white/[0.06] bg-black/30 px-3 py-1 backdrop-blur-md;
+    @apply font-mono text-[10px];
   }
 }

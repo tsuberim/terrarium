@@ -1,4 +1,13 @@
 {
+  "auth": {
+    "authorizedDomains": ["localhost", "127.0.0.1", "terrarium-506917.web.app", "terrarium-506917.firebaseapp.com"],
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Terrarium",
+        "supportEmail": "tsuberim@gmail.com"
+      }
+    }
+  },
   "hosting": {
     "public": "apps/skin/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
