@@ -5,6 +5,7 @@ import {
   wakeServer,
   type ServerPowerStatus,
 } from "../lib/api";
+import { isLocalDev } from "../lib/config";
 
 type Props = {
   signedIn: boolean;
@@ -63,9 +64,13 @@ export function ServerPowerControl({ signedIn, online, busy, onWakeComplete }: P
     }
   };
 
-  const showWake = !online && !waking;
+  const showWake = !online && !waking && !isLocalDev();
   const showAdmin =
-    signedIn && status?.is_admin && status.power_control_available && online;
+    !isLocalDev() &&
+    signedIn &&
+    status?.is_admin &&
+    status.power_control_available &&
+    online;
 
   if (!showWake && !showAdmin && !waking) return null;
 

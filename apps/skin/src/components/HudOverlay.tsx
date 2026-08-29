@@ -24,6 +24,7 @@ type Props = {
   onSignIn: () => void;
   onSignOut: () => void;
   onFaucet: () => void;
+  onApiKeysOpen: () => void;
   serverOnline: boolean;
   serverBusy: boolean;
 };
@@ -48,6 +49,7 @@ export function HudOverlay({
   onSignIn,
   onSignOut,
   onFaucet,
+  onApiKeysOpen,
   serverOnline,
   serverBusy,
 }: Props) {
@@ -154,6 +156,9 @@ export function HudOverlay({
           )}
           {signedIn ? (
             <>
+              <button type="button" className="hud-action" onClick={onApiKeysOpen} disabled={busy}>
+                Keys
+              </button>
               <button type="button" className="hud-action" onClick={onFaucet} disabled={busy}>
                 +{formatGlimString(10_000_000)}
               </button>

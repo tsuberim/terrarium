@@ -6,9 +6,12 @@ use serde::Deserialize;
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
-pub struct FirebaseUser {
+pub struct AuthenticatedUser {
     pub uid: String,
 }
+
+/// Back-compat alias used by handlers.
+pub type FirebaseUser = AuthenticatedUser;
 
 #[derive(Debug, Deserialize)]
 struct FirebaseClaims {
@@ -30,7 +33,7 @@ pub enum AuthError {
     InvalidClaims,
 }
 
-pub async fn verify_id_token(project_id: &str, token: &str) -> Result<FirebaseUser, AuthError> {
+pub async fn verify_id_token(project_id: &str, token: &str) -> Result<AuthenticatedUser, AuthError> {
     let header = decode_header(token).map_err(AuthError::InvalidToken)?;
     let kid = header.kid.ok_or(AuthError::MissingKid)?;
     let cert = fetch_google_cert(&kid).await?;
@@ -46,7 +49,7 @@ pub async fn verify_id_token(project_id: &str, token: &str) -> Result<FirebaseUs
         return Err(AuthError::InvalidClaims);
     }
 
-    Ok(FirebaseUser {
+    Ok(AuthenticatedUser {
         uid: token_data.claims.sub,
     })
 }

@@ -16,6 +16,10 @@ ws_base="${TERRARIUM_WS_BASE:-}"
 if [[ -z "$ws_base" && -f .deploy/cloud-run-url ]]; then
   ws_base=$(cat .deploy/cloud-run-url)
 fi
+if [[ -z "$ws_base" ]]; then
+  echo "error: TERRARIUM_WS_BASE or .deploy/cloud-run-url required (Firebase Hosting cannot proxy WebSocket)" >&2
+  exit 1
+fi
 if [[ -n "$ws_base" ]]; then
   ws_base="${ws_base%/}/api"
   ws_base="${ws_base/https:/wss:}"

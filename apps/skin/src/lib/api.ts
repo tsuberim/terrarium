@@ -10,6 +10,16 @@ export type ServerPowerStatus = {
   enabled: boolean | null;
 };
 export type Me = { uid: string; credits: number };
+
+export type ApiKey = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at?: string;
+};
+
+export type MintApiKeyResponse = ApiKey & { secret: string };
 export type Creature = {
   id: string;
   x: number;
@@ -111,17 +121,27 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set("Authorization", `Bearer ${await user.getIdToken()}`);
   }
   const res = await fetch(`${apiRoot()}${path}`, { ...init, headers });
+  const text = await res.text().catch(() => "");
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    try {
-      const body = JSON.parse(text) as { error?: string };
-      throw new Error(body.error ?? text);
-    } catch (e) {
-      if (e instanceof Error && e.message !== text) throw e;
-      throw new Error(text || res.statusText);
+    if (text) {
+      try {
+        const body = JSON.parse(text) as { error?: string };
+        throw new Error(body.error ?? text);
+      } catch (e) {
+        if (e instanceof Error && e.message !== text) throw e;
+      }
     }
+    if (res.status === 404) {
+      throw new Error("Endpoint not found — server may need an update");
+    }
+    throw new Error(text || res.statusText || `HTTP ${res.status}`);
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204 || !text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("Invalid response from server");
+  }
 }
 
 export const getHealth = () => api<Health>("/health");
@@ -147,6 +167,18 @@ export const postServerPower = (enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   });
 export const getMe = () => api<Me>("/v1/me");
+
+export const getApiKeys = () => api<{ keys: ApiKey[] }>("/v1/api-keys");
+
+export const mintApiKey = (name?: string) =>
+  api<MintApiKeyResponse>("/v1/api-keys", {
+    method: "POST",
+    body: JSON.stringify({ name: name ?? "" }),
+  });
+
+export const deleteApiKey = (id: string) =>
+  api<void>(`/v1/api-keys/${id}`, { method: "DELETE" });
+
 export const getWorld = () => api<World>("/v1/world");
 export const postFaucet = (amount: number) =>
   api<{ credits: number }>("/v1/faucet", {

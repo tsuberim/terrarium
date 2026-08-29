@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
     Extension,
 };
 use serde::{Deserialize, Serialize};
@@ -15,13 +15,15 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
+mod api_keys;
 mod auth;
 mod cloud_run;
 mod config;
+mod docs;
 mod engine;
 mod ws;
 
-use auth::FirebaseUser;
+use auth::AuthenticatedUser;
 use config::Config;
 use engine::{spawn_tick_loop, WorldEngine, WorldMessage};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -161,24 +163,35 @@ fn build_app(state: AppState) -> Router {
             require_firebase_user,
         ));
 
+    let api_keys = Router::new()
+        .route("/api-keys", get(list_api_keys).post(mint_api_key))
+        .route("/api-keys/{id}", delete(revoke_api_key))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_firebase_user,
+        ));
+
     let protected = Router::new()
         .route("/me", get(me))
         .route("/faucet", post(faucet))
         .route("/deploy", post(deploy))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
-            require_firebase_user,
+            require_user,
         ));
 
     let v1 = Router::new()
         .route("/world", get(world))
         .route("/world/ws", get(ws::world_ws))
         .merge(protected)
+        .merge(api_keys)
         .merge(admin)
         .merge(dev);
 
     let routes = Router::new()
         .route("/health", get(health))
+        .route("/openapi.json", get(docs::openapi_raw))
+        .route("/docs", get(docs::scalar))
         .nest("/v1", v1)
         .with_state(state);
 
@@ -186,6 +199,7 @@ fn build_app(state: AppState) -> Router {
     Router::new()
         .merge(routes.clone())
         .nest("/api", routes)
+        .route("/api/docs", get(docs::scalar_api))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }
@@ -223,7 +237,7 @@ async fn patch_sim_config(
 
 async fn me(
     State(state): State<AppState>,
-    Extension(user): Extension<FirebaseUser>,
+    Extension(user): Extension<AuthenticatedUser>,
 ) -> impl IntoResponse {
     match account_credits(&state.db, &user.uid).await {
         Ok(credits) => Json(MeResponse {
@@ -240,7 +254,7 @@ async fn me(
 
 async fn faucet(
     State(state): State<AppState>,
-    Extension(user): Extension<FirebaseUser>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<FaucetRequest>,
 ) -> impl IntoResponse {
     if !state.config.faucet_enabled {
@@ -300,7 +314,7 @@ fn is_admin(config: &Config, uid: &str) -> bool {
 
 async fn get_server_power(
     State(state): State<AppState>,
-    Extension(user): Extension<FirebaseUser>,
+    Extension(user): Extension<AuthenticatedUser>,
 ) -> impl IntoResponse {
     let admin = is_admin(&state.config, &user.uid);
     let Some(power) = cloud_run::CloudRunPower::from_env() else {
@@ -336,7 +350,7 @@ async fn get_server_power(
 
 async fn set_server_power(
     State(state): State<AppState>,
-    Extension(user): Extension<FirebaseUser>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<ServerPowerRequest>,
 ) -> impl IntoResponse {
     if !is_admin(&state.config, &user.uid) {
@@ -376,7 +390,7 @@ async fn set_server_power(
 
 async fn deploy(
     State(state): State<AppState>,
-    Extension(user): Extension<FirebaseUser>,
+    Extension(user): Extension<AuthenticatedUser>,
     Json(body): Json<DeployRequest>,
 ) -> impl IntoResponse {
     match deploy_creature(
@@ -415,6 +429,93 @@ async fn deploy(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+#[derive(Deserialize)]
+struct MintApiKeyRequest {
+    #[serde(default)]
+    name: String,
+}
+
+#[derive(Serialize)]
+struct ApiKeyListResponse {
+    keys: Vec<api_keys::ApiKeyPublic>,
+}
+
+async fn list_api_keys(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthenticatedUser>,
+) -> impl IntoResponse {
+    match api_keys::list_keys(&state.db, &user.uid).await {
+        Ok(keys) => Json(ApiKeyListResponse { keys }).into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "list api keys failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn mint_api_key(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthenticatedUser>,
+    Json(body): Json<MintApiKeyRequest>,
+) -> impl IntoResponse {
+    match api_keys::mint_key(&state.db, &user.uid, &body.name).await {
+        Ok(res) => (StatusCode::CREATED, Json(res)).into_response(),
+        Err(err) => {
+            let msg = err.to_string();
+            if msg.contains("max") {
+                return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg })))
+                    .into_response();
+            }
+            tracing::error!(error = %err, "mint api key failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn revoke_api_key(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthenticatedUser>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    match api_keys::revoke_key(&state.db, &user.uid, &id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "revoke api key failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn require_user(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let token = match bearer_token(req.headers()) {
+        Some(token) => token,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+
+    let uid = if token.starts_with("tr_") {
+        match api_keys::verify_key(&state.db, token).await {
+            Some(uid) => uid,
+            None => return StatusCode::UNAUTHORIZED.into_response(),
+        }
+    } else {
+        match auth::verify_id_token(&state.config.firebase_project_id, token).await {
+            Ok(user) => user.uid,
+            Err(err) => {
+                tracing::warn!(error = %err, "auth failed");
+                return StatusCode::UNAUTHORIZED.into_response();
+            }
+        }
+    };
+
+    req.extensions_mut().insert(AuthenticatedUser { uid });
+    next.run(req).await
 }
 
 async fn require_firebase_user(

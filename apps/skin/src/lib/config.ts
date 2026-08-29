@@ -12,6 +12,11 @@ export function apiRoot() {
   return `${config.apiBase}/api`;
 }
 
+/** True when the UI talks to the local Rust server (not prod Cloud Run). */
+export function isLocalDev() {
+  return import.meta.env.DEV && !config.apiBase && !import.meta.env.VITE_WS_BASE;
+}
+
 export function wsRoot() {
   // Firebase Hosting rewrites /api for HTTP but cannot proxy WebSocket upgrades;
   // prod builds set VITE_WS_BASE to the Cloud Run URL (see generate-config.sh).
@@ -35,5 +40,11 @@ export function assertConfig() {
     .map(([key]) => key);
   if (missing.length) {
     throw new Error(`Missing Firebase config: ${missing.join(", ")}`);
+  }
+  const wsBase = import.meta.env.VITE_WS_BASE as string | undefined;
+  if (import.meta.env.PROD && !wsBase?.trim()) {
+    throw new Error(
+      "VITE_WS_BASE is required for production builds. Firebase Hosting cannot proxy WebSocket — run scripts/generate-config.sh with TERRARIUM_WS_BASE set to your Cloud Run URL.",
+    );
   }
 }

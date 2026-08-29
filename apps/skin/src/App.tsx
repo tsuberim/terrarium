@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EventFeed } from "./components/EventFeed";
+import { ApiKeysDialog } from "./components/ApiKeysDialog";
 import { DeployDialog } from "./components/DeployDialog";
 import { DevPanel } from "./components/DevPanel";
 import { HudOverlay } from "./components/HudOverlay";
@@ -40,6 +41,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deployCell, setDeployCell] = useState<{ x: number; y: number } | null>(null);
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
   const [hover, setHover] = useState<Hover | null>(null);
   const [deathNotice, setDeathNotice] = useState<string | null>(null);
   const [spriteMode, setSpriteMode] = useState<SpriteMode>(() => loadViewerPrefs().spriteMode);
@@ -238,6 +240,7 @@ export default function App() {
         onSignIn={() => void signIn()}
         onSignOut={() => void signOutUser()}
         onFaucet={() => void faucet()}
+        onApiKeysOpen={() => setApiKeysOpen(true)}
         serverOnline={connected}
         serverBusy={busy}
       />
@@ -249,6 +252,7 @@ export default function App() {
         onJump={jumpTo}
         onFollow={followCreature}
       />
+      <ApiKeysDialog open={apiKeysOpen} busy={busy} onClose={() => setApiKeysOpen(false)} />
       <DeployDialog
         cell={deployCell}
         minExtra={deployCost}
