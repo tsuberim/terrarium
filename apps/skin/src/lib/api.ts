@@ -5,7 +5,7 @@ export type Health = { status: string; tick_hz: number };
 export type Me = { uid: string; credits: number };
 export type Creature = { id: string; x: number; y: number; energy: number; owner_uid: string };
 export type WorldTile = { x: number; y: number; kind: number; energy?: number };
-export type World = { deploy_cost: number; creatures: Creature[]; tiles: WorldTile[] };
+export type World = { deploy_cost: number; corpse_energy: number; creatures: Creature[]; tiles: WorldTile[] };
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -38,8 +38,8 @@ export const postFaucet = (amount: number) =>
     method: "POST",
     body: JSON.stringify({ amount }),
   });
-export const postDeploy = (x: number, y: number, code: string) =>
+export const postDeploy = (x: number, y: number, code: string, energy: number) =>
   api<{ id: string; x: number; y: number; energy: number; credits: number }>("/v1/deploy", {
     method: "POST",
-    body: JSON.stringify({ x, y, code }),
+    body: JSON.stringify({ x, y, code, energy }),
   });

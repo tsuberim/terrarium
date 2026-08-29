@@ -50,14 +50,33 @@ export function HudOverlay({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
-      <div className="hud-panel pointer-events-auto absolute left-3 top-3 w-44 p-2 sm:left-4 sm:top-4">
-        <div className="mb-2 flex items-center gap-1.5">
-          <span className={`hud-dot ${online ? "hud-dot-live" : ""}`} />
-          <span className="text-[12px] font-medium text-white/75">Terrarium</span>
+      <div className="hud-panel pointer-events-auto absolute left-3 top-3 p-1.5 sm:left-4 sm:top-4">
+        <div className="flex items-center gap-1.5">
+          <span className={`hud-dot shrink-0 ${online ? "hud-dot-live" : ""}`} />
+          <span className="shrink-0 text-[12px] font-medium text-white/75">Terrarium</span>
+          <div className="hud-segment min-w-0 flex-1">
+            <button
+              type="button"
+              className={`hud-segment-btn flex-1 ${view === "god" ? "hud-segment-btn-active" : ""}`}
+              onClick={() => onViewChange("god")}
+            >
+              Map
+            </button>
+            <button
+              type="button"
+              className={`hud-segment-btn flex-1 ${view === "follow" ? "hud-segment-btn-active" : ""}`}
+              onClick={() => onViewChange("follow")}
+            >
+              Follow
+            </button>
+          </div>
+          <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen}>
+            ⌕
+          </button>
         </div>
 
         {signedIn && myCreatures.length > 0 && (
-          <ul className="mb-2 max-h-28 space-y-px overflow-y-auto border-t border-white/[0.05] pt-2">
+          <ul className="mt-1.5 max-h-28 space-y-px overflow-y-auto border-t border-white/[0.05] pt-1.5">
             {myCreatures.map((c) => {
               const active = view === "follow" && followId === c.id;
               return (
@@ -77,28 +96,6 @@ export function HudOverlay({
             })}
           </ul>
         )}
-
-        <div className={`flex gap-1 ${signedIn && myCreatures.length > 0 ? "border-t border-white/[0.05] pt-2" : ""}`}>
-          <div className="hud-segment flex-1">
-            <button
-              type="button"
-              className={`hud-segment-btn flex-1 ${view === "god" ? "hud-segment-btn-active" : ""}`}
-              onClick={() => onViewChange("god")}
-            >
-              Map
-            </button>
-            <button
-              type="button"
-              className={`hud-segment-btn flex-1 ${view === "follow" ? "hud-segment-btn-active" : ""}`}
-              onClick={() => onViewChange("follow")}
-            >
-              Follow
-            </button>
-          </div>
-          <button type="button" className="hud-btn-sm px-2" onClick={onJumpOpen}>
-            ⌕
-          </button>
-        </div>
       </div>
 
       <div className="pointer-events-auto absolute right-3 top-3 sm:right-4 sm:top-4">

@@ -15,3 +15,5 @@ pub use vm::{run_tick, Creature, StepOutcome};
 pub use world_tile::{WorldTile, WorldTiles};
 
 pub const TICK_HZ: u32 = 10;
+/// Floor energy — creature dies at this level; corpses always hold this much.
+pub const CORPSE_ENERGY: i64 = 10;

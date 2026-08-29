@@ -5,8 +5,10 @@ const CELL = 16;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 3;
 const ZOOM_SENSITIVITY = 0.0012;
+const TICK_MS = 100;
 
 type Camera = { panX: number; panY: number; zoom: number };
+type AnimState = { fromX: number; fromY: number; toX: number; toY: number; start: number };
 
 type Props = {
   creatures: Creature[];
@@ -40,6 +42,40 @@ function cellToPan(x: number, y: number, w: number, h: number, zoom: number) {
   };
 }
 
+function easeOutCubic(t: number) {
+  return 1 - (1 - t) ** 3;
+}
+
+function stepCreatureAnim(
+  id: string,
+  serverX: number,
+  serverY: number,
+  now: number,
+  displayPos: Map<string, { x: number; y: number }>,
+  animState: Map<string, AnimState>,
+) {
+  let anim = animState.get(id);
+  if (!anim || anim.toX !== serverX || anim.toY !== serverY) {
+    const current = displayPos.get(id);
+    anim = {
+      fromX: current?.x ?? serverX,
+      fromY: current?.y ?? serverY,
+      toX: serverX,
+      toY: serverY,
+      start: now,
+    };
+    animState.set(id, anim);
+  }
+
+  const t = easeOutCubic(Math.min(1, (now - anim.start) / TICK_MS));
+  const pos = {
+    x: anim.fromX + (anim.toX - anim.fromX) * t,
+    y: anim.fromY + (anim.toY - anim.fromY) * t,
+  };
+  displayPos.set(id, pos);
+  return pos;
+}
+
 export function WorldCanvas({
   creatures,
   tiles = [],
@@ -70,6 +106,7 @@ export function WorldCanvas({
   const followIdRef = useRef(followId);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const displayPos = useRef(new Map<string, { x: number; y: number }>());
+  const animState = useRef(new Map<string, AnimState>());
 
   creaturesRef.current = creatures;
   tilesRef.current = tiles;
@@ -130,16 +167,28 @@ export function WorldCanvas({
       const h = canvas.height / dpr;
       const cam = cameraRef.current;
       const zoom = cam.zoom;
+      const now = performance.now();
       frame += 1;
+
+      const liveIds = new Set<string>();
+      for (const c of creaturesRef.current ?? []) {
+        liveIds.add(c.id);
+        stepCreatureAnim(c.id, c.x, c.y, now, displayPos.current, animState.current);
+      }
+      for (const id of displayPos.current.keys()) {
+        if (!liveIds.has(id)) {
+          displayPos.current.delete(id);
+          animState.current.delete(id);
+        }
+      }
 
       const followTarget = followIdRef.current;
       if (viewRef.current === "follow" && followTarget) {
-        const c = creaturesRef.current.find((cr) => cr.id === followTarget);
-        if (c) {
-          const pos = displayPos.current.get(c.id) ?? { x: c.x, y: c.y };
+        const pos = displayPos.current.get(followTarget);
+        if (pos) {
           const target = cellToPan(pos.x, pos.y, w, h, zoom);
-          cam.panX += (target.panX - cam.panX) * 0.18;
-          cam.panY += (target.panY - cam.panY) * 0.18;
+          cam.panX = target.panX;
+          cam.panY = target.panY;
         }
       }
 
@@ -196,21 +245,21 @@ export function WorldCanvas({
         }
       }
 
-      const liveIds = new Set<string>();
       for (const c of creaturesRef.current ?? []) {
-        liveIds.add(c.id);
-        const pos = displayPos.current.get(c.id) ?? { x: c.x, y: c.y };
-        pos.x += (c.x - pos.x) * 0.35;
-        pos.y += (c.y - pos.y) * 0.35;
-        displayPos.current.set(c.id, pos);
+        const pos = displayPos.current.get(c.id);
+        if (!pos) continue;
 
         const px = pos.x * CELL;
         const py = pos.y * CELL;
         if (px + CELL < gx0 || px > gx1 || py + CELL < gy0 || py > gy1) continue;
         drawCreature(c, pos.x, pos.y, c.id === followIdRef.current);
       }
-      for (const id of displayPos.current.keys()) {
-        if (!liveIds.has(id)) displayPos.current.delete(id);
+
+      const hover = hoverRef.current;
+      if (hover) {
+        ctx.strokeStyle = "rgba(74, 232, 194, 0.55)";
+        ctx.lineWidth = 1.5 / zoom;
+        ctx.strokeRect(hover.x * CELL + 0.5, hover.y * CELL + 0.5, CELL - 1, CELL - 1);
       }
 
       ctx.restore();

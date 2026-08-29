@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use terrarium_kernel::{
-    assemble, run_tick, vm::Creature, WorldTile, WorldTiles, TICK_HZ,
+    assemble, run_tick, vm::Creature, WorldTile, WorldTiles, TICK_HZ, CORPSE_ENERGY,
 };
 use tokio::sync::broadcast;
 
@@ -39,6 +39,7 @@ pub enum WorldMessage {
     Snapshot {
         tick: u64,
         deploy_cost: i64,
+        corpse_energy: i64,
         creatures: Vec<CreaturePublic>,
         tiles: Vec<TilePublic>,
     },
@@ -110,6 +111,7 @@ impl WorldEngine {
         WorldMessage::Snapshot {
             tick: state.tick,
             deploy_cost: self.deploy_cost,
+            corpse_energy: CORPSE_ENERGY,
             creatures: state.creatures.iter().map(creature_public).collect(),
             tiles: tiles_public(&state.tiles),
         }

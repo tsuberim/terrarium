@@ -6,6 +6,7 @@ type SnapshotMsg = {
   type: "snapshot";
   tick: number;
   deploy_cost: number;
+  corpse_energy: number;
   creatures: Creature[];
   tiles: WorldTile[];
 };
@@ -29,6 +30,7 @@ export function useWorldStream() {
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [tiles, setTiles] = useState<WorldTile[]>([]);
   const [deployCost, setDeployCost] = useState(100);
+  const [corpseEnergy, setCorpseEnergy] = useState(10);
   const [tick, setTick] = useState(0);
   const [connected, setConnected] = useState(false);
 
@@ -46,6 +48,7 @@ export function useWorldStream() {
       setCreatures([...creaturesMap.current.values()]);
       setTiles([...tilesMap.current.values()]);
       setDeployCost(msg.deploy_cost);
+      setCorpseEnergy(msg.corpse_energy);
       setTick(msg.tick);
     };
 
@@ -110,5 +113,5 @@ export function useWorldStream() {
     };
   }, []);
 
-  return { creatures, tiles, deployCost, tick, connected };
+  return { creatures, tiles, deployCost, corpseEnergy, tick, connected };
 }

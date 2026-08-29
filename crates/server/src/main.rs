@@ -23,7 +23,7 @@ mod ws;
 use auth::FirebaseUser;
 use config::Config;
 use engine::{spawn_tick_loop, WorldEngine, WorldMessage};
-use terrarium_kernel::{assemble, vm::Creature};
+use terrarium_kernel::{assemble, vm::Creature, CORPSE_ENERGY};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -57,6 +57,7 @@ struct FaucetResponse {
 #[derive(Serialize)]
 struct WorldResponse {
     deploy_cost: i64,
+    corpse_energy: i64,
     creatures: Vec<engine::CreaturePublic>,
     tiles: Vec<engine::TilePublic>,
 }
@@ -66,6 +67,8 @@ struct DeployRequest {
     x: i64,
     y: i64,
     code: String,
+    /// Extra energy N beyond the corpse floor; costs N credits.
+    energy: i64,
 }
 
 #[derive(Serialize)]
@@ -194,11 +197,13 @@ async fn world(State(state): State<AppState>) -> impl IntoResponse {
     match state.engine.snapshot() {
         WorldMessage::Snapshot {
             deploy_cost,
+            corpse_energy,
             creatures,
             tiles,
             ..
         } => Json(WorldResponse {
             deploy_cost,
+            corpse_energy,
             creatures,
             tiles,
         })
@@ -212,7 +217,7 @@ async fn deploy(
     Extension(user): Extension<FirebaseUser>,
     Json(body): Json<DeployRequest>,
 ) -> impl IntoResponse {
-    match deploy_creature(&state, &user.uid, body.x, body.y, &body.code).await {
+    match deploy_creature(&state, &user.uid, body.x, body.y, &body.code, body.energy).await {
         Ok(res) => Json(res).into_response(),
         Err(DeployError::InsufficientCredits) => (
             StatusCode::PAYMENT_REQUIRED,
@@ -222,6 +227,11 @@ async fn deploy(
         Err(DeployError::Occupied) => (
             StatusCode::CONFLICT,
             Json(serde_json::json!({ "error": "cell occupied" })),
+        )
+            .into_response(),
+        Err(DeployError::InvalidEnergy(msg)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": msg })),
         )
             .into_response(),
         Err(DeployError::InvalidProgram(msg)) => (
@@ -297,6 +307,7 @@ async fn ensure_account(db: &SqlitePool, uid: &str) -> anyhow::Result<()> {
 enum DeployError {
     InsufficientCredits,
     Occupied,
+    InvalidEnergy(String),
     InvalidProgram(String),
     Internal(anyhow::Error),
 }
@@ -311,6 +322,7 @@ async fn deploy_creature(
     x: i64,
     y: i64,
     code: &str,
+    extra: i64,
 ) -> Result<DeployResponse, DeployError> {
     let code = code.trim();
     if code.is_empty() {
@@ -319,13 +331,19 @@ async fn deploy_creature(
     if code.len() > MAX_CREATURE_CODE_LEN {
         return Err(DeployError::InvalidProgram("program too long".into()));
     }
+    let min_extra = state.config.deploy_cost;
+    if extra < min_extra {
+        return Err(DeployError::InvalidEnergy(format!(
+            "extra energy must be at least {min_extra}"
+        )));
+    }
     let bytecode = assemble(code).map_err(|err| {
         DeployError::InvalidProgram(format!("line {}: {}", err.line, err.message))
     })?;
 
-    let cost = state.config.deploy_cost;
+    let cost = extra;
     let id = Uuid::new_v4().to_string();
-    let energy = cost;
+    let energy = CORPSE_ENERGY + extra;
 
     if !state.engine.is_deployable(x, y) {
         return Err(DeployError::Occupied);

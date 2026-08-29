@@ -15,7 +15,7 @@ type Hover = { x: number; y: number };
 export default function App() {
   const { user, ready } = useAuth();
   const [credits, setCredits] = useState<number | null>(null);
-  const { creatures, tiles, deployCost, connected } = useWorldStream();
+  const { creatures, tiles, deployCost, corpseEnergy, connected } = useWorldStream();
   const {
     view,
     followId,
@@ -125,12 +125,12 @@ export default function App() {
     }
   };
 
-  const submitDeploy = async (code: string) => {
+  const submitDeploy = async (code: string, extraEnergy: number) => {
     if (!user || !deployCell) return;
     setBusy(true);
     setActionError(null);
     try {
-      const res = await postDeploy(deployCell.x, deployCell.y, code);
+      const res = await postDeploy(deployCell.x, deployCell.y, code, extraEnergy);
       setCredits(res.credits);
       setDeployCell(null);
       await refreshAccount();
@@ -201,9 +201,11 @@ export default function App() {
       />
       <DeployDialog
         cell={deployCell}
-        deployCost={deployCost}
+        minExtra={deployCost}
+        corpseEnergy={corpseEnergy}
+        credits={credits}
         busy={busy}
-        onDeploy={(code) => void submitDeploy(code)}
+        onDeploy={(code, extra) => void submitDeploy(code, extra)}
         onClose={() => setDeployCell(null)}
       />
     </div>

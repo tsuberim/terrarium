@@ -4,6 +4,7 @@ use crate::assemble;
 use crate::isa::tile;
 use crate::vm::{run_tick, Creature};
 use crate::world_tile::{WorldTile, WorldTiles};
+use crate::CORPSE_ENERGY;
 
 fn creature_at(x: i32, y: i32, bytecode: Vec<u8>) -> Creature {
     Creature {
@@ -104,10 +105,10 @@ fn sense_pushes_creature_on_occupied_cell() {
 }
 
 #[test]
-fn death_leaves_corpse_with_remaining_energy() {
+fn death_leaves_corpse_with_const_energy() {
     let mut tiles = WorldTiles::new();
     let mut creatures = vec![Creature {
-        energy: 42,
+        energy: CORPSE_ENERGY + 5,
         bytecode: assemble("suicide\n").unwrap(),
         ..creature_at(5, 5, vec![])
     }];
@@ -115,16 +116,32 @@ fn death_leaves_corpse_with_remaining_energy() {
     assert!(creatures.is_empty());
     assert_eq!(
         tiles.get(&(5, 5)),
-        Some(&WorldTile::Corpse { energy: 42 })
+        Some(&WorldTile::Corpse { energy: CORPSE_ENERGY })
+    );
+}
+
+#[test]
+fn dies_when_energy_reaches_floor() {
+    let mut tiles = WorldTiles::new();
+    let mut creatures = vec![Creature {
+        energy: CORPSE_ENERGY + 1,
+        bytecode: assemble("move e\n").unwrap(),
+        ..creature_at(0, 0, vec![])
+    }];
+    run_tick(&mut creatures, &mut tiles);
+    assert!(creatures.is_empty());
+    assert_eq!(
+        tiles.get(&(1, 0)),
+        Some(&WorldTile::Corpse { energy: CORPSE_ENERGY })
     );
 }
 
 #[test]
 fn eat_transfers_corpse_energy() {
     let mut tiles = WorldTiles::new();
-    tiles.insert((1, 0), WorldTile::Corpse { energy: 30 });
+    tiles.insert((1, 0), WorldTile::Corpse { energy: CORPSE_ENERGY });
     let c = run("eat e\nsleep\n", 0, 0, &mut tiles);
-    assert_eq!(c.energy, 1029); // 1000 - eat + 30 corpse
+    assert_eq!(c.energy, 1000 - 1 + CORPSE_ENERGY);
     assert!(!tiles.contains_key(&(1, 0)));
 }
 

@@ -1,5 +1,6 @@
 use crate::isa::{self, op, tile, STACK_MAX};
 use crate::world_tile::{place_corpse, sense_kind, set_cell, blocks_movement, WorldTile, WorldTiles};
+use crate::CORPSE_ENERGY;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StepOutcome {
@@ -28,14 +29,19 @@ const DIG_EXTRA: i64 = 1;
 const PLACE_EXTRA: i64 = 1;
 
 pub fn tick_creature(creature: &mut Creature, world: &mut WorldView<'_>) -> StepOutcome {
-    if !creature.alive || creature.energy <= 0 {
+    if !creature.alive || creature.energy <= CORPSE_ENERGY {
         creature.alive = false;
         return StepOutcome::Dead;
     }
 
     loop {
         match step(creature, world) {
-            StepOutcome::Continue => continue,
+            StepOutcome::Continue => {
+                if !creature.alive {
+                    return StepOutcome::Dead;
+                }
+                continue;
+            }
             other => return other,
         }
     }
@@ -234,6 +240,9 @@ fn pay(creature: &mut Creature, cost: i64) -> bool {
         return false;
     }
     creature.energy -= cost;
+    if creature.energy <= CORPSE_ENERGY {
+        creature.alive = false;
+    }
     true
 }
 
@@ -349,7 +358,7 @@ pub fn run_tick(creatures: &mut Vec<Creature>, tiles: &mut WorldTiles) {
         .map(|c| (c.id.clone(), c.x, c.y))
         .collect();
 
-    let mut dead: Vec<(i32, i32, i64)> = Vec::new();
+    let mut dead: Vec<(i32, i32)> = Vec::new();
 
     for creature in creatures.iter_mut().filter(|c| c.alive) {
         let idx = positions.iter().position(|(id, _, _)| id == &creature.id);
@@ -364,14 +373,14 @@ pub fn run_tick(creatures: &mut Vec<Creature>, tiles: &mut WorldTiles) {
             creature.y = positions[i].2;
         }
         if !creature.alive {
-            dead.push((creature.x, creature.y, creature.energy.max(0)));
+            dead.push((creature.x, creature.y));
         }
     }
 
     creatures.retain(|c| c.alive);
 
-    for (x, y, energy) in dead {
-        place_corpse(tiles, x, y, energy);
+    for (x, y) in dead {
+        place_corpse(tiles, x, y, CORPSE_ENERGY);
     }
 }
 
