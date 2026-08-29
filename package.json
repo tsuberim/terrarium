@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"cargo watch -q -x 'run -p terrarium-server --bin terrarium-server'\" \"npm run dev --prefix apps/skin\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

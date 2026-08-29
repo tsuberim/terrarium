@@ -32,46 +32,14 @@ The server registers routes twice: bare paths (`/health`, `/v1/*`) for local dev
 
 ## Local development
 
-### One-time setup
-
 ```bash
-chmod +x scripts/*.sh
-./scripts/setup-dev.sh
+./scripts/setup-dev.sh   # once
+./scripts/dev.sh         # cargo-watch + Vite, watch mode
 ```
 
-This creates `.env`, fetches Firebase web config into `apps/skin/.env.local`, installs npm deps, and installs `cargo-watch`.
+Open **http://localhost:5173**. Vite proxies `/api` to `:8080`.
 
-**Firebase auth locally:** add `localhost` to [Authorized domains](https://console.firebase.google.com/project/terrarium-506917/authentication/settings) and enable Google under Sign-in method.
-
-### Start / stop
-
-| Script | Purpose |
-|--------|---------|
-| `./scripts/dev-bg.sh` | API + Vite in background (watch mode) |
-| `./scripts/dev.sh` | Foreground watch — preferred for long sessions |
-| `./scripts/dev-stop.sh` | Kill processes on `:8080` and `:5173` |
-| `./scripts/dev-status.sh` | Quick health check |
-| `./scripts/run-server.sh` | API only (no watch) |
-
-Open **http://127.0.0.1:5173**. Vite proxies `/api` to the API on `:8080`.
-
-Logs (background mode): `.dev/logs/{api,web}.log`
-
-### Environment defaults
-
-| Variable | Local default | Purpose |
-|----------|---------------|---------|
-| `LISTEN_ADDR` | `0.0.0.0:8080` | API bind address |
-| `DATABASE_URL` | `sqlite::memory:` | Avoids file-lock issues on macOS dev |
-| `FAUCET_ENABLED` | `true` | Dev credits faucet |
-| `FIREBASE_PROJECT_ID` | from `.env` | JWT issuer |
-
-Run frontend or API separately if needed:
-
-```bash
-./scripts/run-server.sh
-cd apps/skin && npm run dev
-```
+Stop: Ctrl+C or `./scripts/dev-stop.sh`.
 
 ---
 
@@ -124,8 +92,7 @@ Deploy concurrency group `deploy-prod` cancels in-progress deploys when new comm
 | Script | Use |
 |--------|-----|
 | `setup-dev.sh` | One-time local bootstrap |
-| `dev-bg.sh` / `dev.sh` / `dev-stop.sh` / `dev-status.sh` | Local dev lifecycle |
-| `run-server.sh` | API without file watch |
+| `dev.sh` / `dev-stop.sh` | Start / stop local dev |
 | `deploy-server.sh` | Cloud Run deploy (local or CI) |
 | `generate-config.sh` | Write `apps/skin/.env.production` for CI builds |
 
@@ -135,8 +102,7 @@ Deploy concurrency group `deploy-prod` cancels in-progress deploys when new comm
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| Connection refused on `:5173` | Vite not running | `./scripts/dev-bg.sh` or `./scripts/dev.sh` from your terminal |
-| Connection refused on `:8080` | API not up yet | Wait for cargo build; check `.dev/logs/api.log` |
+| Connection refused on `:5173` | Dev not running | `./scripts/dev.sh` in a terminal tab |
 | Sign-in fails locally | Firebase config | Enable Google provider; add `localhost` to authorized domains |
 | `/api/health` 404 in prod | Cloud Run not deployed | Check deploy workflow or run `deploy-server.sh` |
 | Data gone after deploy | In-memory SQLite | Expected until persistent DB is configured |

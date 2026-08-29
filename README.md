@@ -4,46 +4,15 @@ Persistent 2D programmable-creature simulation. See [docs/vision.md](docs/vision
 
 ## Local dev
 
-One-time setup:
-
 ```bash
-chmod +x scripts/*.sh
-./scripts/setup-dev.sh
+./scripts/setup-dev.sh   # once
+./scripts/dev.sh         # API + Vite, watch mode
 ```
 
-Start API + frontend together (watch mode, foreground):
+Open **http://localhost:5173**. Stop with Ctrl+C or `./scripts/dev-stop.sh`.
 
-```bash
-./scripts/dev.sh
-```
-
-Background watch mode (preferred):
-
-```bash
-./scripts/dev-bg.sh    # → http://localhost:5173
-./scripts/dev-stop.sh  # stop
-```
-
-Open **http://localhost:5173** — Vite proxies `/api` to the Rust server on `:8080`.
-
-Optional: `cargo install cargo-watch` for API auto-reload on file changes.
-
-**Firebase auth locally:** ensure `localhost` is in [Authorized domains](https://console.firebase.google.com/project/terrarium-506917/authentication/settings) and Google sign-in is enabled under Sign-in method.
-
-Run separately if needed:
-
-```bash
-./scripts/run-server.sh          # API only
-cd apps/skin && npm run dev      # frontend only
-```
+Keep `./scripts/dev.sh` running in a terminal tab while you work.
 
 ## DevOps
 
-Full reference: [docs/devops.md](docs/devops.md)
-
-- [Environments & one-time setup](docs/environments.md)
-- [Secrets (local + CI)](docs/secrets.md)
-
-Push to `main` runs CI tests and deploys Cloud Run + Firebase Hosting.
-
-Live: https://terrarium-506917.web.app
+[docs/devops.md](docs/devops.md) · Live: https://terrarium-506917.web.app
