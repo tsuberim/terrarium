@@ -118,6 +118,10 @@ const MAX_CREATURE_CODE_LEN: usize = 32_768;
 const MAX_WASM_BYTES: usize = 64 * 1024;
 const MAX_WASM_B64_LEN: usize = 96 * 1024;
 
+fn redact_db_url(url: &str) -> String {
+    url.split('?').next().unwrap_or(url).to_string()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -132,6 +136,13 @@ async fn main() -> anyhow::Result<()> {
         .connect(&config.database_url)
         .await?;
     sqlx::migrate!().run(&db).await?;
+    let tables: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'")
+        .fetch_one(&db)
+        .await?;
+    if tables.0 == 0 {
+        anyhow::bail!("database migration failed: accounts table missing");
+    }
+    tracing::info!(database_url = %redact_db_url(&config.database_url), "database ready");
 
     let engine = WorldEngine::bootstrap(db.clone(), &config).await?;
     spawn_tick_loop(engine.clone());
