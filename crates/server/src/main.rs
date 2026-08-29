@@ -191,13 +191,13 @@ fn build_app(state: AppState) -> Router {
     let routes = Router::new()
         .route("/health", get(health))
         .route("/openapi.json", get(docs::openapi_raw))
-        .route("/docs", get(docs::scalar))
         .nest("/v1", v1)
         .with_state(state);
 
     // /api/* for Firebase Hosting → Cloud Run rewrites; bare paths for local dev.
     Router::new()
         .merge(routes.clone())
+        .route("/docs", get(docs::scalar))
         .nest("/api", routes)
         .route("/api/docs", get(docs::scalar_api))
         .layer(CorsLayer::permissive())
