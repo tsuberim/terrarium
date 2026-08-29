@@ -12,6 +12,10 @@ export const GAME_TERMS = [
     def: "Raw fuel inside a creature, shown in glims in the UI.",
   },
   {
+    term: "Cash out",
+    def: "Call suicide in your creature's program — its energy returns to your credits.",
+  },
+  {
     term: "Deploy",
     def: "Place a new creature with a program. Code cannot be changed later.",
   },

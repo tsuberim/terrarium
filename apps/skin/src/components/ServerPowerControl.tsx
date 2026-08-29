@@ -107,7 +107,6 @@ export function ServerPowerControl({ signedIn, online, busy, onWakeComplete }: P
         {showAdmin && status?.min_instances != null && (
           <span className="text-[9px] text-white/30">min {status.min_instances}</span>
         )}
-      </div>
     </div>
   );
 }

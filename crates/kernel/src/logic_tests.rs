@@ -302,6 +302,29 @@ fn prey_flees_east_threat() {
 }
 
 #[test]
+fn suicide_credits_human_owner() {
+    const SUICIDE_NOW: &str = r#"
+(module
+  (import "terrarium" "suicide" (func $suicide))
+  (func (export "tick") (call $suicide))
+)
+"#;
+    let mut tiles = empty_tiles();
+    let mut creatures = vec![Creature {
+        owner_uid: "human".into(),
+        energy: 2_000_000,
+        wasm: compile_wat(SUICIDE_NOW).unwrap(),
+        code: SUICIDE_NOW.into(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    let result = tick_world(&mut creatures, &mut tiles, &default_config(), 1);
+    assert!(creatures.is_empty());
+    assert_eq!(result.credit_payouts.len(), 1);
+    assert_eq!(result.credit_payouts[0].0, "human");
+    assert!(result.credit_payouts[0].1 > 1_000_000);
+}
+
+#[test]
 fn suicide_leaves_no_corpse() {
     let mut tiles = empty_tiles();
     let mut creatures = vec![Creature {

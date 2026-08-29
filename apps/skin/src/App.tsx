@@ -106,6 +106,14 @@ export default function App() {
   }, [ready, refreshAccount]);
 
   useEffect(() => {
+    if (!user) return;
+    const cashed = fxEvents.some(
+      (e) => e.type === "death" && e.reason === "suicide" && e.owner_uid === user.uid,
+    );
+    if (cashed) void refreshAccount();
+  }, [fxEvents, user, refreshAccount]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
       if (deployCell) return;

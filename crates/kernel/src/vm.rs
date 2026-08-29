@@ -402,6 +402,33 @@ pub fn run_tick(
         }
     }
 
+    let suicide_payouts: Vec<(SuicideRecipient, i64, String)> = creatures
+        .iter()
+        .filter(|c| suicide_ids.contains_key(&c.id) && c.energy > 0)
+        .map(|c| {
+            (
+                resolve_suicide_recipient(c, creatures),
+                c.energy,
+                c.owner_uid.clone(),
+            )
+        })
+        .collect();
+
+    for (recipient, energy, owner_uid) in suicide_payouts {
+        match recipient {
+            SuicideRecipient::Creature(parent_id) => {
+                if let Some(parent) = creatures.iter_mut().find(|c| c.id == parent_id && c.alive) {
+                    parent.energy += energy;
+                } else {
+                    result.credit_payouts.push((owner_uid, energy));
+                }
+            }
+            SuicideRecipient::Account(uid) => {
+                result.credit_payouts.push((uid, energy));
+            }
+        }
+    }
+
     for creature in creatures.iter() {
         if creature.alive {
             continue;
@@ -476,6 +503,25 @@ fn build_snapshot(creatures: &[Creature]) -> Snapshot {
 
 fn in_sig_range(sx: i32, sy: i32, tx: i32, ty: i32, config: &SimConfig) -> bool {
     crate::hex::in_range(tx - sx, ty - sy, config.r_sig)
+}
+
+enum SuicideRecipient {
+    Creature(String),
+    Account(String),
+}
+
+fn resolve_suicide_recipient(creature: &Creature, creatures: &[Creature]) -> SuicideRecipient {
+    let mut parent = creature.parent_id.as_deref();
+    while let Some(id) = parent {
+        if creatures.iter().any(|c| c.id == id && c.alive) {
+            return SuicideRecipient::Creature(id.to_string());
+        }
+        parent = creatures
+            .iter()
+            .find(|c| c.id == id)
+            .and_then(|c| c.parent_id.as_deref());
+    }
+    SuicideRecipient::Account(creature.owner_uid.clone())
 }
 
 fn think_once(

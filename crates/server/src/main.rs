@@ -113,8 +113,8 @@ struct DeployResponse {
 }
 
 const MAX_CREATURE_CODE_LEN: usize = 32_768;
-const MAX_WASM_BYTES: usize = 256 * 1024;
-const MAX_WASM_B64_LEN: usize = 512 * 1024;
+const MAX_WASM_BYTES: usize = 64 * 1024;
+const MAX_WASM_B64_LEN: usize = 96 * 1024;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

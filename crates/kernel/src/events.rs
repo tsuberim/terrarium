@@ -112,4 +112,6 @@ pub struct TickResult {
     pub events: Vec<WorldEvent>,
     pub destroyed: i64,
     pub free_minted: i64,
+    /// Suicide energy returned to human accounts (uid → glims).
+    pub credit_payouts: Vec<(String, i64)>,
 }

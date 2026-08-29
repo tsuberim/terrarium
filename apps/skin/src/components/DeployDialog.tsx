@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { EXAMPLE_PROGRAMS } from "../lib/examples";
+import { formatWasmLimit, MAX_WASM_BYTES } from "../lib/deployLimits";
 import { formatGlimString, GLIM_SCALE } from "../lib/glim";
 import { GlimAmount } from "./GlimAmount";
 
@@ -13,6 +14,25 @@ type Props = {
   onClose: () => void;
 };
 
+async function readWasmFile(file: File): Promise<{ b64: string; name: string }> {
+  if (!file.name.toLowerCase().endsWith(".wasm")) {
+    throw new Error("Only .wasm files");
+  }
+  const buf = await file.arrayBuffer();
+  if (buf.byteLength === 0) {
+    throw new Error("Empty file");
+  }
+  if (buf.byteLength > MAX_WASM_BYTES) {
+    throw new Error(`WASM must be ≤ ${formatWasmLimit()}`);
+  }
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return { b64: btoa(binary), name: file.name };
+}
+
 export function DeployDialog({
   cell,
   minExtra,
@@ -24,14 +44,18 @@ export function DeployDialog({
 }: Props) {
   const [code, setCode] = useState("");
   const [wasmB64, setWasmB64] = useState<string | undefined>();
+  const [wasmLabel, setWasmLabel] = useState<string | null>(null);
   const [extra, setExtra] = useState(minExtra);
   const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!cell) return;
     setCode("");
     setWasmB64(undefined);
+    setWasmLabel(null);
     setExtra(minExtra);
     setError(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -51,9 +75,31 @@ export function DeployDialog({
   const maxExtra = credits ?? minExtra;
   const totalEnergy = corpseEnergy + extra;
 
+  const applyWasm = async (file: File) => {
+    try {
+      const { b64, name } = await readWasmFile(file);
+      setWasmB64(b64);
+      setWasmLabel(name);
+      setCode(`(module ; ${name})`);
+      setError(null);
+    } catch (err) {
+      setWasmB64(undefined);
+      setWasmLabel(null);
+      setError(err instanceof Error ? err.message : "Invalid WASM file");
+    }
+  };
+
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (busy) return;
+    const file = e.dataTransfer.files[0];
+    if (file) void applyWasm(file);
+  };
+
   const submit = () => {
     if (!code.trim()) {
-      setError("Enter a program");
+      setError("Enter a program or drop a .wasm file");
       return;
     }
     if (extra < minExtra) {
@@ -110,7 +156,7 @@ export function DeployDialog({
         </div>
 
         <p className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-white/28">
-          <span>WAT module · costs</span>
+          <span>{wasmB64 ? "WASM bundle" : "WAT module"} · costs</span>
           <GlimAmount amount={extra} className="text-[10px] text-white/40" />
           <span>·</span>
           <GlimAmount amount={corpseEnergy} className="text-[10px] text-white/40" compact />
@@ -130,6 +176,7 @@ export function DeployDialog({
               onClick={() => {
                 setCode(example.code);
                 setWasmB64(example.wasmB64);
+                setWasmLabel(example.wasmB64 ? `${example.name}.wasm` : null);
                 if (error) setError(null);
                 textareaRef.current?.focus();
               }}
@@ -139,12 +186,55 @@ export function DeployDialog({
           ))}
         </div>
 
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".wasm,application/wasm"
+          className="hidden"
+          disabled={busy}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void applyWasm(file);
+            e.target.value = "";
+          }}
+        />
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!busy) setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          className={`mb-2 w-full rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors ${
+            dragOver
+              ? "border-biolume/40 bg-biolume/5"
+              : "border-white/[0.1] bg-black/15 hover:border-white/20"
+          }`}
+        >
+          <p className="text-[11px] text-white/55">
+            {wasmLabel ? (
+              <>
+                <span className="font-mono text-biolume/80">{wasmLabel}</span>
+                <span className="text-white/30"> · drop another to replace</span>
+              </>
+            ) : (
+              <>Drop a .wasm file here or click to browse</>
+            )}
+          </p>
+          <p className="mt-0.5 font-mono text-[9px] text-white/25">Max {formatWasmLimit()}</p>
+        </button>
+
         <textarea
           ref={textareaRef}
           value={code}
           onChange={(e) => {
             setCode(e.target.value);
             setWasmB64(undefined);
+            setWasmLabel(null);
             if (error) setError(null);
           }}
           placeholder={"(module\n  (import \"terrarium\" \"sleep\" (func $sleep))\n  (func (export \"tick\") (call $sleep))\n)"}
@@ -156,7 +246,7 @@ export function DeployDialog({
         {error && <p className="mt-1.5 font-mono text-[10px] text-red-400/80">{error}</p>}
 
         <p className="mt-2 font-mono text-[9px] leading-relaxed text-white/25">
-          Code is immutable after deploy. Only you can read it.
+          Code is immutable after deploy. Suicide returns energy to your credits.
         </p>
 
         <div className="mt-3 flex justify-end gap-1.5">
