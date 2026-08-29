@@ -1,8 +1,10 @@
-//! Dev-only: embed compiled strategy WASM as WAT in kernel + skin examples.
+//! Dev-only: embed compiled strategy WASM in kernel + skin examples.
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let strategies_root = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?).join("..");
@@ -14,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &target.join("strategy_predator.wasm"),
         "predator",
         "Predator",
-        "Hunts creatures in vision — eats when adjacent",
+        "Hunts creatures; broadcasts hunt ping (0x02); clones when energy > 10M",
         "PREDATOR",
     )?;
     sync_one(
@@ -22,8 +24,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &target.join("strategy_scavenger.wasm"),
         "scavenger",
         "Scavenger",
-        "Hunts corpses in vision — eats when adjacent",
+        "Rushes prey alarms (0x01), eats corpses; clones when energy > 10M",
         "SCAVENGER",
+    )?;
+    sync_one(
+        &repo,
+        &target.join("strategy_prey.wasm"),
+        "prey",
+        "Prey",
+        "Flees predators, alarms (0x01); clones when energy > 10M",
+        "PREY",
+    )?;
+    sync_one(
+        &repo,
+        &target.join("strategy_hawk.wasm"),
+        "hawk",
+        "Hawk",
+        "Rushes prey alarms (0x01); clones when energy > 10M",
+        "HAWK",
     )?;
 
     Ok(())
@@ -44,6 +62,7 @@ fn sync_one(
         )
     })?;
     let wat = wasmprinter::print_bytes(&wasm)?;
+    let wasm_b64 = STANDARD.encode(&wasm);
 
     let rust_path = repo.join("crates/kernel/src/examples.rs");
     let mut rust = fs::read_to_string(&rust_path)?;
@@ -59,30 +78,17 @@ fn sync_one(
     let mut ts = fs::read_to_string(&ts_path)?;
     let marker = format!("id: \"{id}\",");
     let start = ts.find(&marker).ok_or("missing ts id")?;
-    let code_start = ts[start..]
-        .find("code: `")
-        .ok_or("missing code")?
-        + start
-        + 7;
-    let code_end = ts[code_start..].find("`,\n").ok_or("missing code end")? + code_start;
-    let ts_wat = escape_ts_template(&wat);
-    let indented: String = ts_wat
-        .lines()
-        .map(|l| if l.is_empty() { String::new() } else { format!("  {l}") })
-        .collect::<Vec<_>>()
-        .join("\n");
+    const ENTRY_END: &str = "\n  },";
+    let close = ts[start..]
+        .find(ENTRY_END)
+        .ok_or("missing ts entry end")?
+        + start;
     let head = format!(
-        "id: \"{id}\",\n    name: \"{name}\",\n    description: \"{description}\",\n    code: `{indented}\n`,"
+        "id: \"{id}\",\n    name: \"{name}\",\n    description: \"{description}\",\n    code: \"// {name} (precompiled WASM)\",\n    wasmB64: \"{wasm_b64}\","
     );
-    ts = format!("{}{}{}", &ts[..start], head, &ts[code_end + 2..]);
+    ts = format!("{}{}{}", &ts[..start], head, &ts[close..]);
     fs::write(&ts_path, ts)?;
 
     println!("synced {id} ({} wasm bytes)", wasm.len());
     Ok(())
-}
-
-fn escape_ts_template(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('`', "\\`")
-        .replace("${", "\\${")
 }

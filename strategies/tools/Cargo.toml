@@ -9,3 +9,4 @@ path = "src/sync_examples.rs"
 
 [dependencies]
 wasmprinter = "0.221"
+base64 = "0.22"

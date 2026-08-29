@@ -23,7 +23,10 @@ mod ws;
 use auth::FirebaseUser;
 use config::Config;
 use engine::{spawn_tick_loop, WorldEngine, WorldMessage};
-use terrarium_kernel::{compile_wat, vm::Creature, SimConfig, CORPSE_ENERGY, WatError};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use terrarium_kernel::{
+    compile_wat, host, vm::Creature, SimConfig, CORPSE_ENERGY, WatError,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -69,6 +72,14 @@ struct DeployRequest {
     code: String,
     /// Extra energy N beyond the corpse floor; costs N credits.
     energy: i64,
+    /// Precompiled WASM (standard base64). Skips WAT compile; `code` is stored as label only.
+    #[serde(default)]
+    wasm_b64: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ClearWorldResponse {
+    ok: bool,
 }
 
 #[derive(Serialize)]
@@ -81,6 +92,8 @@ struct DeployResponse {
 }
 
 const MAX_CREATURE_CODE_LEN: usize = 32_768;
+const MAX_WASM_BYTES: usize = 256 * 1024;
+const MAX_WASM_B64_LEN: usize = 512 * 1024;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -117,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
 fn build_app(state: AppState) -> Router {
     let dev = Router::new()
         .route("/dev/sim-config", get(get_sim_config).patch(patch_sim_config))
+        .route("/dev/clear-world", post(clear_world))
         .layer(middleware::from_fn(dev_only));
 
     let protected = Router::new()
@@ -241,12 +255,31 @@ async fn world(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+async fn clear_world(State(state): State<AppState>) -> impl IntoResponse {
+    match state.engine.clear_world().await {
+        Ok(()) => Json(ClearWorldResponse { ok: true }).into_response(),
+        Err(err) => {
+            tracing::error!(error = %err, "clear world failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 async fn deploy(
     State(state): State<AppState>,
     Extension(user): Extension<FirebaseUser>,
     Json(body): Json<DeployRequest>,
 ) -> impl IntoResponse {
-    match deploy_creature(&state, &user.uid, body.x, body.y, &body.code, body.energy).await {
+    match deploy_creature(
+        &state,
+        &user.uid,
+        body.x,
+        body.y,
+        &body.code,
+        body.energy,
+        body.wasm_b64.as_deref(),
+    )
+    .await {
         Ok(res) => Json(res).into_response(),
         Err(DeployError::InsufficientCredits) => (
             StatusCode::PAYMENT_REQUIRED,
@@ -352,26 +385,48 @@ async fn deploy_creature(
     y: i64,
     code: &str,
     extra: i64,
+    wasm_b64: Option<&str>,
 ) -> Result<DeployResponse, DeployError> {
     let code = code.trim();
     if code.is_empty() {
         return Err(DeployError::InvalidProgram("program is required".into()));
     }
-    if code.len() > MAX_CREATURE_CODE_LEN {
-        return Err(DeployError::InvalidProgram("program too long".into()));
-    }
+
+    let wasm = if let Some(b64) = wasm_b64 {
+        if b64.len() > MAX_WASM_B64_LEN {
+            return Err(DeployError::InvalidProgram("wasm too long".into()));
+        }
+        if code.len() > 4096 {
+            return Err(DeployError::InvalidProgram("program too long".into()));
+        }
+        let bytes = STANDARD.decode(b64.trim()).map_err(|_| {
+            DeployError::InvalidProgram("invalid wasm encoding".into())
+        })?;
+        if bytes.is_empty() || bytes.len() > MAX_WASM_BYTES {
+            return Err(DeployError::InvalidProgram("invalid wasm size".into()));
+        }
+        if host::load_module(host::wasm_engine(), &bytes).is_none() {
+            return Err(DeployError::InvalidProgram("invalid wasm module".into()));
+        }
+        bytes
+    } else {
+        if code.len() > MAX_CREATURE_CODE_LEN {
+            return Err(DeployError::InvalidProgram("program too long".into()));
+        }
+        compile_wat(code).map_err(|err| {
+            DeployError::InvalidProgram(match err {
+                WatError::Empty => "program is required".into(),
+                WatError::Parse(msg) => msg,
+            })
+        })?
+    };
+
     let min_extra = state.config.deploy_cost;
     if extra < min_extra {
         return Err(DeployError::InvalidEnergy(format!(
             "extra energy must be at least {min_extra}"
         )));
     }
-    let wasm = compile_wat(code).map_err(|err| {
-        DeployError::InvalidProgram(match err {
-            WatError::Empty => "program is required".into(),
-            WatError::Parse(msg) => msg,
-        })
-    })?;
 
     let cost = extra;
     let id = Uuid::new_v4().to_string();
@@ -405,15 +460,18 @@ async fn deploy_creature(
         .map_err(deploy_internal)?;
 
     let born_tick = state.engine.current_tick() as i64;
+    let sim = state.engine.sim_config();
 
     sqlx::query(
-        "INSERT INTO creatures (id, owner_uid, x, y, energy, code, bytecode, born_tick, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, x'')",
+        "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, born_tick, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, x'')",
     )
     .bind(&id)
     .bind(uid)
     .bind(x)
     .bind(y)
     .bind(energy)
+    .bind(sim.max_health as i64)
+    .bind(sim.max_health as i64)
     .bind(code)
     .bind(&wasm)
     .bind(born_tick)
@@ -438,6 +496,8 @@ async fn deploy_creature(
             x: x as i32,
             y: y as i32,
             energy,
+            health: sim.max_health,
+            max_health: sim.max_health,
             parent_id: None,
             wasm,
             code: code.to_string(),

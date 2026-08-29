@@ -8,6 +8,8 @@ export type Creature = {
   x: number;
   y: number;
   energy: number;
+  health: number;
+  max_health: number;
   owner_uid: string;
   /** WASM digest — used when sprite mode is hash. */
   program_hash?: string;
@@ -21,7 +23,12 @@ export type SimConfig = {
   move_extra: number;
   dig_extra: number;
   place_extra: number;
+  hit_extra: number;
   signal_inbox_cap: number;
+  max_health: number;
+  hit_damage: number;
+  health_regen: number;
+  health_regen_cost: number;
 };
 
 export type WorldEvent =
@@ -55,9 +62,20 @@ export type WorldEvent =
         | "suicide"
         | "spawn_failed"
         | "signal_failed"
+        | "killed"
         | "eaten";
     }
-  | { type: "spawn"; creature_id: string; parent_id: string; x: number; y: number };
+  | { type: "spawn"; creature_id: string; parent_id: string; x: number; y: number }
+  | {
+      type: "hit";
+      actor_id: string;
+      victim_id: string;
+      x: number;
+      y: number;
+      damage: number;
+      victim_health: number;
+    }
+  | { type: "eat"; actor_id: string; x: number; y: number; energy: number };
 
 export type DeathReason = Extract<WorldEvent, { type: "death" }>["reason"];
 
@@ -107,11 +125,20 @@ export const postFaucet = (amount: number) =>
     method: "POST",
     body: JSON.stringify({ amount }),
   });
-export const postDeploy = (x: number, y: number, code: string, energy: number) =>
+export const postDeploy = (
+  x: number,
+  y: number,
+  code: string,
+  energy: number,
+  wasmB64?: string,
+) =>
   api<{ id: string; x: number; y: number; energy: number; credits: number }>("/v1/deploy", {
     method: "POST",
-    body: JSON.stringify({ x, y, code, energy }),
+    body: JSON.stringify({ x, y, code, energy, wasm_b64: wasmB64 }),
   });
+
+export const postClearWorld = () =>
+  api<{ ok: boolean }>("/v1/dev/clear-world", { method: "POST" });
 
 export const getSimConfig = () => api<SimConfig>("/v1/dev/sim-config");
 

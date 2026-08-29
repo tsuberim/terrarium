@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["hunter", "predator", "scavenger", "tools"]
+members = ["hunter", "predator", "scavenger", "prey", "hawk", "tools"]
 
 [workspace.package]
 edition = "2021"

@@ -30,11 +30,11 @@ Commit the synced WAT after changing strategy logic. CI does **not** build strat
 TARGET = creature (2) | corpse (3)
 
 for (dx, dy) in adjacent:
-    if sense_at(dx, dy) == TARGET: eat(dir_of(dx, dy)); sleep(); return
+    if sense_kind(dx, dy) == TARGET: eat(dir_of(dx, dy)); sleep(); return
 
 for d in 1..=VISION:
     for (dx, dy) in ring(d):
-        if sense_at(dx, dy) == TARGET: step_toward(dx, dy); sleep(); return
+        if sense_kind(dx, dy) == TARGET: step_toward(dx, dy); sleep(); return
 
 sleep()
 ```

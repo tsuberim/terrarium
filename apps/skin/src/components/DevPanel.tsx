@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SimConfig } from "../lib/api";
-import { getSimConfig, patchSimConfig } from "../lib/api";
+import { getSimConfig, patchSimConfig, postClearWorld } from "../lib/api";
 
 type Props = {
   config: SimConfig | null;
@@ -16,7 +16,12 @@ const DEFAULTS: SimConfig = {
   move_extra: 100_000,
   dig_extra: 100_000,
   place_extra: 100_000,
+  hit_extra: 100_000,
   signal_inbox_cap: 8,
+  max_health: 100,
+  hit_damage: 34,
+  health_regen: 5,
+  health_regen_cost: 100_000,
 };
 
 export function DevPanel({ config, onConfigChange }: Props) {
@@ -130,6 +135,14 @@ export function DevPanel({ config, onConfigChange }: Props) {
               Apply
             </button>
           </div>
+          <button
+            type="button"
+            className="hud-btn-sm mt-2 w-full text-red-400/70 hover:text-red-400"
+            disabled={busy}
+            onClick={() => void postClearWorld()}
+          >
+            Clear world
+          </button>
         </div>
       )}
     </div>

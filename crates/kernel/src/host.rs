@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use uuid::Uuid;
 use wasmtime::{Caller, Engine, Error, Linker, Module, Store, Config};
 
-use crate::abi::{dir, RECV_STRUCT_SIZE};
+use crate::abi::{RECV_STRUCT_SIZE, SENSE_STRUCT_SIZE};
 use crate::events::DeathReason;
 use crate::sim_config::SimConfig;
 use crate::vm::{mark_dead, Creature, Signal, Snapshot};
@@ -18,6 +18,7 @@ pub enum PendingAction {
     Dig { dir: u8 },
     Place { dir: u8 },
     Eat { dir: u8 },
+    Hit { dir: u8 },
     Spawn { dir: u8, energy: i64 },
     SignalTo {
         to_id: String,
@@ -89,14 +90,15 @@ impl HostState {
     }
 
     fn valid_dir(d: i32) -> Result<u8, Error> {
-        match d {
-            dir::N | dir::E | dir::S | dir::W => Ok(d as u8),
-            _ => Err(Error::msg("bad direction")),
+        if (0..crate::abi::dir::COUNT).contains(&d) {
+            Ok(d as u8)
+        } else {
+            Err(Error::msg("bad direction"))
         }
     }
 
-    fn in_vis(&self, dx: i32, dy: i32) -> Result<(), Error> {
-        if self.config().in_square(dx, dy, self.config().r_vis) {
+    fn in_vis(&self, dq: i32, dr: i32) -> Result<(), Error> {
+        if self.config().in_hex_range(dq, dr, self.config().r_vis) {
             Ok(())
         } else {
             Err(Error::msg("out of vision"))
@@ -109,6 +111,10 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
 
     linker.func_wrap("terrarium", "energy", |caller: Caller<'_, HostState>| {
         Ok(caller.data().creature_ref().energy)
+    })?;
+
+    linker.func_wrap("terrarium", "health", |caller: Caller<'_, HostState>| {
+        Ok(i64::from(caller.data().creature_ref().health))
     })?;
 
     linker.func_wrap("terrarium", "pos_x", |caller: Caller<'_, HostState>| {
@@ -124,31 +130,27 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
         Ok(caller.data().tick.saturating_sub(born) as i32)
     })?;
 
-    linker.func_wrap("terrarium", "sense_at", |mut caller: Caller<'_, HostState>, dx: i32, dy: i32| {
-        caller.data_mut().in_vis(dx, dy)?;
+    linker.func_wrap("terrarium", "sense", |mut caller: Caller<'_, HostState>, dq: i32, dr: i32, ptr: i32| {
+        caller.data_mut().in_vis(dq, dr)?;
         let c = caller.data().creature_ref();
-        let x = c.x + dx;
-        let y = c.y + dy;
+        let x = c.x + dq;
+        let y = c.y + dr;
         let snapshot = caller.data().snapshot();
+        let tiles = caller.data().tiles();
         let has_creature = snapshot.id_at.contains_key(&(x, y));
-        Ok(sense_kind(caller.data().tiles(), x, y, has_creature))
-    })?;
-
-    linker.func_wrap("terrarium", "sense_energy", |mut caller: Caller<'_, HostState>, dx: i32, dy: i32| {
-        caller.data_mut().in_vis(dx, dy)?;
-        let c = caller.data().creature_ref();
-        let x = c.x + dx;
-        let y = c.y + dy;
-        let snapshot = caller.data().snapshot();
+        let kind = sense_kind(tiles, x, y, has_creature);
+        let mut energy = 0i64;
+        let mut health = 0i32;
+        let mut max_health = 0i32;
         if let Some(id) = snapshot.id_at.get(&(x, y)) {
-            if let Some(e) = snapshot.energy.get(id) {
-                return Ok(*e);
-            }
+            energy = snapshot.energy.get(id).copied().unwrap_or(0);
+            health = snapshot.health.get(id).copied().unwrap_or(0);
+            max_health = snapshot.max_health.get(id).copied().unwrap_or(0);
+        } else if let Some(WorldTile::Corpse { energy: e, .. }) = tiles.get(&(x, y)) {
+            energy = *e;
         }
-        if let Some(WorldTile::Corpse { energy, .. }) = caller.data().tiles().get(&(x, y)) {
-            return Ok(*energy);
-        }
-        Ok(0)
+        write_sense_struct(&mut caller, ptr, kind, energy, health, max_health)?;
+        Ok(1)
     })?;
 
     linker.func_wrap("terrarium", "random_byte", |mut caller: Caller<'_, HostState>| {
@@ -182,6 +184,14 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
     linker.func_wrap("terrarium", "eat", |mut caller: Caller<'_, HostState>, d: i32| {
         let dir = HostState::valid_dir(d)?;
         caller.data_mut().result.actions.push(PendingAction::Eat { dir });
+        Ok(0_i32)
+    })?;
+
+    linker.func_wrap("terrarium", "hit", |mut caller: Caller<'_, HostState>, d: i32| {
+        let dir = HostState::valid_dir(d)?;
+        let extra = caller.data().config().hit_extra;
+        caller.data_mut().pay_action(extra)?;
+        caller.data_mut().result.actions.push(PendingAction::Hit { dir });
         Ok(0_i32)
     })?;
 
@@ -282,7 +292,7 @@ fn next_random(host: &mut HostState) -> u8 {
 }
 
 fn in_sig_range(sx: i32, sy: i32, tx: i32, ty: i32, config: &SimConfig) -> bool {
-    config.in_square(tx - sx, ty - sy, config.r_sig)
+    crate::hex::in_range(tx - sx, ty - sy, config.r_sig)
 }
 
 fn uuid_from_bytes(bytes: &[u8]) -> Option<String> {
@@ -319,6 +329,31 @@ fn write_i32(caller: &mut Caller<'_, HostState>, ptr: i32, value: i32) -> Result
         return Err(Error::msg("oob"));
     }
     data[ptr..ptr + 4].copy_from_slice(&value.to_le_bytes());
+    Ok(())
+}
+
+fn write_sense_struct(
+    caller: &mut Caller<'_, HostState>,
+    ptr: i32,
+    kind: i32,
+    energy: i64,
+    health: i32,
+    max_health: i32,
+) -> Result<(), Error> {
+    let memory = caller
+        .get_export("memory")
+        .and_then(|e| e.into_memory())
+        .ok_or_else(|| Error::msg("no memory"))?;
+    let data = memory.data_mut(&mut *caller);
+    let ptr = ptr as usize;
+    let end = ptr + SENSE_STRUCT_SIZE as usize;
+    if end > data.len() {
+        return Err(Error::msg("oob"));
+    }
+    data[ptr..ptr + 4].copy_from_slice(&kind.to_le_bytes());
+    data[ptr + 8..ptr + 16].copy_from_slice(&energy.to_le_bytes());
+    data[ptr + 16..ptr + 20].copy_from_slice(&health.to_le_bytes());
+    data[ptr + 20..ptr + 24].copy_from_slice(&max_health.to_le_bytes());
     Ok(())
 }
 

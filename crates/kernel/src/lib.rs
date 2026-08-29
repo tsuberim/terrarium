@@ -1,6 +1,7 @@
 //! Simulation kernel — WAT/WASM creatures, tick loop.
 
 pub mod abi;
+pub mod hex;
 pub mod events;
 pub mod examples;
 pub mod host;

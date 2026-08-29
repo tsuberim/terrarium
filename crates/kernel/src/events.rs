@@ -17,6 +17,7 @@ pub enum DeathReason {
     Suicide,
     SpawnFailed,
     SignalFailed,
+    Killed,
     Eaten,
 }
 
@@ -37,6 +38,7 @@ impl DeathReason {
             Self::Suicide => "suicide",
             Self::SpawnFailed => "spawn_failed",
             Self::SignalFailed => "signal_failed",
+            Self::Killed => "killed",
             Self::Eaten => "eaten",
         }
     }
@@ -57,6 +59,7 @@ impl DeathReason {
             "suicide" => Self::Suicide,
             "spawn_failed" => Self::SpawnFailed,
             "signal_failed" => Self::SignalFailed,
+            "killed" => Self::Killed,
             "eaten" => Self::Eaten,
             _ => return None,
         })
@@ -88,11 +91,23 @@ pub enum WorldEvent {
         x: i32,
         y: i32,
     },
+    Hit {
+        actor_id: String,
+        victim_id: String,
+        x: i32,
+        y: i32,
+        damage: i32,
+        victim_health: i32,
+    },
+    Eat {
+        actor_id: String,
+        x: i32,
+        y: i32,
+        energy: i64,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct TickResult {
     pub events: Vec<WorldEvent>,
-    /// Human account credits from suicides `(owner_uid, amount)`.
-    pub credit_payouts: Vec<(String, i64)>,
 }

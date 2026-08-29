@@ -22,6 +22,8 @@ pub struct CreaturePublic {
     pub x: i64,
     pub y: i64,
     pub energy: i64,
+    pub health: i32,
+    pub max_health: i32,
     pub owner_uid: String,
     /// WASM digest — same program shares the same hash.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -159,6 +161,21 @@ impl WorldEngine {
         !matches!(state.tiles.get(&(x, y)), Some(WorldTile::Solid))
     }
 
+    pub async fn clear_world(&self) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM creatures")
+            .execute(&self.db)
+            .await?;
+        sqlx::query("DELETE FROM world_tiles")
+            .execute(&self.db)
+            .await?;
+        let mut state = self.inner.write();
+        state.creatures.clear();
+        state.tiles.clear();
+        drop(state);
+        let _ = self.events.send(self.snapshot());
+        Ok(())
+    }
+
     pub fn insert_creature(&self, creature: Creature) -> anyhow::Result<()> {
         let public = creature_public(&creature);
         let mut state = self.inner.write();
@@ -180,10 +197,10 @@ impl WorldEngine {
         let mut state = self.inner.write();
         let tick = state.tick + 1;
 
-        let before: HashMap<String, (i32, i32, i64)> = state
+        let before: HashMap<String, (i32, i32, i64, i32, i32)> = state
             .creatures
             .iter()
-            .map(|c| (c.id.clone(), (c.x, c.y, c.energy)))
+            .map(|c| (c.id.clone(), (c.x, c.y, c.energy, c.health, c.max_health)))
             .collect();
         let before_tiles = state.tiles.clone();
 
@@ -195,31 +212,7 @@ impl WorldEngine {
         state.tiles = tiles;
         state.tick = tick;
 
-        if !tick_result.credit_payouts.is_empty() {
-            let db = self.db.clone();
-            let payouts = tick_result.credit_payouts.clone();
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build();
-                if let Ok(rt) = rt {
-                    rt.block_on(async {
-                        for (uid, amount) in payouts {
-                            let _ = sqlx::query(
-                                "UPDATE accounts SET credits = credits + ? WHERE firebase_uid = ?",
-                            )
-                            .bind(amount)
-                            .bind(&uid)
-                            .execute(&db)
-                            .await;
-                        }
-                    });
-                }
-            });
-        }
-
-        let mut message =
-            build_delta(tick, &before, &state.creatures, &before_tiles, &state.tiles);
+        let mut message = build_delta(tick, &before, &state.creatures, &before_tiles, &state.tiles);
         if let WorldMessage::Delta { events, .. } = &mut message {
             *events = tick_result.events;
         }
@@ -239,7 +232,7 @@ impl WorldEngine {
 
 fn build_delta(
     tick: u64,
-    before: &HashMap<String, (i32, i32, i64)>,
+    before: &HashMap<String, (i32, i32, i64, i32, i32)>,
     after: &[Creature],
     before_tiles: &WorldTiles,
     after_tiles: &WorldTiles,
@@ -257,7 +250,9 @@ fn build_delta(
     for c in after {
         let changed = before
             .get(&c.id)
-            .map(|(x, y, e)| *x != c.x || *y != c.y || *e != c.energy)
+            .map(|(x, y, e, h, mh)| {
+                *x != c.x || *y != c.y || *e != c.energy || *h != c.health || *mh != c.max_health
+            })
             .unwrap_or(true);
         if changed {
             creatures_upsert.push(creature_public(c));
@@ -300,6 +295,8 @@ fn creature_public(c: &Creature) -> CreaturePublic {
         x: c.x as i64,
         y: c.y as i64,
         energy: c.energy,
+        health: c.health,
+        max_health: c.max_health,
         owner_uid: c.owner_uid.clone(),
         program_hash: Some(program_hash(&c.wasm)),
     }
@@ -344,8 +341,8 @@ const IDLE_WAT: &str = r#"
 "#;
 
 async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
-    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, Option<Vec<u8>>, String, i64)>(
-        "SELECT id, owner_uid, x, y, energy, bytecode, code, born_tick FROM creatures ORDER BY id",
+    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, i64, i64, Option<Vec<u8>>, String, i64)>(
+        "SELECT id, owner_uid, x, y, energy, health, max_health, bytecode, code, born_tick FROM creatures ORDER BY id",
     )
     .fetch_all(db)
     .await?;
@@ -353,7 +350,7 @@ async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
     let idle = compile_wat(IDLE_WAT)?;
 
     rows.into_iter()
-        .map(|(id, owner_uid, x, y, energy, wasm_blob, code, born_tick)| {
+        .map(|(id, owner_uid, x, y, energy, health, max_health, wasm_blob, code, born_tick)| {
             let wasm = match wasm_blob.filter(|b| !b.is_empty()) {
                 Some(b) => b,
                 None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
@@ -364,6 +361,8 @@ async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
                 x: x as i32,
                 y: y as i32,
                 energy,
+                health: health as i32,
+                max_health: max_health as i32,
                 parent_id: None,
                 wasm,
                 code,
@@ -438,11 +437,13 @@ pub async fn persist_world(
 
     for creature in creatures {
         sqlx::query(
-            "UPDATE creatures SET x = ?, y = ?, energy = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
+            "UPDATE creatures SET x = ?, y = ?, energy = ?, health = ?, max_health = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
         )
         .bind(creature.x as i64)
         .bind(creature.y as i64)
         .bind(creature.energy)
+        .bind(creature.health as i64)
+        .bind(creature.max_health as i64)
         .bind(&creature.wasm)
         .bind(creature.born_tick as i64)
         .bind(&creature.id)
@@ -568,7 +569,7 @@ mod tests {
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO creatures (id, owner_uid, x, y, energy, code, bytecode, pc, stack) VALUES (?, 'tester', ?, ?, ?, ?, ?, 0, x'')",
+            "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, pc, stack) VALUES (?, 'tester', ?, ?, ?, 100, 100, ?, ?, 0, x'')",
         )
         .bind(id)
         .bind(x as i64)
@@ -586,6 +587,8 @@ mod tests {
                 x,
                 y,
                 energy,
+                health: 100,
+                max_health: 100,
                 parent_id: None,
                 wasm,
                 code: code.into(),
@@ -602,7 +605,7 @@ mod tests {
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
   (func (export "tick")
-    i32.const 1
+    i32.const 0
     call $move
     drop
     call $sleep)

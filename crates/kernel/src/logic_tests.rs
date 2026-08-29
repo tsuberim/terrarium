@@ -5,7 +5,6 @@ use crate::examples::{BEACON, IDLE, KAMIKAZE, PREDATOR, PREY, RUNNER, SCAVENGER}
 use crate::sim_config::SimConfig;
 use crate::vm::{run_tick, Creature};
 use crate::world_tile::{WorldTile, WorldTiles};
-use crate::CORPSE_ENERGY;
 use crate::DeathReason;
 
 fn default_config() -> SimConfig {
@@ -13,11 +12,14 @@ fn default_config() -> SimConfig {
 }
 
 fn creature_at(x: i32, y: i32, code: &'static str) -> Creature {
+    let config = default_config();
     Creature {
         id: "c".into(),
         x,
         y,
-        energy: 100_000_000,
+        energy: 5_000_000,
+        health: config.max_health,
+        max_health: config.max_health,
         owner_uid: "u".into(),
         parent_id: None,
         wasm: compile_wat(code).unwrap(),
@@ -27,6 +29,10 @@ fn creature_at(x: i32, y: i32, code: &'static str) -> Creature {
         death_reason: None,
         born_tick: 0,
     }
+}
+
+fn empty_tiles() -> WorldTiles {
+    WorldTiles::new()
 }
 
 fn run(code: &'static str, x: i32, y: i32, tiles: &mut WorldTiles) -> Creature {
@@ -47,7 +53,7 @@ fn empty_wasm_kills() {
 
 #[test]
 fn blocked_move_costs_energy_but_stays_put() {
-    let mut tiles = WorldTiles::new();
+    let mut tiles = empty_tiles();
     tiles.insert((1, 0), WorldTile::Solid);
     let before = 10_000_000_i64;
     let mut creatures = vec![Creature {
@@ -112,6 +118,14 @@ fn out_of_gas_records_reason() {
 }
 
 #[test]
+fn predator_survives_scan_on_empty_world() {
+    let mut creatures = vec![creature_at(0, 0, PREDATOR)];
+    let result = run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert_eq!(creatures.len(), 1, "predator should survive full vision scan + wander");
+    assert!(!result.events.iter().any(|e| matches!(e, crate::WorldEvent::Death { .. })));
+}
+
+#[test]
 fn predator_chases_distant_prey() {
     let mut creatures = vec![
         creature_at(0, 0, PREDATOR),
@@ -128,7 +142,11 @@ fn predator_chases_distant_prey() {
 }
 
 #[test]
-fn predator_eats_adjacent_prey() {
+fn predator_kills_adjacent_prey() {
+    let config = SimConfig {
+        hit_damage: 100,
+        ..default_config()
+    };
     let mut creatures = vec![
         creature_at(0, 0, PREDATOR),
         Creature {
@@ -136,20 +154,82 @@ fn predator_eats_adjacent_prey() {
             x: 1,
             y: 0,
             energy: 5_000_000,
+            health: 100,
+            max_health: 100,
             ..creature_at(0, 0, IDLE)
         },
     ];
-    let before = creatures[0].energy;
-    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    run_tick(&mut creatures, &mut WorldTiles::new(), &config, 1);
     assert_eq!(creatures.len(), 1);
-    assert!(creatures[0].energy > before);
     assert!(creatures.iter().all(|c| c.id != "prey"));
 }
 
 #[test]
+fn idle_regen_costs_energy() {
+    let config = default_config();
+    let mut creatures = vec![Creature {
+        health: 50,
+        max_health: 100,
+        energy: 10_000_000,
+        ..creature_at(0, 0, IDLE)
+    }];
+    let before = creatures[0].energy;
+    run_tick(&mut creatures, &mut WorldTiles::new(), &config, 1);
+    assert_eq!(creatures[0].health, 50 + config.health_regen);
+    assert!(creatures[0].energy <= before - config.health_regen_cost);
+}
+
+#[test]
+fn moving_creature_does_not_regen() {
+    let config = default_config();
+    let mut creatures = vec![Creature {
+        health: 50,
+        max_health: 100,
+        ..creature_at(0, 0, RUNNER)
+    }];
+    run_tick(&mut creatures, &mut WorldTiles::new(), &config, 1);
+    assert_eq!(creatures[0].health, 50);
+}
+
+#[test]
+fn eat_ignores_adjacent_creature() {
+    let mut creatures = vec![
+        creature_at(0, 0, RUNNER),
+        Creature {
+            id: "other".into(),
+            x: 1,
+            y: 0,
+            ..creature_at(0, 0, IDLE)
+        },
+    ];
+    const EATER: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "eat" (func $eat (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 0
+    call $eat
+    drop
+    call $sleep)
+)
+"#;
+    creatures[0].wasm = compile_wat(EATER).unwrap();
+    creatures[0].code = EATER.into();
+    run_tick(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert_eq!(creatures.len(), 2);
+    assert!(creatures.iter().any(|c| c.id == "other"));
+}
+
+#[test]
 fn scavenger_chases_distant_corpse() {
-    let mut tiles = WorldTiles::new();
-    tiles.insert((4, 0), WorldTile::Corpse { energy: 1_000_000, death_reason: DeathReason::EnergyFloor });
+    let mut tiles = empty_tiles();
+    tiles.insert(
+        (4, 0),
+        WorldTile::Corpse {
+            energy: 1_000_000,
+            death_reason: DeathReason::EnergyFloor,
+        },
+    );
     let mut creatures = vec![creature_at(0, 0, SCAVENGER)];
     run_tick(&mut creatures, &mut tiles, &default_config(), 1);
     assert_eq!(creatures[0].x, 1);
@@ -172,21 +252,15 @@ fn prey_flees_east_threat() {
 }
 
 #[test]
-fn suicide_pays_no_corpse() {
-    let mut tiles = WorldTiles::new();
+fn suicide_leaves_no_corpse() {
+    let mut tiles = empty_tiles();
     let mut creatures = vec![Creature {
-        energy: CORPSE_ENERGY + 50,
+        energy: 2_000_000,
         ..creature_at(5, 5, KAMIKAZE)
     }];
-    // Drain energy below threshold via repeated ticks (kamikaze checks each tick)
-    creatures[0].energy = CORPSE_ENERGY + 50;
-    // Force low energy for immediate suicide
-    creatures[0].energy = 2_000_000;
-    let result = run_tick(&mut creatures, &mut tiles, &default_config(), 1);
+    run_tick(&mut creatures, &mut tiles, &default_config(), 1);
     assert!(creatures.is_empty());
     assert!(!tiles.contains_key(&(5, 5)));
-    let payout = result.credit_payouts[0].1;
-    assert!(payout > 800_000 && payout <= 1_100_000, "payout after opcode gas: {payout}");
 }
 
 #[test]
@@ -218,7 +292,7 @@ fn uptime_reports_age_in_ticks() {
     i32.const 3
     i32.ne
     if (return) end
-    i32.const 1
+    i32.const 0
     call $move
     drop
     call $sleep)
@@ -257,6 +331,6 @@ fn random_byte_import_works() {
 
 #[test]
 fn runner_wanders() {
-    let c = run(RUNNER, 0, 0, &mut WorldTiles::new());
+    let c = run(RUNNER, 0, 0, &mut empty_tiles());
     assert!(c.x != 0 || c.y != 0);
 }

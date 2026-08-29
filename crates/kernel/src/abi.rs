@@ -1,10 +1,14 @@
 //! Host ABI constants shared by the WASM runtime.
 
+/// Pointy-top axial directions: E, NE, NW, W, SW, SE.
 pub mod dir {
-    pub const N: i32 = 0;
-    pub const E: i32 = 1;
-    pub const S: i32 = 2;
+    pub const E: i32 = 0;
+    pub const NE: i32 = 1;
+    pub const NW: i32 = 2;
     pub const W: i32 = 3;
+    pub const SW: i32 = 4;
+    pub const SE: i32 = 5;
+    pub const COUNT: i32 = 6;
 }
 
 pub mod tile {
@@ -15,6 +19,15 @@ pub mod tile {
 }
 
 pub const RECV_STRUCT_SIZE: i32 = 36;
+
+/// Cell snapshot written by `sense` (little-endian).
+pub const SENSE_STRUCT_SIZE: i32 = 24;
+pub mod sense_off {
+    pub const KIND: i32 = 0;
+    pub const ENERGY: i32 = 8;
+    pub const HEALTH: i32 = 16;
+    pub const MAX_HEALTH: i32 = 20;
+}
 
 /// Base energy unit — values are in millions (corpse floor = 1M).
 pub const ENERGY_SCALE: i64 = 100_000;

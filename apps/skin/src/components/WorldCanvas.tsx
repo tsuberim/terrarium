@@ -2,9 +2,18 @@ import { useEffect, useRef } from "react";
 import type { FxEvent } from "../hooks/useWorldStream";
 import type { Creature, WorldTile } from "../lib/api";
 import { creatureSprite, drawCreatureSprite, type SpriteMode } from "../lib/creatureSprite";
+import {
+  cellCenter,
+  hexDisk,
+  hexIntersectsViewport,
+  hexPath,
+  HEX_RADIUS,
+  pixelToAxial,
+  visibleHexRange,
+} from "../lib/hex";
 
-const CELL = 16;
 const MIN_ZOOM = 0.35;
+const GRID_MIN_ZOOM = 0.55;
 const MAX_ZOOM = 3;
 const ZOOM_SENSITIVITY = 0.0012;
 const TICK_MS = 100;
@@ -38,13 +47,15 @@ function clampZoom(z: number) {
 function screenToCell(screenX: number, screenY: number, camera: Camera) {
   const worldX = (screenX - camera.panX) / camera.zoom;
   const worldY = (screenY - camera.panY) / camera.zoom;
-  return { x: Math.floor(worldX / CELL), y: Math.floor(worldY / CELL) };
+  const { q, r } = pixelToAxial(worldX, worldY);
+  return { x: q, y: r };
 }
 
-function cellToPan(x: number, y: number, w: number, h: number, zoom: number) {
+function cellToPan(q: number, r: number, w: number, h: number, zoom: number) {
+  const { x, y } = cellCenter(q, r);
   return {
-    panX: w / 2 - (x * CELL + CELL / 2) * zoom,
-    panY: h / 2 - (y * CELL + CELL / 2) * zoom,
+    panX: w / 2 - x * zoom,
+    panY: h / 2 - y * zoom,
   };
 }
 
@@ -162,26 +173,27 @@ export function WorldCanvas({
       canvas.style.height = `${clientHeight}px`;
     };
 
-    const drawSenseRange = (dx: number, dy: number, r: number) => {
-      const x0 = (dx - r) * CELL;
-      const y0 = (dy - r) * CELL;
-      const size = (2 * r + 1) * CELL;
-      ctx.fillStyle = "rgba(74, 232, 194, 0.05)";
-      ctx.fillRect(x0, y0, size, size);
+    const drawSenseRange = (q: number, r: number, range: number) => {
+      for (const cell of hexDisk(q, r, range)) {
+        hexPath(ctx, cell.q, cell.r);
+        ctx.fillStyle = "rgba(74, 232, 194, 0.05)";
+        ctx.fill();
+      }
       ctx.strokeStyle = "rgba(74, 232, 194, 0.22)";
       ctx.lineWidth = 1 / cameraRef.current.zoom;
-      ctx.setLineDash([4 / cameraRef.current.zoom, 3 / cameraRef.current.zoom]);
-      ctx.strokeRect(x0 + 0.5, y0 + 0.5, size - 1, size - 1);
-      ctx.setLineDash([]);
+      for (const cell of hexDisk(q, r, range)) {
+        hexPath(ctx, cell.q, cell.r);
+        ctx.stroke();
+      }
     };
 
-    const drawEnergyBar = (dx: number, dy: number, energy: number, floor: number, refMax: number) => {
+    const drawEnergyBar = (cx: number, cy: number, energy: number, floor: number, refMax: number) => {
       const span = Math.max(refMax - floor, 1);
       const ratio = Math.max(0, Math.min(1, (energy - floor) / span));
-      const x = dx * CELL + 2;
-      const y = dy * CELL + CELL - 4;
-      const w = CELL - 4;
+      const w = HEX_RADIUS * 1.4;
       const h = 2;
+      const x = cx - w / 2;
+      const y = cy + HEX_RADIUS * 0.55;
       const lw = 1 / cameraRef.current.zoom;
       ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
       ctx.fillRect(x, y, w, h);
@@ -193,28 +205,27 @@ export function WorldCanvas({
 
     const drawCreature = (
       c: Creature,
-      dx: number,
-      dy: number,
+      q: number,
+      r: number,
       followed: boolean,
       energyRefMax: number,
     ) => {
       const mine = c.owner_uid === userUidRef.current;
       const sprite = creatureSprite(c, spriteModeRef.current);
+      const { x: cx, y: cy } = cellCenter(q, r);
 
-      drawCreatureSprite(ctx, dx, dy, CELL, sprite, mine);
+      drawCreatureSprite(ctx, cx, cy, sprite, mine, c.health, c.max_health);
 
       if (followed) {
-        const cx = dx * CELL + CELL / 2;
-        const cy = dy * CELL + CELL / 2;
         ctx.strokeStyle = "rgba(232, 168, 74, 0.85)";
         ctx.lineWidth = 2 / cameraRef.current.zoom;
         ctx.beginPath();
-        ctx.arc(cx, cy, CELL * 0.42, 0, Math.PI * 2);
+        ctx.arc(cx, cy, HEX_RADIUS * 0.85, 0, Math.PI * 2);
         ctx.stroke();
       }
 
       if (mine) {
-        drawEnergyBar(dx, dy, c.energy, corpseEnergyRef.current, energyRefMax);
+        drawEnergyBar(cx, cy, c.energy, corpseEnergyRef.current, energyRefMax);
       }
     };
 
@@ -264,39 +275,35 @@ export function WorldCanvas({
       const right = (w - panX) / zoom;
       const bottom = (h - panY) / zoom;
 
-      const gx0 = Math.floor(left / CELL) * CELL;
-      const gy0 = Math.floor(top / CELL) * CELL;
-      const gx1 = Math.ceil(right / CELL) * CELL;
-      const gy1 = Math.ceil(bottom / CELL) * CELL;
+      const { qMin, qMax, rMin, rMax } = visibleHexRange(left, top, right, bottom);
 
-      ctx.strokeStyle = "rgba(74, 232, 194, 0.045)";
-      ctx.lineWidth = 1 / zoom;
-      for (let x = gx0; x <= gx1; x += CELL) {
-        ctx.beginPath();
-        ctx.moveTo(x, gy0);
-        ctx.lineTo(x, gy1);
-        ctx.stroke();
-      }
-      for (let y = gy0; y <= gy1; y += CELL) {
-        ctx.beginPath();
-        ctx.moveTo(gx0, y);
-        ctx.lineTo(gx1, y);
-        ctx.stroke();
+      if (zoom >= GRID_MIN_ZOOM) {
+        ctx.strokeStyle = "rgba(74, 232, 194, 0.018)";
+        ctx.lineWidth = 1 / zoom;
+        for (let q = qMin; q <= qMax; q++) {
+          for (let r = rMin; r <= rMax; r++) {
+            if (!hexIntersectsViewport(q, r, left, top, right, bottom)) continue;
+            hexPath(ctx, q, r);
+            ctx.stroke();
+          }
+        }
       }
 
       for (const t of tilesRef.current ?? []) {
-        const px = t.x * CELL;
-        const py = t.y * CELL;
-        if (px + CELL < gx0 || px > gx1 || py + CELL < gy0 || py > gy1) continue;
+        const { x: cx, y: cy } = cellCenter(t.x, t.y);
+        if (cx + HEX_RADIUS < left || cx - HEX_RADIUS > right || cy + HEX_RADIUS < top || cy - HEX_RADIUS > bottom) {
+          continue;
+        }
+        hexPath(ctx, t.x, t.y);
         if (t.kind === 1) {
           ctx.fillStyle = "rgba(90, 100, 110, 0.55)";
-          ctx.fillRect(px + 1, py + 1, CELL - 2, CELL - 2);
+          ctx.fill();
         } else if (t.kind === 3) {
           ctx.fillStyle = "rgba(232, 168, 74, 0.35)";
-          ctx.fillRect(px + 2, py + 2, CELL - 4, CELL - 4);
+          ctx.fill();
           ctx.fillStyle = "rgba(232, 168, 74, 0.7)";
           ctx.beginPath();
-          ctx.arc(px + CELL / 2, py + CELL / 2, CELL * 0.15, 0, Math.PI * 2);
+          ctx.arc(cx, cy, HEX_RADIUS * 0.2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -306,11 +313,6 @@ export function WorldCanvas({
         if (c.owner_uid !== userUidRef.current) continue;
         const pos = displayPos.current.get(c.id);
         if (!pos) continue;
-        const x0 = (pos.x - senseR) * CELL;
-        const y0 = (pos.y - senseR) * CELL;
-        const x1 = (pos.x + senseR + 1) * CELL;
-        const y1 = (pos.y + senseR + 1) * CELL;
-        if (x1 < gx0 || x0 > gx1 || y1 < gy0 || y0 > gy1) continue;
         drawSenseRange(pos.x, pos.y, senseR);
       }
 
@@ -329,9 +331,10 @@ export function WorldCanvas({
         const pos = displayPos.current.get(c.id);
         if (!pos) continue;
 
-        const px = pos.x * CELL;
-        const py = pos.y * CELL;
-        if (px + CELL < gx0 || px > gx1 || py + CELL < gy0 || py > gy1) continue;
+        const { x: cx, y: cy } = cellCenter(pos.x, pos.y);
+        if (cx + HEX_RADIUS < left || cx - HEX_RADIUS > right || cy + HEX_RADIUS < top || cy - HEX_RADIUS > bottom) {
+          continue;
+        }
         drawCreature(c, pos.x, pos.y, c.id === followIdRef.current, energyRefMax);
       }
 
@@ -339,7 +342,8 @@ export function WorldCanvas({
       if (hover) {
         ctx.strokeStyle = "rgba(74, 232, 194, 0.55)";
         ctx.lineWidth = 1.5 / zoom;
-        ctx.strokeRect(hover.x * CELL + 0.5, hover.y * CELL + 0.5, CELL - 1, CELL - 1);
+        hexPath(ctx, hover.x, hover.y);
+        ctx.stroke();
       }
 
       ctx.restore();
@@ -354,40 +358,77 @@ export function WorldCanvas({
         ctx.scale(zoom, zoom);
 
         if (fx.type === "signal") {
-          const fxFrom = fx.from_x * CELL + CELL / 2;
-          const fyFrom = fx.from_y * CELL + CELL / 2;
+          const from = cellCenter(fx.from_x, fx.from_y);
+          const fxFrom = from.x;
+          const fyFrom = from.y;
           if (fx.broadcast) {
             ctx.strokeStyle = `rgba(232, 168, 74, ${alpha * 0.55})`;
             ctx.lineWidth = 1.5 / zoom;
             ctx.beginPath();
-            ctx.arc(fxFrom, fyFrom, CELL * (0.4 + age * 1.2), 0, Math.PI * 2);
+            ctx.arc(fxFrom, fyFrom, HEX_RADIUS * (0.6 + age * 1.5), 0, Math.PI * 2);
             ctx.stroke();
           } else if (fx.to_id) {
             const target = creaturesFxRef.current.find((c) => c.id === fx.to_id);
             const mine = target?.owner_uid === userUidFxRef.current;
             if (mine && target) {
               const pos = displayPos.current.get(target.id) ?? { x: target.x, y: target.y };
-              const tx = pos.x * CELL + CELL / 2;
-              const ty = pos.y * CELL + CELL / 2;
+              const to = cellCenter(pos.x, pos.y);
               ctx.strokeStyle = `rgba(123, 109, 255, ${alpha * 0.85})`;
               ctx.lineWidth = 2 / zoom;
               ctx.beginPath();
               ctx.moveTo(fxFrom, fyFrom);
-              ctx.lineTo(tx, ty);
+              ctx.lineTo(to.x, to.y);
               ctx.stroke();
               ctx.fillStyle = `rgba(123, 109, 255, ${alpha * 0.9})`;
               ctx.beginPath();
-              ctx.arc(tx, ty, CELL * 0.12, 0, Math.PI * 2);
+              ctx.arc(to.x, to.y, HEX_RADIUS * 0.2, 0, Math.PI * 2);
               ctx.fill();
             }
           }
         } else if (fx.type === "spawn") {
-          const px = fx.x * CELL + CELL / 2;
-          const py = fx.y * CELL + CELL / 2;
+          const { x: px, y: py } = cellCenter(fx.x, fx.y);
           ctx.strokeStyle = `rgba(74, 232, 194, ${alpha * 0.5})`;
           ctx.lineWidth = 1.5 / zoom;
           ctx.beginPath();
-          ctx.arc(px, py, CELL * 0.35 * (1 + age * 0.5), 0, Math.PI * 2);
+          ctx.arc(px, py, HEX_RADIUS * 0.5 * (1 + age * 0.5), 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (fx.type === "hit") {
+          const target = cellCenter(fx.x, fx.y);
+          const actor = creaturesFxRef.current.find((c) => c.id === fx.actor_id);
+          if (actor) {
+            const pos = displayPos.current.get(actor.id) ?? { x: actor.x, y: actor.y };
+            const from = cellCenter(pos.x, pos.y);
+            ctx.strokeStyle = `rgba(255, 72, 72, ${alpha * 0.9})`;
+            ctx.lineWidth = 2.5 / zoom;
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(target.x, target.y);
+            ctx.stroke();
+          }
+          ctx.fillStyle = `rgba(255, 90, 60, ${alpha * 0.55})`;
+          ctx.beginPath();
+          ctx.arc(target.x, target.y, HEX_RADIUS * (0.35 + age * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "eat") {
+          const { x: px, y: py } = cellCenter(fx.x, fx.y);
+          ctx.strokeStyle = `rgba(232, 168, 74, ${alpha * 0.75})`;
+          ctx.lineWidth = 2 / zoom;
+          ctx.beginPath();
+          ctx.arc(px, py, HEX_RADIUS * (0.55 - age * 0.35), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = `rgba(232, 168, 74, ${alpha * 0.25})`;
+          ctx.beginPath();
+          ctx.arc(px, py, HEX_RADIUS * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (fx.type === "death") {
+          const { x: px, y: py } = cellCenter(fx.x, fx.y);
+          const isKill = fx.reason === "killed";
+          const isEaten = fx.reason === "eaten";
+          const rgb = isKill ? "255, 72, 72" : isEaten ? "232, 168, 74" : "180, 190, 200";
+          ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.45})`;
+          ctx.lineWidth = 1.5 / zoom;
+          ctx.beginPath();
+          ctx.arc(px, py, HEX_RADIUS * (0.4 + age * 0.7), 0, Math.PI * 2);
           ctx.stroke();
         }
 

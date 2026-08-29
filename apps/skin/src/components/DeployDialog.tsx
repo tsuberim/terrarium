@@ -7,7 +7,7 @@ type Props = {
   corpseEnergy: number;
   credits: number | null;
   busy: boolean;
-  onDeploy: (code: string, extraEnergy: number) => void;
+  onDeploy: (code: string, extraEnergy: number, wasmB64?: string) => void;
   onClose: () => void;
 };
 
@@ -21,6 +21,7 @@ export function DeployDialog({
   onClose,
 }: Props) {
   const [code, setCode] = useState("");
+  const [wasmB64, setWasmB64] = useState<string | undefined>();
   const [extra, setExtra] = useState(minExtra);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -28,6 +29,7 @@ export function DeployDialog({
   useEffect(() => {
     if (!cell) return;
     setCode("");
+    setWasmB64(undefined);
     setExtra(minExtra);
     setError(null);
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -61,7 +63,7 @@ export function DeployDialog({
       return;
     }
     setError(null);
-    onDeploy(code, extra);
+    onDeploy(code, extra, wasmB64);
   };
 
   return (
@@ -120,6 +122,7 @@ export function DeployDialog({
               disabled={busy}
               onClick={() => {
                 setCode(example.code);
+                setWasmB64(example.wasmB64);
                 if (error) setError(null);
                 textareaRef.current?.focus();
               }}
@@ -134,6 +137,7 @@ export function DeployDialog({
           value={code}
           onChange={(e) => {
             setCode(e.target.value);
+            setWasmB64(undefined);
             if (error) setError(null);
           }}
           placeholder={"(module\n  (import \"terrarium\" \"sleep\" (func $sleep))\n  (func (export \"tick\") (call $sleep))\n)"}

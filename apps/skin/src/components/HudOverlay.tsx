@@ -118,7 +118,9 @@ export function HudOverlay({
                     <span className="truncate font-mono text-[10px] text-biolume/75">
                       {c.id.slice(0, 6)}
                     </span>
-                    <span className="shrink-0 font-mono text-[9px] text-white/30">{c.energy}</span>
+                    <span className="shrink-0 font-mono text-[9px] text-white/30">
+                      {c.health}/{c.max_health} · {c.energy}
+                    </span>
                   </button>
                 </li>
               );

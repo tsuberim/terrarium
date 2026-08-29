@@ -9,6 +9,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bitflags"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -43,11 +49,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
+name = "strategy-hawk"
+version = "0.0.0"
+dependencies = [
+ "strategy-hunter",
+]
+
+[[package]]
 name = "strategy-hunter"
 version = "0.0.0"
 
 [[package]]
 name = "strategy-predator"
+version = "0.0.0"
+dependencies = [
+ "strategy-hunter",
+]
+
+[[package]]
+name = "strategy-prey"
 version = "0.0.0"
 dependencies = [
  "strategy-hunter",
@@ -64,6 +84,7 @@ dependencies = [
 name = "strategy-tools"
 version = "0.0.0"
 dependencies = [
+ "base64",
  "wasmprinter",
 ]
 

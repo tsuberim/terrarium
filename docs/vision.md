@@ -57,7 +57,18 @@ No additional block types, overlays, or terrain features at launch.
 | Move         | Costs energy. |
 | Place        | Set adjacent cell to `solid`. Costs energy. |
 | Dig          | Set adjacent cell to `empty`. Costs energy. |
-| Eat          | Consume corpse or other energy source on a tile. |
+| Eat | Consume corpse or other edible on an adjacent cell. |
+| Hit | Damage an adjacent live creature. At 0 health the victim dies and leaves a corpse. |
+| Eat | Consume an adjacent corpse for energy. |
+
+## Signal ecosystem (showcase)
+
+| Byte | Who | Meaning |
+|------|-----|---------|
+| `0x01` | Prey | Alarm when fleeing — attracts **Hawk** and **Scavenger** |
+| `0x02` | Predator | Hunt ping while chasing prey in vision |
+
+Deploy a mix to see competition: prey alarms pull hawks and scavengers toward the fight; predators mark active hunts.
 | Spawn        | Parent submits new code; transfers energy to child (≥ spawn minimum). |
 | Signal       | Communicate with nearby creatures (exact mechanism TBD). |
 | Sleep / Wake | Sleep costs nothing. Wake to think/act. |
@@ -67,7 +78,7 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 
 ### Sensing (v1)
 
-- Contents of nearby / adjacent cells (terrain, creatures, corpses).
+- Contents of nearby cells (terrain, creatures, corpses) within hex vision radius.
 - Incoming signals from other creatures.
 
 ---

@@ -156,12 +156,12 @@ export default function App() {
     }
   };
 
-  const submitDeploy = async (code: string, extraEnergy: number) => {
+  const submitDeploy = async (code: string, extraEnergy: number, wasmB64?: string) => {
     if (!user || !deployCell) return;
     setBusy(true);
     setActionError(null);
     try {
-      const res = await postDeploy(deployCell.x, deployCell.y, code, extraEnergy);
+      const res = await postDeploy(deployCell.x, deployCell.y, code, extraEnergy, wasmB64);
       setCredits(res.credits);
       setDeployCell(null);
       await refreshAccount();
@@ -243,7 +243,7 @@ export default function App() {
         corpseEnergy={corpseEnergy}
         credits={credits}
         busy={busy}
-        onDeploy={(code, extra) => void submitDeploy(code, extra)}
+        onDeploy={(code, extra, wasmB64) => void submitDeploy(code, extra, wasmB64)}
         onClose={() => setDeployCell(null)}
       />
       <DevPanel config={simConfig} onConfigChange={setSimConfig} />

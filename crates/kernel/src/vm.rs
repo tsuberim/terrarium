@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::abi::{dir, tile};
+use crate::abi::tile;
+use crate::hex;
 use crate::events::{DeathReason, TickResult, WorldEvent};
 use crate::host::{self, PendingAction, ThinkResult};
 use crate::sim_config::SimConfig;
@@ -25,6 +26,8 @@ pub struct Creature {
     pub x: i32,
     pub y: i32,
     pub energy: i64,
+    pub health: i32,
+    pub max_health: i32,
     pub owner_uid: String,
     pub parent_id: Option<String>,
     pub wasm: Vec<u8>,
@@ -58,6 +61,8 @@ pub struct Snapshot {
     pub positions: HashMap<String, (i32, i32)>,
     pub id_at: HashMap<(i32, i32), String>,
     pub energy: HashMap<String, i64>,
+    pub health: HashMap<String, i32>,
+    pub max_health: HashMap<String, i32>,
 }
 
 pub fn run_tick(
@@ -93,12 +98,28 @@ pub fn run_tick(
         pending.push((i, think));
     }
 
+    for (i, think) in &pending {
+        if think.suicide || !think.actions.is_empty() {
+            continue;
+        }
+        let c = &mut creatures[*i];
+        if c.health >= c.max_health {
+            continue;
+        }
+        let cost = config.health_regen_cost;
+        if c.energy <= config.corpse_energy + cost {
+            continue;
+        }
+        c.energy -= cost;
+        c.health = (c.health + config.health_regen).min(c.max_health);
+    }
+
     let mut move_targets: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (i, think) in &pending {
         for action in &think.actions {
             if let PendingAction::Move { dir } = action {
                 let c = &creatures[*i];
-                if let Some((nx, ny)) = adjacent(c.x, c.y, *dir) {
+                if let Some((nx, ny)) = hex::neighbor(c.x, c.y, *dir) {
                     move_targets.entry((nx, ny)).or_default().push(*i);
                 }
             }
@@ -130,15 +151,12 @@ pub fn run_tick(
     let mut spawns: Vec<(usize, PendingAction)> = Vec::new();
     let mut signals: Vec<(usize, PendingAction)> = Vec::new();
     let mut eats: Vec<(usize, u8)> = Vec::new();
+    let mut hits: Vec<(usize, u8)> = Vec::new();
 
     for (i, think) in pending {
         let c = &mut creatures[i];
         if think.suicide {
             mark_dead(c, DeathReason::Suicide);
-            let payout = (c.energy - config.corpse_energy).max(0);
-            if payout > 0 {
-                result.credit_payouts.push((c.owner_uid.clone(), payout));
-            }
             continue;
         }
 
@@ -148,18 +166,18 @@ pub fn run_tick(
                     if *blocked_moves.get(&i).unwrap_or(&false) {
                         continue;
                     }
-                    if let Some((nx, ny)) = adjacent(c.x, c.y, dir) {
+                    if let Some((nx, ny)) = hex::neighbor(c.x, c.y, dir) {
                         c.x = nx;
                         c.y = ny;
                     }
                 }
                 PendingAction::Dig { dir } => {
-                    if let Some((x, y)) = adjacent(c.x, c.y, dir) {
+                    if let Some((x, y)) = hex::neighbor(c.x, c.y, dir) {
                         set_cell(tiles, x, y, tile::EMPTY);
                     }
                 }
                 PendingAction::Place { dir } => {
-                    if let Some((x, y)) = adjacent(c.x, c.y, dir) {
+                    if let Some((x, y)) = hex::neighbor(c.x, c.y, dir) {
                         if sense_kind(tiles, x, y, false) == tile::EMPTY
                             && !snapshot.id_at.contains_key(&(x, y))
                         {
@@ -168,6 +186,7 @@ pub fn run_tick(
                     }
                 }
                 PendingAction::Eat { dir } => eats.push((i, dir)),
+                PendingAction::Hit { dir } => hits.push((i, dir)),
                 PendingAction::Spawn { .. } => spawns.push((i, action)),
                 PendingAction::SignalTo { .. } | PendingAction::SignalBroadcast { .. } => {
                     signals.push((i, action))
@@ -180,12 +199,30 @@ pub fn run_tick(
         if !creatures[i].alive {
             continue;
         }
-        let Some((x, y)) = adjacent(creatures[i].x, creatures[i].y, dir) else {
+        let Some((x, y)) = hex::neighbor(creatures[i].x, creatures[i].y, dir) else {
             continue;
         };
-        if let Some(WorldTile::Corpse { energy, .. }) = tiles.get(&(x, y)).copied() {
-            tiles.remove(&(x, y));
-            creatures[i].energy += energy;
+        let Some(WorldTile::Corpse { energy, .. }) = tiles.get(&(x, y)).copied() else {
+            continue;
+        };
+        tiles.remove(&(x, y));
+        creatures[i].energy += energy;
+        result.events.push(WorldEvent::Eat {
+            actor_id: creatures[i].id.clone(),
+            x,
+            y,
+            energy,
+        });
+    }
+
+    for (i, dir) in hits {
+        if !creatures[i].alive {
+            continue;
+        }
+        let Some((x, y)) = hex::neighbor(creatures[i].x, creatures[i].y, dir) else {
+            continue;
+        };
+        if tiles.get(&(x, y)).is_some() {
             continue;
         }
         let Some(victim_idx) = creatures.iter().position(|v| v.alive && v.x == x && v.y == y) else {
@@ -194,10 +231,21 @@ pub fn run_tick(
         if victim_idx == i {
             continue;
         }
-        let gain = (creatures[victim_idx].energy - config.corpse_energy).max(0);
-        creatures[i].energy += gain;
-        mark_dead(&mut creatures[victim_idx], DeathReason::Eaten);
-        result.events.push(death_event(&creatures[victim_idx]));
+        creatures[victim_idx].health -= config.hit_damage;
+        let victim_health = creatures[victim_idx].health;
+        let victim_id = creatures[victim_idx].id.clone();
+        result.events.push(WorldEvent::Hit {
+            actor_id: creatures[i].id.clone(),
+            victim_id,
+            x,
+            y,
+            damage: config.hit_damage,
+            victim_health,
+        });
+        if creatures[victim_idx].health <= 0 {
+            mark_dead(&mut creatures[victim_idx], DeathReason::Killed);
+            result.events.push(death_event(&creatures[victim_idx]));
+        }
     }
 
     for (i, action) in spawns {
@@ -206,7 +254,7 @@ pub fn run_tick(
         };
         let px = creatures[i].x;
         let py = creatures[i].y;
-        let Some((x, y)) = adjacent(px, py, dir) else {
+        let Some((x, y)) = hex::neighbor(px, py, dir) else {
             mark_dead(&mut creatures[i], DeathReason::SpawnFailed);
             continue;
         };
@@ -238,6 +286,8 @@ pub fn run_tick(
             x,
             y,
             energy,
+            health: config.max_health,
+            max_health: config.max_health,
             owner_uid,
             parent_id: Some(parent_id),
             wasm,
@@ -374,22 +424,26 @@ fn build_snapshot(creatures: &[Creature]) -> Snapshot {
     let mut positions = HashMap::new();
     let mut id_at = HashMap::new();
     let mut energy = HashMap::new();
+    let mut health = HashMap::new();
+    let mut max_health = HashMap::new();
     for c in creatures.iter().filter(|c| c.alive) {
         positions.insert(c.id.clone(), (c.x, c.y));
         id_at.insert((c.x, c.y), c.id.clone());
         energy.insert(c.id.clone(), c.energy);
+        health.insert(c.id.clone(), c.health);
+        max_health.insert(c.id.clone(), c.max_health);
     }
     Snapshot {
         positions,
         id_at,
         energy,
+        health,
+        max_health,
     }
 }
 
 fn in_sig_range(sx: i32, sy: i32, tx: i32, ty: i32, config: &SimConfig) -> bool {
-    let dx = tx - sx;
-    let dy = ty - sy;
-    config.in_square(dx, dy, config.r_sig)
+    crate::hex::in_range(tx - sx, ty - sy, config.r_sig)
 }
 
 fn think_once(
@@ -407,14 +461,8 @@ fn think_once(
     host::run_creature_tick(engine, &module, creature, snapshot, tiles, config, tick)
 }
 
-pub fn adjacent(x: i32, y: i32, dir: u8) -> Option<(i32, i32)> {
-    Some(match dir {
-        d if d == dir::N as u8 => (x, y - 1),
-        d if d == dir::E as u8 => (x + 1, y),
-        d if d == dir::S as u8 => (x, y + 1),
-        d if d == dir::W as u8 => (x - 1, y),
-        _ => return None,
-    })
+pub fn adjacent(q: i32, r: i32, dir: u8) -> Option<(i32, i32)> {
+    hex::neighbor(q, r, dir)
 }
 
 #[cfg(test)]
@@ -439,7 +487,7 @@ mod tests {
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
   (func (export "tick")
-    i32.const 1
+    i32.const 0
     call $move
     drop
     call $sleep)
@@ -450,6 +498,8 @@ mod tests {
             x: 0,
             y: 0,
             energy: 1_000_000_000,
+            health: 100,
+            max_health: 100,
             owner_uid: "u".into(),
             parent_id: None,
             wasm: compile_wat(CODE).unwrap(),

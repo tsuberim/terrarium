@@ -1,10 +1,10 @@
 #![no_std]
 
-use strategy_hunter::{host, scavenger_tick};
+use strategy_hunter::{host, hawk_tick};
 
 #[no_mangle]
 pub extern "C" fn tick() {
-    scavenger_tick();
+    hawk_tick();
 }
 
 #[panic_handler]

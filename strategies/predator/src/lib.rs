@@ -1,10 +1,10 @@
 #![no_std]
 
-use strategy_hunter::{host, tick as hunt, KIND_CREATURE};
+use strategy_hunter::{host, predator_tick};
 
 #[no_mangle]
 pub extern "C" fn tick() {
-    hunt(KIND_CREATURE);
+    predator_tick();
 }
 
 #[panic_handler]

@@ -14,7 +14,12 @@ pub struct SimConfig {
     pub move_extra: i64,
     pub dig_extra: i64,
     pub place_extra: i64,
+    pub hit_extra: i64,
     pub signal_inbox_cap: usize,
+    pub max_health: i32,
+    pub hit_damage: i32,
+    pub health_regen: i32,
+    pub health_regen_cost: i64,
 }
 
 impl Default for SimConfig {
@@ -28,13 +33,18 @@ impl Default for SimConfig {
             move_extra: ENERGY_SCALE,
             dig_extra: ENERGY_SCALE,
             place_extra: ENERGY_SCALE,
+            hit_extra: ENERGY_SCALE,
             signal_inbox_cap: 8,
+            max_health: 100,
+            hit_damage: 34,
+            health_regen: 5,
+            health_regen_cost: ENERGY_SCALE,
         }
     }
 }
 
 impl SimConfig {
-    pub fn in_square(&self, dx: i32, dy: i32, r: i32) -> bool {
-        dx.abs() <= r && dy.abs() <= r
+    pub fn in_hex_range(&self, dq: i32, dr: i32, r: i32) -> bool {
+        crate::hex::in_range(dq, dr, r)
     }
 }

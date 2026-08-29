@@ -18,7 +18,8 @@ const REASON_LABELS: Record<DeathReason, string> = {
   suicide: "self-destructed",
   spawn_failed: "spawn failed",
   signal_failed: "signal failed",
-  eaten: "eaten by predator",
+  killed: "killed in combat",
+  eaten: "eaten",
 };
 
 export function formatDeathReason(reason: DeathReason): string {
