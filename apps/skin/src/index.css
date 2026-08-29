@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --color-void: #020406;
+  --color-chamber: #0a1210;
+  --color-glass: #0e1814;
+  --color-biolume: #4ae8c2;
+  --color-phosphor: #7b6dff;
+  --color-amber: #e8a84a;
+  --color-mist: #8fa89a;
+  --color-fog: #5c6e64;
+  --color-line: #1a2822;
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-family-display: var(--font-display);
+  --font-family-mono: var(--font-mono);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    @apply bg-void text-mist antialiased;
+    font-family: var(--font-body);
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-void;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(74, 232, 194, 0.06), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(123, 109, 255, 0.04), transparent);
+  }
+
+  ::selection {
+    background: rgba(74, 232, 194, 0.25);
+    color: #dff7ef;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply border border-line/80 bg-glass/80 backdrop-blur-md;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md border border-line px-3 py-1.5 text-sm font-medium text-mist transition-colors;
+    @apply hover:border-biolume/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-biolume/60;
+  }
+
+  .btn-primary {
+    @apply border-biolume/30 bg-biolume/10 text-biolume hover:bg-biolume/15 hover:text-white;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent hover:bg-white/5;
+  }
+
+  .label {
+    @apply text-[0.65rem] font-medium uppercase tracking-[0.14em] text-fog;
+  }
+}

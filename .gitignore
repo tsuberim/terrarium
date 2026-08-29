@@ -1,0 +1,11 @@
+.agents/
+/target
+.env
+*.db
+.firebase/
+firebase-debug.log
+node_modules/
+apps/skin/dist/
+apps/skin/.env.local
+apps/skin/.env.production
+.dev/

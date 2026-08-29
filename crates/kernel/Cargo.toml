@@ -1,0 +1,6 @@
+[package]
+name = "terrarium-kernel"
+version.workspace = true
+edition.workspace = true
+
+[lib]
