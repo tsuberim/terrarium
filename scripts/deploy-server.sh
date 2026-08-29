@@ -45,7 +45,7 @@ gcloud run deploy "$CLOUD_RUN_SERVICE" \
   --max-instances=2 \
   --allow-unauthenticated \
   --set-env-vars="$ENV_VARS" \
-  --add-volume=name=terrarium-data,type=emptyDir,size-limit=1Gi \
+  --add-volume=name=terrarium-data,type=in-memory,size-limit=1Gi \
   --add-volume-mount=volume=terrarium-data,mount-path=/app/data
 
 URL="$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
