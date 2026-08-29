@@ -10,6 +10,7 @@ import { useWorldStream } from "./hooks/useWorldStream";
 import { getMe, getWorld, postDeploy, postFaucet } from "./lib/api";
 import { describeCell } from "./lib/cell";
 import { formatDeathNotice, type DeathEvent } from "./lib/death";
+import { formatGlimString } from "./lib/glim";
 import { auth, googleProvider, signInWithPopup, signOut } from "./lib/firebase";
 import type { SpriteMode } from "./lib/creatureSprite";
 import { loadViewerPrefs, saveViewerPrefs } from "./lib/viewerPrefs";
@@ -183,7 +184,7 @@ export default function App() {
         : user && canDeploy
           ? "Click an empty cell to deploy"
           : user && credits !== null && credits < deployCost
-            ? `Need ${deployCost} credits to deploy`
+            ? `Need ${formatGlimString(deployCost)} to deploy`
             : !user
               ? "Sign in to deploy creatures"
               : null;

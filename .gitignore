@@ -10,3 +10,4 @@ apps/skin/dist/
 apps/skin/.env.local
 apps/skin/.env.production
 .dev/
+.deploy/

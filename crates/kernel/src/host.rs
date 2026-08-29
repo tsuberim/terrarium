@@ -7,6 +7,7 @@ use uuid::Uuid;
 use wasmtime::{Caller, Engine, Error, Linker, Module, Store, Config};
 
 use crate::abi::{RECV_STRUCT_SIZE, SENSE_STRUCT_SIZE};
+use crate::energy_ledger::EnergyLedger;
 use crate::events::DeathReason;
 use crate::sim_config::SimConfig;
 use crate::vm::{mark_dead, Creature, Signal, Snapshot};
@@ -44,6 +45,7 @@ pub struct HostState {
     snapshot: *const Snapshot,
     tiles: *const WorldTiles,
     config: *const SimConfig,
+    ledger: *mut EnergyLedger,
     tick: u64,
     rng_seed: u64,
     rng_calls: u64,
@@ -74,16 +76,24 @@ impl HostState {
         unsafe { &*self.config }
     }
 
+    fn ledger(&mut self) -> &mut EnergyLedger {
+        unsafe { &mut *self.ledger }
+    }
+
     fn pay_action(&mut self, cost: i64) -> Result<(), Error> {
         let floor = self.config().corpse_energy;
-        let c = self.creature();
-        if c.energy < cost {
-            mark_dead(c, DeathReason::OutOfEnergy);
-            return Err(Error::msg("out of energy"));
-        }
-        c.energy -= cost;
-        if c.energy <= floor {
-            mark_dead(c, DeathReason::EnergyFloor);
+        let energy = {
+            let c = self.creature();
+            if c.energy < cost {
+                mark_dead(c, DeathReason::OutOfEnergy);
+                return Err(Error::msg("out of energy"));
+            }
+            c.energy -= cost;
+            c.energy
+        };
+        self.ledger().record_destroy(cost);
+        if energy <= floor {
+            mark_dead(self.creature(), DeathReason::EnergyFloor);
             return Err(Error::msg("energy floor"));
         }
         Ok(())
@@ -147,6 +157,8 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
             health = snapshot.health.get(id).copied().unwrap_or(0);
             max_health = snapshot.max_health.get(id).copied().unwrap_or(0);
         } else if let Some(WorldTile::Corpse { energy: e, .. }) = tiles.get(&(x, y)) {
+            energy = *e;
+        } else if let Some(WorldTile::EnergyNode { energy: e }) = tiles.get(&(x, y)) {
             energy = *e;
         }
         write_sense_struct(&mut caller, ptr, kind, energy, health, max_health)?;
@@ -394,10 +406,14 @@ fn charge_opcode_gas(store: &mut Store<HostState>, budget: u64, config: &SimConf
     let used = budget.saturating_sub(remaining);
     let cost = (used as i64).saturating_mul(config.energy_per_opcode);
     let floor = store.data().config().corpse_energy;
-    let c = store.data_mut().creature();
-    c.energy = c.energy.saturating_sub(cost);
-    if c.energy <= floor {
-        mark_dead(c, DeathReason::EnergyFloor);
+    let energy = {
+        let c = store.data_mut().creature();
+        c.energy = c.energy.saturating_sub(cost);
+        c.energy
+    };
+    store.data_mut().ledger().record_destroy(cost);
+    if energy <= floor {
+        mark_dead(store.data_mut().creature(), DeathReason::EnergyFloor);
     }
 }
 
@@ -442,6 +458,7 @@ pub fn run_creature_tick(
     snapshot: &Snapshot,
     tiles: &WorldTiles,
     config: &SimConfig,
+    ledger: &mut EnergyLedger,
     tick: u64,
 ) -> ThinkResult {
     if creature.wasm.is_empty() {
@@ -460,6 +477,7 @@ pub fn run_creature_tick(
         snapshot: snapshot as *const Snapshot,
         tiles: tiles as *const WorldTiles,
         config: config as *const SimConfig,
+        ledger: ledger as *mut EnergyLedger,
         tick,
         rng_seed: creature_rng_seed(&creature.id, tick),
         rng_calls: 0,
@@ -559,6 +577,7 @@ mod tests {
             snapshot: std::ptr::null(),
             tiles: std::ptr::null(),
             config: std::ptr::null(),
+            ledger: std::ptr::null_mut(),
             tick: 99,
             rng_seed: creature_rng_seed("creature-a", 99),
             rng_calls: 0,
@@ -572,6 +591,7 @@ mod tests {
             snapshot: std::ptr::null(),
             tiles: std::ptr::null(),
             config: std::ptr::null(),
+            ledger: std::ptr::null_mut(),
             tick: 99,
             rng_seed: creature_rng_seed("creature-a", 99),
             rng_calls: 0,

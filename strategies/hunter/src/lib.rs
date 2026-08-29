@@ -4,6 +4,7 @@
 
 pub const KIND_CREATURE: i32 = 2;
 pub const KIND_CORPSE: i32 = 3;
+pub const KIND_NODE: i32 = 4;
 
 /// Prey alarm — attracts hawks and scavengers.
 pub const SIG_ALARM: i32 = 0x01;
@@ -55,12 +56,36 @@ fn read_i32(buf: *const u8, off: usize) -> i32 {
     }
 }
 
-fn sense_kind(dq: i32, dr: i32) -> i32 {
+fn read_i64(buf: *const u8, off: usize) -> i64 {
+    unsafe {
+        i64::from_le_bytes([
+            *buf.add(off),
+            *buf.add(off + 1),
+            *buf.add(off + 2),
+            *buf.add(off + 3),
+            *buf.add(off + 4),
+            *buf.add(off + 5),
+            *buf.add(off + 6),
+            *buf.add(off + 7),
+        ])
+    }
+}
+
+fn sense_at(dq: i32, dr: i32) -> (i32, i64) {
     unsafe {
         let ptr = core::ptr::addr_of_mut!(SENSE_BUF) as *mut u8 as i32;
         host::sense(dq, dr, ptr);
-        read_i32(core::ptr::addr_of!(SENSE_BUF).cast(), 0)
+        let b = core::ptr::addr_of!(SENSE_BUF).cast();
+        (read_i32(b, 0), read_i64(b, 8))
     }
+}
+
+fn sense_kind(dq: i32, dr: i32) -> i32 {
+    sense_at(dq, dr).0
+}
+
+pub fn is_edible(kind: i32) -> bool {
+    kind == KIND_CORPSE || kind == KIND_NODE
 }
 
 fn dir_of(dq: i32, dr: i32) -> i32 {
@@ -161,7 +186,61 @@ fn follow_signal(byte: i32) -> bool {
     }
 }
 
-/// Scan vision for `target` kind; `strike` hits live creatures, else eats corpses.
+/// Eat adjacent food, else step toward the richest corpse/node in vision.
+fn seek_food(corpse: bool, node: bool, wander_if_empty: bool) -> bool {
+    for (dq, dr) in ADJACENT {
+        let (kind, _) = sense_at(dq, dr);
+        let ok = (corpse && kind == KIND_CORPSE) || (node && kind == KIND_NODE);
+        if ok {
+            act_adjacent(dir_of(dq, dr), false);
+            return true;
+        }
+    }
+
+    let mut best_energy = 0i64;
+    let mut best_q = 0i32;
+    let mut best_r = 0i32;
+    let mut found = false;
+
+    let mut d = 1;
+    while d <= VISION {
+        let mut q = d;
+        let mut r = 0;
+        let walk = [2i32, 3, 4, 5, 0, 1];
+        let mut face = 0;
+        while face < 6 {
+            let mut s = 0;
+            while s < d {
+                let (kind, energy) = sense_at(q, r);
+                let ok = (corpse && kind == KIND_CORPSE) || (node && kind == KIND_NODE);
+                if ok && energy > best_energy {
+                    best_energy = energy;
+                    best_q = q;
+                    best_r = r;
+                    found = true;
+                }
+                (q, r) = step_axial(q, r, walk[face as usize]);
+                s += 1;
+            }
+            face += 1;
+        }
+        d += 1;
+    }
+
+    if found {
+        step_toward(best_q, best_r);
+        unsafe { host::sleep() };
+        return true;
+    }
+
+    if wander_if_empty {
+        wander();
+        return true;
+    }
+    false
+}
+
+/// Scan vision for `target` kind; `strike` hits live creatures, else eats.
 pub fn tick(target: i32, strike: bool) {
     for (dq, dr) in ADJACENT {
         if sense_kind(dq, dr) == target {
@@ -200,21 +279,18 @@ pub fn tick(target: i32, strike: bool) {
     wander();
 }
 
-/// Eat adjacent corpses, then hunt live creatures (hit until dead, eat next tick).
+/// Graze nodes and corpses, then hunt live prey.
 pub fn predator_tick() {
     if maybe_clone() {
         return;
     }
-    for (dq, dr) in ADJACENT {
-        if sense_kind(dq, dr) == KIND_CORPSE {
-            act_adjacent(dir_of(dq, dr), false);
-            return;
-        }
+    if seek_food(true, true, false) {
+        return;
     }
     tick(KIND_CREATURE, true);
 }
 
-/// Rush prey alarms (competition for kills), else scavenge corpses.
+/// Rush prey alarms, else forage corpses and energy nodes.
 pub fn scavenger_tick() {
     if maybe_clone() {
         return;
@@ -223,7 +299,7 @@ pub fn scavenger_tick() {
         unsafe { host::sleep() };
         return;
     }
-    tick(KIND_CORPSE, false);
+    seek_food(true, true, true);
 }
 
 fn flee_from(dq: i32, dr: i32) -> bool {
@@ -239,7 +315,7 @@ fn flee_from(dq: i32, dr: i32) -> bool {
     true
 }
 
-/// Flee adjacent predators; alarm draws hawks and scavengers.
+/// Flee predators; graze energy nodes when safe.
 pub fn prey_tick() {
     if maybe_clone() {
         return;
@@ -249,10 +325,13 @@ pub fn prey_tick() {
             return;
         }
     }
+    if seek_food(false, true, false) {
+        return;
+    }
     unsafe { host::sleep() };
 }
 
-/// Rush prey alarms to compete for the kill.
+/// Rush prey alarms, else forage like a scavenger.
 pub fn hawk_tick() {
     if maybe_clone() {
         return;
@@ -261,5 +340,5 @@ pub fn hawk_tick() {
         unsafe { host::sleep() };
         return;
     }
-    unsafe { host::sleep() };
+    seek_food(true, true, true);
 }

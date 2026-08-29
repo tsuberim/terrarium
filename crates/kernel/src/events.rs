@@ -110,4 +110,6 @@ pub enum WorldEvent {
 #[derive(Clone, Debug, Default)]
 pub struct TickResult {
     pub events: Vec<WorldEvent>,
+    pub destroyed: i64,
+    pub free_minted: i64,
 }

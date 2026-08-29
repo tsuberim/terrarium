@@ -1,11 +1,15 @@
 export const GAME_TERMS = [
   {
     term: "Credits",
-    def: "What you spend to deploy a creature into the world.",
+    def: "What you spend to deploy a creature. One credit equals one glim of in-world energy.",
+  },
+  {
+    term: "Glim",
+    def: "The standard unit of life-energy (◆). Creatures spend glims to act; at zero they die.",
   },
   {
     term: "Energy",
-    def: "Fuel inside a creature. Actions cost energy; at zero it dies.",
+    def: "Raw fuel inside a creature, shown in glims in the UI.",
   },
   {
     term: "Deploy",

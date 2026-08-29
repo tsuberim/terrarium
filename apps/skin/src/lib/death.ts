@@ -4,15 +4,15 @@ export type DeathEvent = Extract<WorldEvent, { type: "death" }>;
 export type { DeathReason };
 
 const REASON_LABELS: Record<DeathReason, string> = {
-  energy_floor: "hit energy floor",
-  out_of_energy: "ran out of energy",
+  energy_floor: "hit glim floor",
+  out_of_energy: "ran out of glims",
   out_of_gas: "ran out of gas",
   empty_program: "empty program",
   invalid_program: "invalid program",
   wasm_trap: "program trap",
   out_of_vision: "looked out of vision",
   bad_direction: "bad direction",
-  spawn_energy_too_low: "spawn energy too low",
+  spawn_energy_too_low: "spawn glims too low",
   signal_unknown_target: "signal to unknown target",
   signal_out_of_range: "signal out of range",
   suicide: "self-destructed",

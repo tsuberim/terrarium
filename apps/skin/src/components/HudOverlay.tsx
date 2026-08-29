@@ -1,5 +1,7 @@
 import type { SpriteMode } from "../lib/creatureSprite";
 import type { Creature } from "../lib/api";
+import { GlimAmount } from "./GlimAmount";
+import { formatGlimString } from "../lib/glim";
 
 type Props = {
   online: boolean;
@@ -119,7 +121,8 @@ export function HudOverlay({
                       {c.id.slice(0, 6)}
                     </span>
                     <span className="shrink-0 font-mono text-[9px] text-white/30">
-                      {c.health}/{c.max_health} · {c.energy}
+                      {c.health}/{c.max_health} ·{" "}
+                      <GlimAmount amount={c.energy} className="text-[9px] text-white/45" compact />
                     </span>
                   </button>
                 </li>
@@ -132,14 +135,16 @@ export function HudOverlay({
       <div className="pointer-events-auto absolute right-3 top-3 sm:right-4 sm:top-4">
         <div className="hud-chip flex items-center gap-0.5">
           {signedIn && credits !== null && (
-            <span className="px-1.5 font-mono text-[10px] tabular-nums text-amber/70">
-              {credits.toLocaleString()}
-            </span>
+            <GlimAmount
+              amount={credits}
+              className="px-1.5 text-[10px] text-amber/70"
+              iconClassName="h-2.5 w-2.5 shrink-0 text-amber/75"
+            />
           )}
           {signedIn ? (
             <>
               <button type="button" className="hud-action" onClick={onFaucet} disabled={busy}>
-                +10M
+                +{formatGlimString(10_000_000)}
               </button>
               <button type="button" className="hud-action" onClick={onSignOut} disabled={busy}>
                 Out

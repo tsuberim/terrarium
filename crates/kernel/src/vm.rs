@@ -6,6 +6,9 @@ use uuid::Uuid;
 
 use crate::abi::tile;
 use crate::hex;
+use crate::abi::corpse_yield_energy;
+use crate::energy_ledger::EnergyLedger;
+use crate::energy_nodes::try_spawn_nodes;
 use crate::events::{DeathReason, TickResult, WorldEvent};
 use crate::host::{self, PendingAction, ThinkResult};
 use crate::sim_config::SimConfig;
@@ -68,9 +71,12 @@ pub struct Snapshot {
 pub fn run_tick(
     creatures: &mut Vec<Creature>,
     tiles: &mut WorldTiles,
+    ledger: &mut EnergyLedger,
     config: &SimConfig,
     tick: u64,
 ) -> TickResult {
+    let destroyed_before = ledger.destroyed;
+    let free_before = ledger.free_minted;
     let mut result = TickResult::default();
     let snapshot = build_snapshot(creatures);
     let engine = host::wasm_engine();
@@ -87,7 +93,7 @@ pub fn run_tick(
             result.events.push(death_event(creature));
             continue;
         }
-        let think = think_once(engine, creature, &snapshot, tiles, config, tick);
+        let think = think_once(engine, creature, &snapshot, tiles, config, ledger, tick);
         if !creature.alive {
             result.events.push(death_event(creature));
             continue;
@@ -111,6 +117,7 @@ pub fn run_tick(
             continue;
         }
         c.energy -= cost;
+        ledger.record_destroy(cost);
         c.health = (c.health + config.health_regen).min(c.max_health);
     }
 
@@ -202,17 +209,29 @@ pub fn run_tick(
         let Some((x, y)) = hex::neighbor(creatures[i].x, creatures[i].y, dir) else {
             continue;
         };
-        let Some(WorldTile::Corpse { energy, .. }) = tiles.get(&(x, y)).copied() else {
-            continue;
-        };
-        tiles.remove(&(x, y));
-        creatures[i].energy += energy;
-        result.events.push(WorldEvent::Eat {
-            actor_id: creatures[i].id.clone(),
-            x,
-            y,
-            energy,
-        });
+        match tiles.get(&(x, y)).copied() {
+            Some(WorldTile::Corpse { energy, .. }) => {
+                tiles.remove(&(x, y));
+                creatures[i].energy += energy;
+                result.events.push(WorldEvent::Eat {
+                    actor_id: creatures[i].id.clone(),
+                    x,
+                    y,
+                    energy,
+                });
+            }
+            Some(WorldTile::EnergyNode { energy }) if energy > 0 => {
+                tiles.remove(&(x, y));
+                creatures[i].energy += energy;
+                result.events.push(WorldEvent::Eat {
+                    actor_id: creatures[i].id.clone(),
+                    x,
+                    y,
+                    energy,
+                });
+            }
+            _ => {}
+        }
     }
 
     for (i, dir) in hits {
@@ -398,25 +417,38 @@ pub fn run_tick(
         }
     }
 
-    let mut dead: Vec<(i32, i32, i64, DeathReason)> = Vec::new();
+    let mut dead: Vec<(i32, i32, i64, i64, DeathReason)> = Vec::new();
     for creature in creatures.iter() {
         if creature.alive || suicide_ids.contains_key(&creature.id) {
             continue;
         }
+        let yield_energy = corpse_yield_energy(creature.energy);
+        ledger.record_destroy(creature.energy.saturating_sub(yield_energy));
         dead.push((
             creature.x,
             creature.y,
-            creature.energy.max(config.corpse_energy),
+            yield_energy,
+            creature.energy,
             creature.death_reason.unwrap_or(DeathReason::WasmTrap),
         ));
     }
 
     creatures.retain(|c| c.alive);
 
-    for (x, y, energy, reason) in dead {
+    for (x, y, energy, _orig, reason) in dead {
         place_corpse(tiles, x, y, energy, reason);
     }
 
+    try_spawn_nodes(
+        ledger,
+        tiles,
+        &creatures.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>(),
+        tick,
+        config,
+    );
+
+    result.destroyed = ledger.destroyed - destroyed_before;
+    result.free_minted = ledger.free_minted - free_before;
     result
 }
 
@@ -452,13 +484,14 @@ fn think_once(
     snapshot: &Snapshot,
     tiles: &WorldTiles,
     config: &SimConfig,
+    ledger: &mut EnergyLedger,
     tick: u64,
 ) -> ThinkResult {
     let Some(module) = host::cached_module(engine, &creature.wasm) else {
         mark_dead(creature, DeathReason::InvalidProgram);
         return ThinkResult::default();
     };
-    host::run_creature_tick(engine, &module, creature, snapshot, tiles, config, tick)
+    host::run_creature_tick(engine, &module, creature, snapshot, tiles, config, ledger, tick)
 }
 
 pub fn adjacent(q: i32, r: i32, dir: u8) -> Option<(i32, i32)> {
@@ -510,8 +543,9 @@ mod tests {
             born_tick: 0,
         }];
         let mut tiles = WorldTiles::new();
+        let mut ledger = EnergyLedger::default();
         let config = SimConfig::default();
-        run_tick(&mut creatures, &mut tiles, &config, 1);
+        run_tick(&mut creatures, &mut tiles, &mut ledger, &config, 1);
         assert_eq!(creatures[0].x, 1);
     }
 }

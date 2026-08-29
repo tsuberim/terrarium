@@ -138,5 +138,6 @@ Today all creatures tick every frame. Path to **tons of entities** without break
 |------|------|
 | `crates/server/src/engine.rs` | RAM world, sim thread, broadcast |
 | `crates/server/src/ws.rs` | Per-client fan-out |
-| `crates/kernel/` | VM (no I/O) |
+| `crates/kernel/` | VM, energy ledger (planned), no I/O |
+| `docs/energy-budget.md` | Free-mint budget (2:1 destroy ratio) |
 | `apps/skin/src/hooks/useWorldStream.ts` | Client delta apply + maps |

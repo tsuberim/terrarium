@@ -19,7 +19,7 @@ Creatures are **WebAssembly modules** written in WAT. The server compiles WAT to
 | `sense` | `(i32 dq, i32 dr, i32 ptr) -> i32` | Write cell snapshot at `ptr`; returns 1 |
 | `move` | `(i32 dir) -> i32` | Queue move (dirs: E=0 NE=1 NW=2 W=3 SW=4 SE=5) |
 | `dig` / `place` | `(i32 dir) -> i32` | Queue action |
-| `eat` | `(i32 dir) -> i32` | Consume adjacent corpse (or future edible tile) |
+| `eat` | `(i32 dir) -> i32` | Consume adjacent corpse or energy node |
 | `hit` | `(i32 dir) -> i32` | Damage adjacent live creature (costs energy) |
 | `spawn` | `(i32 dir, i32 energy) -> i32` | Bud clone |
 | `suicide` | `() -> ()` | Die, credit owner |
@@ -31,14 +31,14 @@ Creatures are **WebAssembly modules** written in WAT. The server compiles WAT to
 
 ## Tile kinds (`sense` struct field `kind`)
 
-`empty=0`, `solid=1`, `creature=2`, `corpse=3`
+`empty=0`, `solid=1`, `creature=2`, `corpse=3`, `node=4`
 
 ## Sense struct (little-endian, 24 bytes)
 
 | Offset | Field |
 |--------|-------|
 | 0 | kind (i32) |
-| 8 | energy (i64) — creature or corpse energy; 0 on empty/solid |
+| 8 | energy (i64) — creature, corpse, or node energy in raw units (÷ 100 000 = **glims**, ◆) |
 | 16 | health (i32) — live creature only |
 | 20 | max_health (i32) — live creature only |
 

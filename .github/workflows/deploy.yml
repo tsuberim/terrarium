@@ -26,6 +26,8 @@ jobs:
     needs: test
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
+    outputs:
+      cloud_run_url: ${{ steps.deploy.outputs.cloud_run_url }}
     permissions:
       contents: read
       id-token: write
@@ -37,7 +39,8 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
       - run: chmod +x scripts/deploy-server.sh
-      - run: ./scripts/deploy-server.sh
+      - id: deploy
+        run: ./scripts/deploy-server.sh
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           GCP_REGION: ${{ secrets.GCP_REGION }}
@@ -65,6 +68,7 @@ jobs:
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           TERRARIUM_API_BASE: ""
+          TERRARIUM_WS_BASE: ${{ needs.server.outputs.cloud_run_url }}
       - run: npm ci && npm run build
         working-directory: apps/skin
       - uses: FirebaseExtended/action-hosting-deploy@v0

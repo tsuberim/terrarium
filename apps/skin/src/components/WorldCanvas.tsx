@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { FxEvent } from "../hooks/useWorldStream";
 import type { Creature, WorldTile } from "../lib/api";
-import { creatureSprite, drawCreatureSprite, type SpriteMode } from "../lib/creatureSprite";
+import { creatureSprite, drawCreatureSprite, facingFromDelta, type SpriteMode } from "../lib/creatureSprite";
 import {
   cellCenter,
   hexDisk,
   hexIntersectsViewport,
   hexPath,
+  hexPathAt,
   HEX_RADIUS,
   pixelToAxial,
   visibleHexRange,
@@ -187,22 +188,6 @@ export function WorldCanvas({
       }
     };
 
-    const drawEnergyBar = (cx: number, cy: number, energy: number, floor: number, refMax: number) => {
-      const span = Math.max(refMax - floor, 1);
-      const ratio = Math.max(0, Math.min(1, (energy - floor) / span));
-      const w = HEX_RADIUS * 1.4;
-      const h = 2;
-      const x = cx - w / 2;
-      const y = cy + HEX_RADIUS * 0.55;
-      const lw = 1 / cameraRef.current.zoom;
-      ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-      ctx.fillRect(x, y, w, h);
-      if (ratio <= 0.12) ctx.fillStyle = "rgba(232, 100, 90, 0.9)";
-      else if (ratio <= 0.35) ctx.fillStyle = "rgba(232, 168, 74, 0.9)";
-      else ctx.fillStyle = "rgba(74, 232, 194, 0.95)";
-      ctx.fillRect(x, y, Math.max(lw, w * ratio), h);
-    };
-
     const drawCreature = (
       c: Creature,
       q: number,
@@ -213,19 +198,29 @@ export function WorldCanvas({
       const mine = c.owner_uid === userUidRef.current;
       const sprite = creatureSprite(c, spriteModeRef.current);
       const { x: cx, y: cy } = cellCenter(q, r);
+      const anim = animState.current.get(c.id);
+      const facing =
+        anim && (anim.toX !== anim.fromX || anim.toY !== anim.fromY)
+          ? facingFromDelta(anim.toX - anim.fromX, anim.toY - anim.fromY)
+          : null;
 
-      drawCreatureSprite(ctx, cx, cy, sprite, mine, c.health, c.max_health);
+      drawCreatureSprite(
+        ctx,
+        cx,
+        cy,
+        sprite,
+        mine,
+        c.health,
+        c.max_health,
+        facing,
+        mine ? { value: c.energy, floor: corpseEnergyRef.current, refMax: energyRefMax } : undefined,
+      );
 
       if (followed) {
         ctx.strokeStyle = "rgba(232, 168, 74, 0.85)";
         ctx.lineWidth = 2 / cameraRef.current.zoom;
-        ctx.beginPath();
-        ctx.arc(cx, cy, HEX_RADIUS * 0.85, 0, Math.PI * 2);
+        hexPathAt(ctx, cx, cy, HEX_RADIUS * 0.88);
         ctx.stroke();
-      }
-
-      if (mine) {
-        drawEnergyBar(cx, cy, c.energy, corpseEnergyRef.current, energyRefMax);
       }
     };
 
@@ -304,6 +299,13 @@ export function WorldCanvas({
           ctx.fillStyle = "rgba(232, 168, 74, 0.7)";
           ctx.beginPath();
           ctx.arc(cx, cy, HEX_RADIUS * 0.2, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (t.kind === 4) {
+          ctx.fillStyle = "rgba(74, 232, 194, 0.2)";
+          ctx.fill();
+          ctx.fillStyle = "rgba(74, 232, 194, 0.85)";
+          ctx.beginPath();
+          ctx.arc(cx, cy, HEX_RADIUS * 0.28, 0, Math.PI * 2);
           ctx.fill();
         }
       }

@@ -16,6 +16,7 @@ pub mod tile {
     pub const SOLID: i32 = 1;
     pub const CREATURE: i32 = 2;
     pub const CORPSE: i32 = 3;
+    pub const NODE: i32 = 4;
 }
 
 pub const RECV_STRUCT_SIZE: i32 = 36;
@@ -33,6 +34,13 @@ pub mod sense_off {
 pub const ENERGY_SCALE: i64 = 100_000;
 
 pub const CORPSE_ENERGY: i64 = 10 * ENERGY_SCALE;
+
+/// Percent of a creature's remaining energy that becomes a corpse on death.
+pub const CORPSE_YIELD_PERCENT: i64 = 80;
+
+pub fn corpse_yield_energy(creature_energy: i64) -> i64 {
+    creature_energy.max(0) * CORPSE_YIELD_PERCENT / 100
+}
 
 /// Max WASM opcodes (including host imports) per creature per sim tick.
 pub const OPCODES_PER_TICK: u64 = 10_000;

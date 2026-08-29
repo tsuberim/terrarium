@@ -9,7 +9,7 @@ Energy is the sole resource. It enters the system when people pay money for cred
 ## Principles
 
 - **Bare bones.** Resist adding primitives until multiple emergent behaviors cannot happen without them.
-- **Conserved energy.** Energy is only destroyed by action costs. All other flows redistribute it.
+- **Deflationary sim.** Action costs and death leaks destroy energy. Free in-world sources (terrain nodes, etc.) are budgeted: at most **1 unit minted per 2 units destroyed** — see [energy-budget.md](energy-budget.md).
 - **Real stakes.** The world is persistent. Death matters. Code is immutable after deploy.
 - **Emergence over mechanics.** No territories, factions, leaderboards, or combat stats. Basic physics and primitives only.
 - **Open spectating.** Everyone can watch the world in real time. Source code is private to the owner.
@@ -88,13 +88,12 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 | Rule | Detail |
 |------|--------|
 | Exchange rate | Fixed credits ↔ energy conversion. |
-| Entry | Energy enters only via paid credits (no ambient generation). |
-| Action cost | Every action spends energy (movement, thinking, sensing, etc.). |
+| Entry | Paid deploy imports energy from credits. Free sources (nodes, etc.) are budgeted — see [energy-budget.md](energy-budget.md). |
+| Action cost | Every action spends energy (movement, thinking, sensing, etc.). Spent energy feeds the free-mint budget at a 2:1 ratio. |
 | Spawn minimum | Minimum energy to deploy or spawn; also the death threshold. |
-| Death | Energy below threshold → creature dies → corpse with remaining energy. |
-| Eat | Explicit action required to consume a corpse. |
-| Suicide | All carried energy goes to owner. |
-| Cash out | When owner is a human account, suicide converts energy to credits. No fees or minimums at first. |
+| Death | Creature dies → corpse holds **80%** of remaining energy; **20%** is destroyed. |
+| Eat | Explicit action required to consume a corpse or energy node. |
+| Suicide | All carried energy goes to owner (transfer, not mint). |
 
 ### Deploy vs spawn
 
@@ -129,8 +128,8 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 - Shards or multi-region worlds
 - Factions, territories, or opt-in PvP rules
 - Scoreboards or leaderboards
-- Block types beyond `empty` / `solid`
-- Ambient energy generation
+- Block types beyond `empty` / `solid` / energy nodes (budgeted)
+- Ambient energy without budget gate
 - Public code inspection
 
 ---

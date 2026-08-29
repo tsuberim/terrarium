@@ -20,6 +20,12 @@ pub struct SimConfig {
     pub hit_damage: i32,
     pub health_regen: i32,
     pub health_regen_cost: i64,
+    /// Energy reserved from budget when an energy node spawns.
+    pub node_nominal_energy: i64,
+    pub node_spawn_interval: u64,
+    pub node_spawn_attempts: u32,
+    pub max_active_nodes: u32,
+    pub node_spawn_radius: i32,
 }
 
 impl Default for SimConfig {
@@ -39,6 +45,11 @@ impl Default for SimConfig {
             hit_damage: 34,
             health_regen: 5,
             health_regen_cost: ENERGY_SCALE,
+            node_nominal_energy: ENERGY_SCALE,
+            node_spawn_interval: 10,
+            node_spawn_attempts: 3,
+            max_active_nodes: 48,
+            node_spawn_radius: 24,
         }
     }
 }

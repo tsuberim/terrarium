@@ -6,8 +6,8 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use terrarium_kernel::{
-    compile_wat, run_tick, vm::Creature, DeathReason, SimConfig, WorldEvent, WorldTile, WorldTiles,
-    TICK_HZ,
+    compile_wat, run_tick, vm::Creature, DeathReason, EnergyLedger, SimConfig, WorldEvent,
+    WorldTile, WorldTiles, TICK_HZ,
 };
 use tokio::sync::broadcast;
 
@@ -42,6 +42,13 @@ pub struct TilePublic {
 }
 
 #[derive(Clone, Serialize)]
+pub struct EnergyLedgerPublic {
+    pub destroyed: i64,
+    pub free_minted: i64,
+    pub free_budget: i64,
+}
+
+#[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorldMessage {
     Snapshot {
@@ -49,6 +56,7 @@ pub enum WorldMessage {
         deploy_cost: i64,
         corpse_energy: i64,
         sim_config: SimConfig,
+        energy_ledger: EnergyLedgerPublic,
         creatures: Vec<CreaturePublic>,
         tiles: Vec<TilePublic>,
     },
@@ -65,6 +73,7 @@ pub enum WorldMessage {
 struct PersistSnapshot {
     creatures: Vec<Creature>,
     tiles: WorldTiles,
+    ledger: EnergyLedger,
 }
 
 struct TickStep {
@@ -75,6 +84,7 @@ struct SimState {
     tick: u64,
     creatures: Vec<Creature>,
     tiles: WorldTiles,
+    ledger: EnergyLedger,
 }
 
 pub struct WorldEngine {
@@ -90,6 +100,7 @@ impl WorldEngine {
     pub async fn bootstrap(db: SqlitePool, config: &Config) -> anyhow::Result<Arc<Self>> {
         let creatures = load_creatures(&db).await?;
         let tiles = load_tiles(&db).await?;
+        let ledger = load_ledger(&db).await?;
         let (events, _) = broadcast::channel(BROADCAST_CAPACITY);
         let persist_every = std::env::var("PERSIST_EVERY_TICKS")
             .ok()
@@ -101,6 +112,7 @@ impl WorldEngine {
                 tick: 0,
                 creatures,
                 tiles,
+                ledger,
             }),
             db,
             deploy_cost: config.deploy_cost,
@@ -146,6 +158,7 @@ impl WorldEngine {
             deploy_cost: self.deploy_cost,
             corpse_energy: self.sim_config.read().corpse_energy,
             sim_config: self.sim_config.read().clone(),
+            energy_ledger: ledger_public(&state.ledger),
             creatures: state.creatures.iter().map(creature_public).collect(),
             tiles: tiles_public(&state.tiles),
         }
@@ -168,9 +181,16 @@ impl WorldEngine {
         sqlx::query("DELETE FROM world_tiles")
             .execute(&self.db)
             .await?;
+        sqlx::query(
+            "INSERT INTO energy_ledger (id, destroyed, free_minted) VALUES (1, 0, 0)
+             ON CONFLICT(id) DO UPDATE SET destroyed = 0, free_minted = 0",
+        )
+        .execute(&self.db)
+        .await?;
         let mut state = self.inner.write();
         state.creatures.clear();
         state.tiles.clear();
+        state.ledger = EnergyLedger::default();
         drop(state);
         let _ = self.events.send(self.snapshot());
         Ok(())
@@ -206,10 +226,12 @@ impl WorldEngine {
 
         let mut creatures = std::mem::take(&mut state.creatures);
         let mut tiles = std::mem::take(&mut state.tiles);
+        let mut ledger = state.ledger.clone();
         let config = self.sim_config.read().clone();
-        let tick_result = run_tick(&mut creatures, &mut tiles, &config, tick);
+        let tick_result = run_tick(&mut creatures, &mut tiles, &mut ledger, &config, tick);
         state.creatures = creatures;
         state.tiles = tiles;
+        state.ledger = ledger;
         state.tick = tick;
 
         let mut message = build_delta(tick, &before, &state.creatures, &before_tiles, &state.tiles);
@@ -220,6 +242,7 @@ impl WorldEngine {
             Some(PersistSnapshot {
                 creatures: state.creatures.clone(),
                 tiles: state.tiles.clone(),
+                ledger: state.ledger.clone(),
             })
         } else {
             None
@@ -321,6 +344,21 @@ fn tile_public(pos: (i32, i32), tile: WorldTile) -> TilePublic {
             energy: Some(energy),
             death_reason: Some(death_reason),
         },
+        WorldTile::EnergyNode { energy } => TilePublic {
+            x: pos.0 as i64,
+            y: pos.1 as i64,
+            kind: 4,
+            energy: Some(energy),
+            death_reason: None,
+        },
+    }
+}
+
+fn ledger_public(ledger: &EnergyLedger) -> EnergyLedgerPublic {
+    EnergyLedgerPublic {
+        destroyed: ledger.destroyed,
+        free_minted: ledger.free_minted,
+        free_budget: ledger.free_budget(),
     }
 }
 
@@ -375,6 +413,22 @@ async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
         .collect()
 }
 
+async fn load_ledger(db: &SqlitePool) -> anyhow::Result<EnergyLedger> {
+    let row = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT destroyed, free_minted FROM energy_ledger WHERE id = 1",
+    )
+    .fetch_optional(db)
+    .await?;
+
+    Ok(match row {
+        Some((destroyed, free_minted)) => EnergyLedger {
+            destroyed,
+            free_minted,
+        },
+        None => EnergyLedger::default(),
+    })
+}
+
 async fn load_tiles(db: &SqlitePool) -> anyhow::Result<WorldTiles> {
     let rows = sqlx::query_as::<_, (i64, i64, i64, Option<i64>, Option<String>)>(
         "SELECT x, y, kind, energy, death_reason FROM world_tiles",
@@ -397,6 +451,9 @@ async fn load_tiles(db: &SqlitePool) -> anyhow::Result<WorldTiles> {
                             .and_then(DeathReason::parse)
                             .unwrap_or(DeathReason::WasmTrap),
                     },
+                    4 => WorldTile::EnergyNode {
+                        energy: energy.unwrap_or(0),
+                    },
                     _ => return None,
                 },
             ))
@@ -408,6 +465,7 @@ pub async fn persist_world(
     db: &SqlitePool,
     creatures: &[Creature],
     tiles: &WorldTiles,
+    ledger: &EnergyLedger,
 ) -> anyhow::Result<()> {
     let mut tx = db.begin().await?;
 
@@ -475,8 +533,27 @@ pub async fn persist_world(
                 .execute(&mut *tx)
                 .await?;
             }
+            WorldTile::EnergyNode { energy } => {
+                sqlx::query(
+                    "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)",
+                )
+                .bind(*x as i64)
+                .bind(*y as i64)
+                .bind(*energy)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
     }
+
+    sqlx::query(
+        "INSERT INTO energy_ledger (id, destroyed, free_minted) VALUES (1, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET destroyed = excluded.destroyed, free_minted = excluded.free_minted",
+    )
+    .bind(ledger.destroyed)
+    .bind(ledger.free_minted)
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
     Ok(())
@@ -488,7 +565,7 @@ pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
 
     tokio::spawn(async move {
         while let Some(snapshot) = persist_rx.recv().await {
-            if let Err(err) = persist_world(&db, &snapshot.creatures, &snapshot.tiles).await {
+            if let Err(err) = persist_world(&db, &snapshot.creatures, &snapshot.tiles, &snapshot.ledger).await {
                 tracing::error!(error = %err, "checkpoint failed");
             }
         }
@@ -633,7 +710,7 @@ mod tests {
         for _ in 0..30 {
             let step = engine.tick_step();
             if let Some(snapshot) = step.persist {
-                persist_world(&engine.db, &snapshot.creatures, &snapshot.tiles)
+                persist_world(&engine.db, &snapshot.creatures, &snapshot.tiles, &snapshot.ledger)
                     .await
                     .unwrap();
             }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { EXAMPLE_PROGRAMS } from "../lib/examples";
+import { formatGlimString, GLIM_SCALE } from "../lib/glim";
+import { GlimAmount } from "./GlimAmount";
 
 type Props = {
   cell: { x: number; y: number } | null;
@@ -55,11 +57,11 @@ export function DeployDialog({
       return;
     }
     if (extra < minExtra) {
-      setError(`Minimum extra energy is ${minExtra}`);
+      setError(`Minimum extra is ${formatGlimString(minExtra)}`);
       return;
     }
     if (credits !== null && extra > credits) {
-      setError("Not enough credits");
+      setError("Not enough glims");
       return;
     }
     setError(null);
@@ -85,7 +87,7 @@ export function DeployDialog({
 
         <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2">
           <label className="text-[11px] text-white/45" htmlFor="deploy-extra">
-            Extra energy
+            Extra glims
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -93,7 +95,7 @@ export function DeployDialog({
               type="number"
               min={minExtra}
               max={maxExtra}
-              step={1}
+              step={GLIM_SCALE}
               value={extra}
               disabled={busy}
               onChange={(e) => {
@@ -102,14 +104,19 @@ export function DeployDialog({
               }}
               className="w-20 rounded-md border border-white/[0.08] bg-black/30 px-2 py-1 text-right font-mono text-[11px] text-white/75 outline-none focus:border-biolume/25"
             />
-            <span className="font-mono text-[10px] text-white/30">
-              = {totalEnergy} total
-            </span>
+            <span className="text-[10px] text-white/30">=</span>
+            <GlimAmount amount={totalEnergy} className="text-[10px] text-white/45" />
           </div>
         </div>
 
-        <p className="mb-2 text-[10px] text-white/28">
-          WAT module · costs {extra} credits · {corpseEnergy} base + {extra} spendable
+        <p className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-white/28">
+          <span>WAT module · costs</span>
+          <GlimAmount amount={extra} className="text-[10px] text-white/40" />
+          <span>·</span>
+          <GlimAmount amount={corpseEnergy} className="text-[10px] text-white/40" compact />
+          <span>base +</span>
+          <GlimAmount amount={extra} className="text-[10px] text-white/40" compact />
+          <span>spendable</span>
         </p>
 
         <div className="mb-2 flex flex-wrap gap-1">
@@ -157,7 +164,7 @@ export function DeployDialog({
             Cancel
           </button>
           <button type="button" className="deploy-btn deploy-btn-primary" onClick={submit} disabled={busy}>
-            Deploy · {extra} cr
+            Deploy · <GlimAmount amount={extra} className="text-[10px]" compact />
           </button>
         </div>
       </div>

@@ -105,4 +105,5 @@ Deploy concurrency group `deploy-prod` cancels in-progress deploys when new comm
 | Connection refused on `:5173` | Dev not running | `./scripts/dev.sh` in a terminal tab |
 | Sign-in fails locally | Firebase config | Enable Google provider; add `localhost` to authorized domains |
 | `/api/health` 404 in prod | Cloud Run not deployed | Check deploy workflow or run `deploy-server.sh` |
+| WebSocket fails on `.web.app` | Firebase Hosting can't proxy WS upgrades | Frontend must use `VITE_WS_BASE` → Cloud Run URL (see `generate-config.sh`) |
 | Data gone after deploy | In-memory SQLite | Expected until persistent DB is configured |

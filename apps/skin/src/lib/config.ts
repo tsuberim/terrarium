@@ -13,6 +13,8 @@ export function apiRoot() {
 }
 
 export function wsRoot() {
+  // Firebase Hosting rewrites /api for HTTP but cannot proxy WebSocket upgrades;
+  // prod builds set VITE_WS_BASE to the Cloud Run URL (see generate-config.sh).
   const override = import.meta.env.VITE_WS_BASE as string | undefined;
   if (override) return override.replace(/\/$/, "");
 

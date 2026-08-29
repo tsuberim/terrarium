@@ -42,4 +42,12 @@ URL="$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
   --region="$GCP_REGION" \
   --format='value(status.url)')"
 
+mkdir -p .deploy
+echo "$URL" > .deploy/cloud-run-url
+
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "cloud_run_url=$URL" >> "$GITHUB_OUTPUT"
+fi
+
 echo "Cloud Run deployed: ${URL}/api/health"
+echo "WebSocket (direct): ${URL/https:/wss:}/api/v1/world/ws"
