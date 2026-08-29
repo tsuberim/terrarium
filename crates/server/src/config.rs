@@ -70,6 +70,7 @@ pub fn ensure_parent_dir(database_url: &str) -> anyhow::Result<()> {
         .strip_prefix("sqlite://")
         .or_else(|| database_url.strip_prefix("sqlite:"))
         .context("DATABASE_URL must use sqlite: or sqlite:// prefix")?;
+    let path = path.split('?').next().unwrap_or(path);
     if let Some(parent) = std::path::Path::new(path).parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
@@ -78,4 +79,18 @@ pub fn ensure_parent_dir(database_url: &str) -> anyhow::Result<()> {
         bail!("invalid DATABASE_URL");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_parent_dir_strips_sqlite_query() {
+        let dir = std::env::temp_dir().join(format!("terrarium-db-{}", std::process::id()));
+        let url = format!("sqlite://{}/terrarium.db?mode=rwc", dir.display());
+        ensure_parent_dir(&url).unwrap();
+        assert!(dir.is_dir());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

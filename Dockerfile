@@ -10,6 +10,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/terrarium-server /app/terrarium-server
 RUN mkdir -p /app/data
 ENV LISTEN_ADDR=0.0.0.0:8080
-ENV DATABASE_URL=sqlite:/app/data/terrarium.db
+ENV DATABASE_URL=sqlite:///app/data/terrarium.db?mode=rwc
 EXPOSE 8080
 CMD ["/app/terrarium-server"]
