@@ -527,7 +527,7 @@ pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
 #[cfg(test)]
 mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
-    use terrarium_kernel::{compile_wat, vm::Creature, EXAMPLE_PROGRAMS};
+    use terrarium_kernel::{compile_wat, vm::Creature};
 
     use super::*;
     use crate::config::Config;
@@ -597,15 +597,22 @@ mod tests {
             .unwrap();
     }
 
+    const MOVE_EAST: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 1
+    call $move
+    drop
+    call $sleep)
+)
+"#;
+
     #[tokio::test]
     async fn tick_moves_creature_in_memory() {
         let engine = test_engine().await;
-        let code = EXAMPLE_PROGRAMS
-            .iter()
-            .find(|e| e.id == "runner")
-            .unwrap()
-            .code;
-        seed_creature(&engine, "a", 0, 0, code, 100_000_000).await;
+        seed_creature(&engine, "a", 0, 0, MOVE_EAST, 100_000_000).await;
 
         engine.tick_step();
 
@@ -618,12 +625,7 @@ mod tests {
     #[tokio::test]
     async fn checkpoint_persists_to_db() {
         let engine = test_engine().await;
-        let code = EXAMPLE_PROGRAMS
-            .iter()
-            .find(|e| e.id == "runner")
-            .unwrap()
-            .code;
-        seed_creature(&engine, "a", 0, 0, code, 100_000_000).await;
+        seed_creature(&engine, "a", 0, 0, MOVE_EAST, 100_000_000).await;
 
         for _ in 0..30 {
             let step = engine.tick_step();
