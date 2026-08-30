@@ -24,7 +24,7 @@ mod ws;
 
 use auth::AuthenticatedUser;
 use config::Config;
-use engine::{spawn_tick_loop, WorldEngine, WorldMessage};
+use engine::{spawn_tick_loop, WorldEngine};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use terrarium_kernel::{
     compile_wat, host, vm::Creature, SimConfig, CORPSE_ENERGY, WatError,
@@ -262,22 +262,14 @@ async fn faucet(
 }
 
 async fn world(State(state): State<AppState>) -> impl IntoResponse {
-    match state.engine.snapshot() {
-        WorldMessage::Snapshot {
-            deploy_cost,
-            corpse_energy,
-            creatures,
-            tiles,
-            ..
-        } => Json(WorldResponse {
-            deploy_cost,
-            corpse_energy,
-            creatures,
-            tiles,
-        })
-        .into_response(),
-        WorldMessage::Delta { .. } => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+    let (deploy_cost, corpse_energy, creatures, tiles) = state.engine.world_http();
+    Json(WorldResponse {
+        deploy_cost,
+        corpse_energy,
+        creatures,
+        tiles,
+    })
+    .into_response()
 }
 
 async fn clear_world(State(state): State<AppState>) -> impl IntoResponse {
@@ -617,6 +609,7 @@ async fn deploy_creature(
             inbox: vec![],
             death_reason: None,
             born_tick: born_tick as u64,
+            facing: 0,
         })
         .map_err(deploy_internal)?;
 

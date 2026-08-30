@@ -1,26 +1,31 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { FxEvent } from "../hooks/useWorldStream";
 import type { Creature, WorldTile } from "../lib/api";
-import { creatureSprite, drawCreatureSprite, facingFromDelta, type SpriteMode } from "../lib/creatureSprite";
+import { drawEatFx, EAT_LIFE_MS } from "../lib/eatFx";
+import { drawHitFx, HIT_LIFE_MS } from "../lib/hitFx";
+import { creatureAnim, drawCreatureSprite, lifeModifiers, SPAWN_LIFE_MS, DEATH_LIFE_MS, BODY_R, type LifeFx, type SpriteMode } from "../lib/creatureSprite";
+import { drawTileSprite } from "../lib/tileSprite";
+import { drawWorldBackground } from "../lib/worldBackground";
+import type { WorldRuntime } from "../lib/worldRuntime";
 import {
   cellCenter,
-  hexDisk,
+  facingAngle,
   hexIntersectsViewport,
   hexPath,
   hexPathAt,
   HEX_RADIUS,
+  hexRangePixelRadius,
   pixelToAxial,
   visibleHexRange,
 } from "../lib/hex";
 
 const MIN_ZOOM = 0.35;
 const GRID_MIN_ZOOM = 0.55;
-const MAX_ZOOM = 3;
+const MAX_ZOOM = 8;
 const ZOOM_SENSITIVITY = 0.0012;
-const TICK_MS = 100;
+const DEFAULT_TICK_HZ = 2;
 
 type Camera = { panX: number; panY: number; zoom: number };
-type AnimState = { fromX: number; fromY: number; toX: number; toY: number; start: number };
 
 type Props = {
   creatures: Creature[];
@@ -28,6 +33,8 @@ type Props = {
   canDeploy: boolean;
   userUid?: string;
   senseRange?: number;
+  signalRange?: number;
+  visHalfArc?: number;
   corpseEnergy?: number;
   view: "god" | "follow";
   followId?: string | null;
@@ -39,6 +46,9 @@ type Props = {
   onManualCamera?: () => void;
   onZoomChange?: (zoom: number) => void;
   fxEvents?: FxEvent[];
+  runtimeRef: RefObject<WorldRuntime>;
+  worldTick?: number;
+  tickHz?: number;
 };
 
 function clampZoom(z: number) {
@@ -60,39 +70,6 @@ function cellToPan(q: number, r: number, w: number, h: number, zoom: number) {
   };
 }
 
-function easeOutCubic(t: number) {
-  return 1 - (1 - t) ** 3;
-}
-
-function stepCreatureAnim(
-  id: string,
-  serverX: number,
-  serverY: number,
-  now: number,
-  displayPos: Map<string, { x: number; y: number }>,
-  animState: Map<string, AnimState>,
-) {
-  let anim = animState.get(id);
-  if (!anim || anim.toX !== serverX || anim.toY !== serverY) {
-    const current = displayPos.get(id);
-    anim = {
-      fromX: current?.x ?? serverX,
-      fromY: current?.y ?? serverY,
-      toX: serverX,
-      toY: serverY,
-      start: now,
-    };
-    animState.set(id, anim);
-  }
-
-  const t = easeOutCubic(Math.min(1, (now - anim.start) / TICK_MS));
-  const pos = {
-    x: anim.fromX + (anim.toX - anim.fromX) * t,
-    y: anim.fromY + (anim.toY - anim.fromY) * t,
-  };
-  displayPos.set(id, pos);
-  return pos;
-}
 
 export function WorldCanvas({
   creatures,
@@ -100,6 +77,8 @@ export function WorldCanvas({
   canDeploy,
   userUid,
   senseRange = 5,
+  signalRange = 5,
+  visHalfArc = 1,
   corpseEnergy = 1_000_000,
   view,
   followId = null,
@@ -111,7 +90,11 @@ export function WorldCanvas({
   onManualCamera,
   onZoomChange,
   fxEvents = [],
+  runtimeRef,
+  worldTick = 0,
+  tickHz = DEFAULT_TICK_HZ,
 }: Props) {
+  const tickMs = 1000 / tickHz;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<Camera>({ panX: 0, panY: 0, zoom: clampZoom(initialZoom) });
@@ -121,6 +104,8 @@ export function WorldCanvas({
   const canDeployRef = useRef(canDeploy);
   const userUidRef = useRef(userUid);
   const senseRangeRef = useRef(senseRange);
+  const signalRangeRef = useRef(signalRange);
+  const visHalfArcRef = useRef(visHalfArc);
   const corpseEnergyRef = useRef(corpseEnergy);
   const onCellSelectRef = useRef(onCellSelect);
   const onHoverRef = useRef(onHover);
@@ -130,8 +115,12 @@ export function WorldCanvas({
   const followIdRef = useRef(followId);
   const spriteModeRef = useRef(spriteMode);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
-  const displayPos = useRef(new Map<string, { x: number; y: number }>());
-  const animState = useRef(new Map<string, AnimState>());
+  const worldTickRef = useRef(worldTick);
+  const tickMsRef = useRef(tickMs);
+
+  worldTickRef.current = worldTick;
+  tickMsRef.current = tickMs;
+  if (runtimeRef.current) runtimeRef.current.setTickHz(tickHz);
 
   const fxRef = useRef(fxEvents);
   const creaturesFxRef = useRef(creatures);
@@ -145,6 +134,8 @@ export function WorldCanvas({
   canDeployRef.current = canDeploy;
   userUidRef.current = userUid;
   senseRangeRef.current = senseRange;
+  signalRangeRef.current = signalRange;
+  visHalfArcRef.current = visHalfArc;
   corpseEnergyRef.current = corpseEnergy;
   onCellSelectRef.current = onCellSelect;
   onHoverRef.current = onHover;
@@ -161,7 +152,6 @@ export function WorldCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let frame = 0;
     let raf = 0;
     let dpr = 1;
 
@@ -174,18 +164,52 @@ export function WorldCanvas({
       canvas.style.height = `${clientHeight}px`;
     };
 
-    const drawSenseRange = (q: number, r: number, range: number) => {
-      for (const cell of hexDisk(q, r, range)) {
-        hexPath(ctx, cell.q, cell.r);
-        ctx.fillStyle = "rgba(74, 232, 194, 0.05)";
-        ctx.fill();
-      }
-      ctx.strokeStyle = "rgba(74, 232, 194, 0.22)";
-      ctx.lineWidth = 1 / cameraRef.current.zoom;
-      for (const cell of hexDisk(q, r, range)) {
-        hexPath(ctx, cell.q, cell.r);
-        ctx.stroke();
-      }
+    const drawVisionOverlay = (
+      q: number,
+      r: number,
+      lookAngle: number,
+      range: number,
+      halfArc: number,
+      emphasized: boolean,
+    ) => {
+      const zoom = cameraRef.current.zoom;
+      const { x: cx, y: cy } = cellCenter(q, r);
+      const angle = lookAngle;
+      const wedgeSpan = (Math.PI / 3) * halfArc;
+      const wedgeRadius = HEX_RADIUS * (range + 0.55);
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, wedgeRadius, angle - wedgeSpan, angle + wedgeSpan);
+      ctx.closePath();
+      ctx.fillStyle = emphasized ? "rgba(74, 232, 194, 0.07)" : "rgba(74, 232, 194, 0.045)";
+      ctx.fill();
+      ctx.strokeStyle = emphasized ? "rgba(74, 232, 194, 0.42)" : "rgba(74, 232, 194, 0.22)";
+      ctx.lineWidth = 1.25 / zoom;
+      ctx.stroke();
+
+      const tipX = cx + Math.cos(angle) * HEX_RADIUS * 0.72;
+      const tipY = cy + Math.sin(angle) * HEX_RADIUS * 0.72;
+      const wing = Math.PI / 2 - 0.35;
+      const wingLen = HEX_RADIUS * 0.28;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(
+        cx + Math.cos(angle - wing) * wingLen,
+        cy + Math.sin(angle - wing) * wingLen,
+      );
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(
+        cx + Math.cos(angle + wing) * wingLen,
+        cy + Math.sin(angle + wing) * wingLen,
+      );
+      ctx.strokeStyle = emphasized ? "rgba(232, 168, 74, 0.9)" : "rgba(74, 232, 194, 0.65)";
+      ctx.lineWidth = (emphasized ? 2 : 1.5) / zoom;
+      ctx.stroke();
+      ctx.fillStyle = emphasized ? "rgba(232, 168, 74, 0.95)" : "rgba(74, 232, 194, 0.85)";
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, (emphasized ? 2.2 : 1.6) / zoom, 0, Math.PI * 2);
+      ctx.fill();
     };
 
     const drawCreature = (
@@ -194,26 +218,36 @@ export function WorldCanvas({
       r: number,
       followed: boolean,
       energyRefMax: number,
+      now: number,
+      moving: boolean,
+      lookAngle: number,
+      eatOpen: number,
+      hitFire: number,
+      life?: LifeFx,
+      drawCx?: number,
+      drawCy?: number,
     ) => {
       const mine = c.owner_uid === userUidRef.current;
-      const sprite = creatureSprite(c, spriteModeRef.current);
-      const { x: cx, y: cy } = cellCenter(q, r);
-      const anim = animState.current.get(c.id);
-      const facing =
-        anim && (anim.toX !== anim.fromX || anim.toY !== anim.fromY)
-          ? facingFromDelta(anim.toX - anim.fromX, anim.toY - anim.fromY)
-          : null;
+      const cell = cellCenter(q, r);
+      const cx = drawCx ?? cell.x;
+      const cy = drawCy ?? cell.y;
+      const anim = creatureAnim(c.id, now, moving, lookAngle);
 
       drawCreatureSprite(
         ctx,
         cx,
         cy,
-        sprite,
         mine,
+        lookAngle,
+        anim,
         c.health,
         c.max_health,
-        facing,
-        mine ? { value: c.energy, floor: corpseEnergyRef.current, refMax: energyRefMax } : undefined,
+        mine && life?.kind !== "death"
+          ? { value: c.energy, floor: corpseEnergyRef.current, refMax: energyRefMax }
+          : undefined,
+        life,
+        hitFire,
+        eatOpen,
       );
 
       if (followed) {
@@ -230,25 +264,15 @@ export function WorldCanvas({
       const cam = cameraRef.current;
       const zoom = cam.zoom;
       const now = performance.now();
-      frame += 1;
-
-      const liveIds = new Set<string>();
-      for (const c of creaturesRef.current ?? []) {
-        liveIds.add(c.id);
-        stepCreatureAnim(c.id, c.x, c.y, now, displayPos.current, animState.current);
-      }
-      for (const id of displayPos.current.keys()) {
-        if (!liveIds.has(id)) {
-          displayPos.current.delete(id);
-          animState.current.delete(id);
-        }
-      }
+      const fxNow = Date.now();
+      const runtime = runtimeRef.current;
+      const frame = runtime?.sample(now, fxNow);
 
       const followTarget = followIdRef.current;
-      if (viewRef.current === "follow" && followTarget) {
-        const pos = displayPos.current.get(followTarget);
-        if (pos) {
-          const target = cellToPan(pos.x, pos.y, w, h, zoom);
+      if (viewRef.current === "follow" && followTarget && frame) {
+        const pose = frame.poses.get(followTarget);
+        if (pose) {
+          const target = cellToPan(pose.q, pose.r, w, h, zoom);
           cam.panX = target.panX;
           cam.panY = target.panY;
         }
@@ -270,10 +294,12 @@ export function WorldCanvas({
       const right = (w - panX) / zoom;
       const bottom = (h - panY) / zoom;
 
+      drawWorldBackground(ctx, left, top, right, bottom, now);
+
       const { qMin, qMax, rMin, rMax } = visibleHexRange(left, top, right, bottom);
 
       if (zoom >= GRID_MIN_ZOOM) {
-        ctx.strokeStyle = "rgba(74, 232, 194, 0.018)";
+        ctx.strokeStyle = "rgba(74, 232, 194, 0.014)";
         ctx.lineWidth = 1 / zoom;
         for (let q = qMin; q <= qMax; q++) {
           for (let r = rMin; r <= rMax; r++) {
@@ -284,38 +310,23 @@ export function WorldCanvas({
         }
       }
 
-      for (const t of tilesRef.current ?? []) {
+      const displayTiles = runtime?.displayTiles(tilesRef.current ?? [], now, fxNow) ?? tilesRef.current ?? [];
+
+      for (const t of displayTiles) {
         const { x: cx, y: cy } = cellCenter(t.x, t.y);
         if (cx + HEX_RADIUS < left || cx - HEX_RADIUS > right || cy + HEX_RADIUS < top || cy - HEX_RADIUS > bottom) {
           continue;
         }
-        hexPath(ctx, t.x, t.y);
-        if (t.kind === 1) {
-          ctx.fillStyle = "rgba(90, 100, 110, 0.55)";
-          ctx.fill();
-        } else if (t.kind === 3) {
-          ctx.fillStyle = "rgba(232, 168, 74, 0.35)";
-          ctx.fill();
-          ctx.fillStyle = "rgba(232, 168, 74, 0.7)";
-          ctx.beginPath();
-          ctx.arc(cx, cy, HEX_RADIUS * 0.2, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (t.kind === 4) {
-          ctx.fillStyle = "rgba(74, 232, 194, 0.2)";
-          ctx.fill();
-          ctx.fillStyle = "rgba(74, 232, 194, 0.85)";
-          ctx.beginPath();
-          ctx.arc(cx, cy, HEX_RADIUS * 0.28, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        drawTileSprite(ctx, t, now);
       }
 
       const senseR = senseRangeRef.current;
+      const halfArc = visHalfArcRef.current;
       for (const c of creaturesRef.current ?? []) {
         if (c.owner_uid !== userUidRef.current) continue;
-        const pos = displayPos.current.get(c.id);
-        if (!pos) continue;
-        drawSenseRange(pos.x, pos.y, senseR);
+        const pose = frame?.poses.get(c.id) ?? runtime?.pose(c.id, c);
+        if (!pose) continue;
+        drawVisionOverlay(pose.q, pose.r, pose.angle, senseR, halfArc, c.id === followTarget);
       }
 
       const uid = userUidRef.current;
@@ -330,14 +341,52 @@ export function WorldCanvas({
       }
 
       for (const c of creaturesRef.current ?? []) {
-        const pos = displayPos.current.get(c.id);
-        if (!pos) continue;
+        const pose = frame?.poses.get(c.id) ?? runtime?.pose(c.id, c);
+        if (!pose) continue;
 
-        const { x: cx, y: cy } = cellCenter(pos.x, pos.y);
+        let cx = pose.px;
+        let cy = pose.py;
+        let life: LifeFx | undefined;
+        const spawnEntry = frame?.spawnLife.get(c.id);
+        if (spawnEntry) {
+          const t = Math.min(1, (fxNow - spawnEntry.at) / SPAWN_LIFE_MS);
+          life = { kind: "spawn", t };
+          const mod = lifeModifiers(life);
+          const from = cellCenter(spawnEntry.fromQ, spawnEntry.fromR);
+          cx = from.x + (pose.px - from.x) * mod.posT;
+          cy = from.y + (pose.py - from.y) * mod.posT;
+        }
+
         if (cx + HEX_RADIUS < left || cx - HEX_RADIUS > right || cy + HEX_RADIUS < top || cy - HEX_RADIUS > bottom) {
           continue;
         }
-        drawCreature(c, pos.x, pos.y, c.id === followIdRef.current, energyRefMax);
+        const eatOpen = runtime?.eatOpen(c.id, now) ?? 0;
+        const hitFire = runtime?.hitFire(c.id, fxNow) ?? 0;
+        drawCreature(
+          c,
+          pose.q,
+          pose.r,
+          c.id === followIdRef.current,
+          energyRefMax,
+          now,
+          pose.moving,
+          pose.angle,
+          eatOpen,
+          hitFire,
+          life,
+          cx,
+          cy,
+        );
+      }
+
+      for (const [, ghost] of frame?.deathGhosts ?? []) {
+        const t = Math.min(1, (fxNow - ghost.at) / DEATH_LIFE_MS);
+        const life: LifeFx = { kind: "death", t };
+        const { x: cx, y: cy } = cellCenter(ghost.creature.x, ghost.creature.y);
+        if (cx + HEX_RADIUS < left || cx - HEX_RADIUS > right || cy + HEX_RADIUS < top || cy - HEX_RADIUS > bottom) {
+          continue;
+        }
+        drawCreature(ghost.creature, ghost.creature.x, ghost.creature.y, false, energyRefMax, now, false, facingAngle(((ghost.creature.facing ?? 0) % 6 + 6) % 6), 0, 0, life, cx, cy);
       }
 
       const hover = hoverRef.current;
@@ -350,11 +399,23 @@ export function WorldCanvas({
 
       ctx.restore();
 
-      const fxNow = Date.now();
       for (const fx of fxRef.current) {
-        const fxMs = fx.type === "hit" || fx.type === "death" ? 900 : fx.type === "spawn" || fx.type === "eat" ? 750 : 600;
-        const age = (fxNow - fx.at) / fxMs;
-        if (age >= 1) continue;
+        const fxMs =
+          fx.type === "hit"
+            ? HIT_LIFE_MS
+            : fx.type === "death"
+              ? DEATH_LIFE_MS
+              : fx.type === "spawn"
+                ? SPAWN_LIFE_MS
+                : fx.type === "eat"
+                  ? EAT_LIFE_MS
+                  : 600;
+        const fxStart = fx.type === "eat" ? (runtime?.eatStartAt(fx) ?? fx.at) : fx.at;
+        const age =
+          fx.type === "eat"
+            ? (now - fxStart) / fxMs
+            : (fxNow - fxStart) / fxMs;
+        if (age < 0 || age >= 1) continue;
         const alpha = 1 - age ** 1.4;
         ctx.save();
         ctx.translate(panX, panY);
@@ -364,99 +425,84 @@ export function WorldCanvas({
           const from = cellCenter(fx.from_x, fx.from_y);
           const fxFrom = from.x;
           const fyFrom = from.y;
+          const signalAlpha = alpha * 0.35;
           if (fx.broadcast) {
-            ctx.strokeStyle = `rgba(232, 168, 74, ${alpha * 0.55})`;
-            ctx.lineWidth = 1.5 / zoom;
+            const maxR = hexRangePixelRadius(signalRangeRef.current);
+            ctx.strokeStyle = `rgba(232, 168, 74, ${signalAlpha * 0.45})`;
+            ctx.lineWidth = 0.85 / zoom;
             ctx.beginPath();
-            ctx.arc(fxFrom, fyFrom, HEX_RADIUS * (0.6 + age * 1.5), 0, Math.PI * 2);
+            ctx.arc(fxFrom, fyFrom, maxR * age, 0, Math.PI * 2);
             ctx.stroke();
           } else if (fx.to_id) {
             const target = creaturesFxRef.current.find((c) => c.id === fx.to_id);
             const mine = target?.owner_uid === userUidFxRef.current;
             if (mine && target) {
-              const pos = displayPos.current.get(target.id) ?? { x: target.x, y: target.y };
-              const to = cellCenter(pos.x, pos.y);
-              ctx.strokeStyle = `rgba(123, 109, 255, ${alpha * 0.85})`;
-              ctx.lineWidth = 2 / zoom;
+              const pose = frame?.poses.get(target.id) ?? runtime?.pose(target.id, target);
+              const to = pose ? { x: pose.px, y: pose.py } : cellCenter(target.x, target.y);
+              ctx.strokeStyle = `rgba(123, 109, 255, ${signalAlpha * 0.55})`;
+              ctx.lineWidth = 1 / zoom;
               ctx.beginPath();
               ctx.moveTo(fxFrom, fyFrom);
               ctx.lineTo(to.x, to.y);
               ctx.stroke();
-              ctx.fillStyle = `rgba(123, 109, 255, ${alpha * 0.9})`;
+              ctx.fillStyle = `rgba(123, 109, 255, ${signalAlpha * 0.5})`;
               ctx.beginPath();
-              ctx.arc(to.x, to.y, HEX_RADIUS * 0.2, 0, Math.PI * 2);
+              ctx.arc(to.x, to.y, HEX_RADIUS * 0.12, 0, Math.PI * 2);
               ctx.fill();
             }
           }
         } else if (fx.type === "spawn") {
-          const { x: px, y: py } = cellCenter(fx.x, fx.y);
-          ctx.strokeStyle = `rgba(74, 232, 194, ${alpha * 0.85})`;
-          ctx.lineWidth = 2.5 / zoom;
+          const fromQ = fx.parent_x ?? fx.x;
+          const fromR = fx.parent_y ?? fx.y;
+          const from = cellCenter(fromQ, fromR);
+          const burst = 1 - age;
+          ctx.strokeStyle = `rgba(74, 232, 194, ${alpha * 0.4 * burst})`;
+          ctx.lineWidth = 2 / zoom;
           ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * (0.45 + age * 0.9), 0, Math.PI * 2);
+          ctx.arc(from.x, from.y, HEX_RADIUS * (0.15 + age * 0.55), 0, Math.PI * 2);
           ctx.stroke();
-          ctx.fillStyle = `rgba(74, 232, 194, ${alpha * 0.2})`;
+          ctx.fillStyle = `rgba(74, 232, 194, ${alpha * 0.12 * burst})`;
           ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * 0.35, 0, Math.PI * 2);
+          ctx.arc(from.x, from.y, HEX_RADIUS * (0.1 + age * 0.35), 0, Math.PI * 2);
           ctx.fill();
         } else if (fx.type === "hit") {
           const target = cellCenter(fx.x, fx.y);
           const actor = creaturesFxRef.current.find((c) => c.id === fx.actor_id);
-          if (actor) {
-            const pos = displayPos.current.get(actor.id) ?? { x: actor.x, y: actor.y };
-            const from = cellCenter(pos.x, pos.y);
-            ctx.strokeStyle = `rgba(255, 72, 72, ${alpha})`;
-            ctx.lineWidth = 3.5 / zoom;
-            ctx.beginPath();
-            ctx.moveTo(from.x, from.y);
-            ctx.lineTo(target.x, target.y);
-            ctx.stroke();
+          if (actor && runtime) {
+            const pose = frame?.poses.get(actor.id) ?? runtime.pose(actor.id, actor);
+            drawHitFx(ctx, {
+              age,
+              alpha,
+              actorCx: pose.px,
+              actorCy: pose.py,
+              look: pose.angle,
+              targetX: target.x,
+              targetY: target.y,
+              lineWidth: 2 / zoom,
+            });
           }
-          ctx.fillStyle = `rgba(255, 90, 60, ${alpha * 0.7})`;
-          ctx.beginPath();
-          ctx.arc(target.x, target.y, HEX_RADIUS * (0.4 + age * 0.85), 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = `rgba(255, 220, 180, ${alpha * 0.5})`;
-          ctx.lineWidth = 1.5 / zoom;
-          ctx.beginPath();
-          ctx.arc(target.x, target.y, HEX_RADIUS * (0.25 + age * 0.35), 0, Math.PI * 2);
-          ctx.stroke();
         } else if (fx.type === "eat") {
-          const { x: px, y: py } = cellCenter(fx.x, fx.y);
-          ctx.strokeStyle = `rgba(232, 168, 74, ${alpha * 0.9})`;
-          ctx.lineWidth = 2.5 / zoom;
-          ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * (0.65 - age * 0.4), 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.fillStyle = `rgba(232, 168, 74, ${alpha * 0.35})`;
-          ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * 0.35, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = `rgba(255, 230, 160, ${alpha * 0.45})`;
-          ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * 0.12, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (fx.type === "death") {
-          const { x: px, y: py } = cellCenter(fx.x, fx.y);
-          const isKill = fx.reason === "killed";
-          const isEaten = fx.reason === "eaten";
-          const rgb = isKill ? "255, 72, 72" : isEaten ? "232, 168, 74" : "180, 190, 200";
-          ctx.strokeStyle = `rgba(${rgb}, ${alpha * 0.45})`;
-          ctx.lineWidth = 1.5 / zoom;
-          ctx.beginPath();
-          ctx.arc(px, py, HEX_RADIUS * (0.4 + age * 0.7), 0, Math.PI * 2);
-          ctx.stroke();
+          const actor = creaturesFxRef.current.find((c) => c.id === fx.actor_id);
+          if (actor && runtime) {
+            const pose = frame?.poses.get(actor.id) ?? runtime.pose(actor.id, actor);
+            if (pose.moving || pose.rotating) continue;
+            const foodCell = cellCenter(fx.x, fx.y);
+            drawEatFx(ctx, {
+              age,
+              alpha,
+              actorCx: pose.px,
+              actorCy: pose.py,
+              look: pose.angle,
+              foodCx: foodCell.x,
+              foodCy: foodCell.y,
+              tileKind: fx.tile_kind,
+              bodyR: BODY_R,
+            });
+          }
         }
 
         ctx.restore();
       }
-
-      const pulse = 0.35 + Math.sin(frame * 0.03) * 0.15;
-      const grad = ctx.createRadialGradient(w / 2, h / 2, 40, w / 2, h / 2, Math.max(w, h) * 0.55);
-      grad.addColorStop(0, `rgba(74, 232, 194, ${pulse * 0.035})`);
-      grad.addColorStop(1, "rgba(2, 4, 6, 0)");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
 
       raf = requestAnimationFrame(draw);
     };
@@ -588,11 +634,11 @@ export function WorldCanvas({
   }, [canDeploy]);
 
   return (
-    <div ref={containerRef} className="absolute inset-0 touch-none bg-[#030508]">
+    <div ref={containerRef} className="absolute inset-0 touch-none">
       <canvas
         ref={canvasRef}
         aria-label="World simulation"
-        className="block h-full w-full [image-rendering:pixelated]"
+        className="block h-full w-full"
       />
     </div>
   );

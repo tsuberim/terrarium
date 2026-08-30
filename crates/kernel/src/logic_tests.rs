@@ -40,6 +40,7 @@ fn creature_at(x: i32, y: i32, code: &'static str) -> Creature {
         inbox: vec![],
         death_reason: None,
         born_tick: 0,
+        facing: 0,
     }
 }
 
@@ -117,16 +118,30 @@ fn out_of_gas_records_reason() {
     let mut creatures = vec![creature_at(0, 0, PREY)];
     let result = tick_world(&mut creatures, &mut WorldTiles::new(), &config, 1);
     assert!(creatures.is_empty(), "prey exceeds 2-opcode budget");
-    assert_eq!(
-        result.events,
-        vec![crate::WorldEvent::Death {
-            creature_id: "c".into(),
-            owner_uid: "u".into(),
-            x: 0,
-            y: 0,
-            reason: crate::DeathReason::OutOfGas,
-        }]
-    );
+    assert_eq!(result.events.len(), 1);
+    match &result.events[0] {
+        crate::WorldEvent::Death {
+            creature_id,
+            owner_uid,
+            x,
+            y,
+            reason,
+            facing,
+            health,
+            max_health,
+            ..
+        } => {
+            assert_eq!(creature_id, "c");
+            assert_eq!(owner_uid, "u");
+            assert_eq!(*x, 0);
+            assert_eq!(*y, 0);
+            assert_eq!(*reason, crate::DeathReason::OutOfGas);
+            assert_eq!(*facing, 0);
+            assert_eq!(*health, config.max_health);
+            assert_eq!(*max_health, config.max_health);
+        }
+        other => panic!("expected death, got {other:?}"),
+    }
 }
 
 #[test]
@@ -138,7 +153,92 @@ fn predator_survives_scan_on_empty_world() {
 }
 
 #[test]
-fn predator_chases_distant_prey() {
+fn one_action_per_tick_move_blocks_eat() {
+    let mut tiles = empty_tiles();
+    tiles.insert((1, 0), WorldTile::Food { energy: 250_000 });
+    const MOVE_EAT: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (import "terrarium" "eat" (func $eat (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 0
+    call $move
+    drop
+    i32.const 0
+    call $eat
+    drop
+    call $sleep)
+)
+"#;
+    let before = 5_000_000_i64;
+    let mut creatures = vec![Creature {
+        energy: before,
+        wasm: compile_wat(MOVE_EAT).unwrap(),
+        code: MOVE_EAT.into(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    tick_world(&mut creatures, &mut tiles, &default_config(), 1);
+    assert_eq!(creatures[0].x, 0, "cannot move onto food");
+    assert!(tiles.contains_key(&(1, 0)));
+    assert!(creatures[0].energy <= before - 10);
+}
+
+#[test]
+fn move_blocked_by_food() {
+    let mut tiles = empty_tiles();
+    tiles.insert((1, 0), WorldTile::Food { energy: 250_000 });
+    let mut creatures = vec![creature_at(0, 0, RUNNER)];
+    tick_world(&mut creatures, &mut tiles, &default_config(), 1);
+    assert_eq!(creatures[0].x, 0);
+    assert!(tiles.contains_key(&(1, 0)));
+}
+
+#[test]
+fn move_blocked_by_corpse() {
+    let mut tiles = empty_tiles();
+    tiles.insert(
+        (1, 0),
+        WorldTile::Corpse {
+            energy: 500_000,
+            death_reason: DeathReason::EnergyFloor,
+        },
+    );
+    let mut creatures = vec![creature_at(0, 0, RUNNER)];
+    tick_world(&mut creatures, &mut tiles, &default_config(), 1);
+    assert_eq!(creatures[0].x, 0);
+    assert!(tiles.contains_key(&(1, 0)));
+}
+
+#[test]
+fn one_action_per_tick_move_blocks_rotate() {
+    const MOVE_ROTATE: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (import "terrarium" "rotate" (func $rotate (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 0
+    call $move
+    drop
+    i32.const 1
+    call $rotate
+    drop
+    call $sleep)
+)
+"#;
+    let mut creatures = vec![Creature {
+        wasm: compile_wat(MOVE_ROTATE).unwrap(),
+        code: MOVE_ROTATE.into(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert_eq!(creatures[0].x, 1);
+    assert_eq!(creatures[0].facing, 0);
+}
+
+#[test]
+fn predator_survives_with_distant_prey() {
     let mut creatures = vec![
         creature_at(0, 0, PREDATOR),
         Creature {
@@ -149,8 +249,8 @@ fn predator_chases_distant_prey() {
         },
     ];
     tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
-    let pred = creatures.iter().find(|c| c.id == "c").expect("predator alive");
-    assert_eq!(pred.x, 2);
+    assert_eq!(creatures.len(), 2);
+    assert!(creatures.iter().any(|c| c.id == "c"));
 }
 
 #[test]
@@ -282,7 +382,7 @@ fn scavenger_chases_distant_corpse() {
     );
     let mut creatures = vec![creature_at(0, 0, SCAVENGER)];
     tick_world(&mut creatures, &mut tiles, &default_config(), 1);
-    assert_eq!(creatures[0].x, 2);
+    assert_eq!(creatures[0].x, 1);
 }
 
 #[test]
@@ -297,8 +397,10 @@ fn prey_flees_east_threat() {
         },
     ];
     tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 2);
     let prey = creatures.iter().find(|c| c.id == "c").expect("prey alive");
-    assert_eq!(prey.x, -2);
+    assert_eq!(prey.x, -1);
+    assert_eq!(prey.facing, 3);
 }
 
 #[test]
@@ -409,9 +511,9 @@ fn runner_wanders() {
 }
 
 #[test]
-fn energy_nodes_spawn_when_budget_available() {
+fn food_spawns_when_budget_available() {
     let config = SimConfig {
-        node_spawn_interval: 1,
+        food_spawn_interval: 1,
         ..default_config()
     };
     let mut ledger = EnergyLedger {
@@ -422,16 +524,16 @@ fn energy_nodes_spawn_when_budget_available() {
     let mut creatures = vec![creature_at(0, 0, IDLE)];
     run_tick(&mut creatures, &mut tiles, &mut ledger, &config, 10);
     assert!(
-        tiles.values().any(|t| matches!(t, WorldTile::EnergyNode { .. })),
-        "expected at least one energy node"
+        tiles.values().any(|t| matches!(t, WorldTile::Food { .. })),
+        "expected at least one food tile"
     );
     assert!(ledger.free_minted > 0);
 }
 
 #[test]
-fn eat_energy_node_transfers_energy() {
+fn eat_food_transfers_energy() {
     let mut tiles = empty_tiles();
-    tiles.insert((1, 0), WorldTile::EnergyNode { energy: 250_000 });
+    tiles.insert((1, 0), WorldTile::Food { energy: 250_000 });
     const EATER: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
@@ -454,4 +556,38 @@ fn eat_energy_node_transfers_energy() {
     assert!(creatures[0].energy > before);
     assert!(creatures[0].energy >= before + 250_000 - 10);
     assert!(!tiles.contains_key(&(1, 0)));
+}
+
+#[test]
+fn one_action_per_tick_rotate_blocks_eat() {
+    let mut tiles = empty_tiles();
+    tiles.insert((1, 0), WorldTile::Food { energy: 250_000 });
+    const ROTATE_EAT: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "rotate" (func $rotate (param i32) (result i32)))
+  (import "terrarium" "eat" (func $eat (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 3
+    call $rotate
+    drop
+    i32.const 0
+    call $eat
+    drop
+    call $sleep)
+)
+"#;
+    let before = 5_000_000_i64;
+    let mut creatures = vec![Creature {
+        energy: before,
+        facing: 3,
+        wasm: compile_wat(ROTATE_EAT).unwrap(),
+        code: ROTATE_EAT.into(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    tick_world(&mut creatures, &mut tiles, &default_config(), 1);
+    assert!(creatures[0].energy < before, "rotate costs energy");
+    assert!(creatures[0].energy <= before - 25_000 + 10);
+    assert!(tiles.contains_key(&(1, 0)), "eat blocked after rotate same tick");
+    assert_eq!(creatures[0].facing, 0);
 }

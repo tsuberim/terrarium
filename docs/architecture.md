@@ -40,7 +40,7 @@ Clients never drive the sim. The sim never waits on clients or SQLite.
 | Lane | Must not block |
 |------|----------------|
 | **Sim thread** | WebSocket sends, SQLite, HTTP |
-| **Broadcast** | Slow clients (lagging subs get snapshot resync) |
+| **Broadcast** | Slow clients (lagging subs get full-delta resync) |
 | **Checkpoint** | Sim thread (queued, ~1 Hz) |
 
 ## Fixed timestep
@@ -60,7 +60,7 @@ The sim thread uses wall-clock scheduling:
 
 - `tokio::sync::broadcast` with capacity **4096** — send is O(1), copies Arc-like clone per subscriber
 - Each WebSocket runs in its own async task; JSON encode happens **per client**, not on sim thread
-- Slow client → `RecvError::Lagged` → full snapshot resync (already implemented)
+- Slow client → `RecvError::Lagged` → full delta resync (`full: true`)
 - Sim thread never awaits network
 
 ### Scale limits today
@@ -75,10 +75,23 @@ The sim thread uses wall-clock scheduling:
 
 Connect: `GET /api/v1/world/ws`
 
-**Snapshot** (connect + lag recovery):
+**Full delta** (connect + lag recovery — same shape as tick delta, `full: true`):
 
 ```json
-{ "type": "snapshot", "tick": 1204, "deploy_cost": 100, "creatures": [...], "tiles": [...] }
+{
+  "type": "delta",
+  "full": true,
+  "tick": 1204,
+  "deploy_cost": 100,
+  "corpse_energy": 1000000,
+  "sim_config": { ... },
+  "creatures_upsert": [...],
+  "creatures_remove": [],
+  "tiles_upsert": [...],
+  "tiles_remove": [],
+  "actions": [],
+  "events": []
+}
 ```
 
 **Delta** (every sim tick — `tick` always present):

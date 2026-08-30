@@ -12,7 +12,7 @@ pub enum WorldTile {
         energy: i64,
         death_reason: DeathReason,
     },
-    EnergyNode {
+    Food {
         energy: i64,
     },
 }
@@ -22,29 +22,29 @@ impl WorldTile {
         match self {
             WorldTile::Solid => tile::SOLID,
             WorldTile::Corpse { .. } => tile::CORPSE,
-            WorldTile::EnergyNode { .. } => tile::NODE,
+            WorldTile::Food { .. } => tile::FOOD,
         }
     }
 }
 
-pub fn count_energy_nodes(tiles: &WorldTiles) -> u32 {
+pub fn count_food(tiles: &WorldTiles) -> u32 {
     tiles
         .values()
-        .filter(|t| matches!(t, WorldTile::EnergyNode { .. }))
+        .filter(|t| matches!(t, WorldTile::Food { .. }))
         .count() as u32
 }
 
-pub fn place_energy_node(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64) {
+pub fn place_food(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64) {
     if energy <= 0 {
         return;
     }
     match tiles.get(&(x, y)).copied() {
         Some(WorldTile::Solid) | Some(WorldTile::Corpse { .. }) => {}
-        Some(WorldTile::EnergyNode { energy: existing }) => {
-            tiles.insert((x, y), WorldTile::EnergyNode { energy: existing + energy });
+        Some(WorldTile::Food { energy: existing }) => {
+            tiles.insert((x, y), WorldTile::Food { energy: existing + energy });
         }
         None => {
-            tiles.insert((x, y), WorldTile::EnergyNode { energy });
+            tiles.insert((x, y), WorldTile::Food { energy });
         }
     }
 }
@@ -64,7 +64,7 @@ pub fn place_corpse(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64, death_r
                 },
             );
         }
-        None | Some(WorldTile::EnergyNode { .. }) => {
+        None | Some(WorldTile::Food { .. }) => {
             tiles.insert((x, y), WorldTile::Corpse { energy, death_reason });
         }
     }
@@ -89,5 +89,5 @@ pub fn sense_kind(tiles: &WorldTiles, x: i32, y: i32, creature: bool) -> i32 {
 }
 
 pub fn blocks_movement(tiles: &WorldTiles, x: i32, y: i32) -> bool {
-    matches!(tiles.get(&(x, y)), Some(WorldTile::Solid))
+    tiles.contains_key(&(x, y))
 }

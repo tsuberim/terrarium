@@ -13,13 +13,14 @@ use crate::sim_config::SimConfig;
 use crate::vm::{mark_dead, Creature, Signal, Snapshot};
 use crate::world_tile::{sense_kind, WorldTile, WorldTiles};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingAction {
-    Move { dir: u8 },
+    Move,
     Dig { dir: u8 },
     Place { dir: u8 },
     Eat { dir: u8 },
     Hit { dir: u8 },
+    Rotate { delta: i32 },
     Spawn { dir: u8, energy: i64 },
     SignalTo {
         to_id: String,
@@ -36,8 +37,38 @@ pub enum PendingAction {
 
 #[derive(Debug, Default)]
 pub struct ThinkResult {
-    pub actions: Vec<PendingAction>,
+    pub action: Option<PendingAction>,
     pub suicide: bool,
+}
+
+impl ThinkResult {
+    pub fn tick_busy(&self) -> bool {
+        self.suicide || self.action.is_some()
+    }
+
+    /// Reserve the sole action slot for this tick. Returns false if already taken.
+    pub fn take_action(&mut self, action: PendingAction) -> bool {
+        if self.tick_busy() {
+            return false;
+        }
+        self.action = Some(action);
+        true
+    }
+
+    pub fn take_suicide(&mut self) -> bool {
+        if self.tick_busy() {
+            return false;
+        }
+        self.suicide = true;
+        true
+    }
+
+    pub fn effective_facing(&self, facing: u8) -> u8 {
+        match &self.action {
+            Some(PendingAction::Rotate { delta }) => (facing as i32 + delta).rem_euclid(6) as u8,
+            _ => facing,
+        }
+    }
 }
 
 pub struct HostState {
@@ -107,12 +138,30 @@ impl HostState {
         }
     }
 
-    fn in_vis(&self, dq: i32, dr: i32) -> Result<(), Error> {
-        if self.config().in_hex_range(dq, dr, self.config().r_vis) {
-            Ok(())
-        } else {
-            Err(Error::msg("out of vision"))
+    fn can_sense(&self, dq: i32, dr: i32) -> bool {
+        let config = self.config();
+        if !config.in_hex_range(dq, dr, config.r_vis) {
+            return false;
         }
+        // Adjacent cells are always sensed (flee, eat, hit) regardless of facing.
+        if crate::hex::distance(0, 0, dq, dr) <= 1 {
+            return true;
+        }
+        let facing = self.creature_ref().facing;
+        crate::hex::in_fov(facing, dq, dr, config.vis_half_arc)
+    }
+
+    fn require_forward(d: i32) -> Result<(), Error> {
+        if d != 0 {
+            return Err(Error::msg(
+                "only forward (0) is allowed; use rotate to face the target first",
+            ));
+        }
+        Ok(())
+    }
+
+    fn effective_facing(result: &ThinkResult, facing: u8) -> u8 {
+        result.effective_facing(facing)
     }
 }
 
@@ -140,8 +189,18 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
         Ok(caller.data().tick.saturating_sub(born) as i32)
     })?;
 
+    linker.func_wrap("terrarium", "facing", |caller: Caller<'_, HostState>| {
+        let facing = caller.data().creature_ref().facing;
+        Ok(i32::from(HostState::effective_facing(
+            &caller.data().result,
+            facing,
+        )))
+    })?;
+
     linker.func_wrap("terrarium", "sense", |mut caller: Caller<'_, HostState>, dq: i32, dr: i32, ptr: i32| {
-        caller.data_mut().in_vis(dq, dr)?;
+        if !caller.data().can_sense(dq, dr) {
+            return Ok(0_i32);
+        }
         let c = caller.data().creature_ref();
         let x = c.x + dq;
         let y = c.y + dr;
@@ -152,16 +211,18 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
         let mut energy = 0i64;
         let mut health = 0i32;
         let mut max_health = 0i32;
+        let mut orientation = -1i32;
         if let Some(id) = snapshot.id_at.get(&(x, y)) {
             energy = snapshot.energy.get(id).copied().unwrap_or(0);
             health = snapshot.health.get(id).copied().unwrap_or(0);
             max_health = snapshot.max_health.get(id).copied().unwrap_or(0);
+            orientation = snapshot.facing.get(id).copied().unwrap_or(0) as i32;
         } else if let Some(WorldTile::Corpse { energy: e, .. }) = tiles.get(&(x, y)) {
             energy = *e;
-        } else if let Some(WorldTile::EnergyNode { energy: e }) = tiles.get(&(x, y)) {
+        } else if let Some(WorldTile::Food { energy: e }) = tiles.get(&(x, y)) {
             energy = *e;
         }
-        write_sense_struct(&mut caller, ptr, kind, energy, health, max_health)?;
+        write_sense_struct(&mut caller, ptr, kind, energy, health, max_health, orientation)?;
         Ok(1)
     })?;
 
@@ -170,70 +231,102 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
     })?;
 
     linker.func_wrap("terrarium", "move", |mut caller: Caller<'_, HostState>, d: i32| {
-        let dir = HostState::valid_dir(d)?;
+        HostState::require_forward(d)?;
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
         let extra = caller.data().config().move_extra;
         caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.actions.push(PendingAction::Move { dir });
+        caller.data_mut().result.take_action(PendingAction::Move);
         Ok(0_i32)
     })?;
 
     linker.func_wrap("terrarium", "dig", |mut caller: Caller<'_, HostState>, d: i32| {
-        let dir = HostState::valid_dir(d)?;
+        HostState::require_forward(d)?;
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
+        let dir = caller.data().creature_ref().facing;
         let extra = caller.data().config().dig_extra;
         caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.actions.push(PendingAction::Dig { dir });
+        caller.data_mut().result.take_action(PendingAction::Dig { dir });
         Ok(0_i32)
     })?;
 
     linker.func_wrap("terrarium", "place", |mut caller: Caller<'_, HostState>, d: i32| {
-        let dir = HostState::valid_dir(d)?;
+        HostState::require_forward(d)?;
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
+        let dir = caller.data().creature_ref().facing;
         let extra = caller.data().config().place_extra;
         caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.actions.push(PendingAction::Place { dir });
+        caller.data_mut().result.take_action(PendingAction::Place { dir });
         Ok(0_i32)
     })?;
 
     linker.func_wrap("terrarium", "eat", |mut caller: Caller<'_, HostState>, d: i32| {
-        let dir = HostState::valid_dir(d)?;
-        caller.data_mut().result.actions.push(PendingAction::Eat { dir });
+        HostState::require_forward(d)?;
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
+        let dir = caller.data().creature_ref().facing;
+        caller.data_mut().result.take_action(PendingAction::Eat { dir });
         Ok(0_i32)
     })?;
 
     linker.func_wrap("terrarium", "hit", |mut caller: Caller<'_, HostState>, d: i32| {
-        let dir = HostState::valid_dir(d)?;
+        HostState::require_forward(d)?;
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
+        let dir = caller.data().creature_ref().facing;
         let extra = caller.data().config().hit_extra;
         caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.actions.push(PendingAction::Hit { dir });
+        caller.data_mut().result.take_action(PendingAction::Hit { dir });
+        Ok(0_i32)
+    })?;
+
+    linker.func_wrap("terrarium", "rotate", |mut caller: Caller<'_, HostState>, delta: i32| {
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
+        let extra = caller.data().config().rotate_extra;
+        caller.data_mut().pay_action(extra)?;
+        caller.data_mut().result.take_action(PendingAction::Rotate { delta });
         Ok(0_i32)
     })?;
 
     linker.func_wrap("terrarium", "spawn", |mut caller: Caller<'_, HostState>, d: i32, energy: i32| {
-        let dir = HostState::valid_dir(d)?;
+        HostState::require_forward(d)?;
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
+        let dir = caller.data().creature_ref().facing;
         let energy = energy as i64;
         let floor = caller.data().config().corpse_energy;
-        if energy < floor {
+        if energy <= floor {
             mark_dead(caller.data_mut().creature(), DeathReason::SpawnEnergyTooLow);
             return Err(Error::msg("spawn energy"));
         }
-        caller
-            .data_mut()
-            .result
-            .actions
-            .push(PendingAction::Spawn { dir, energy });
+        caller.data_mut().result.take_action(PendingAction::Spawn { dir, energy });
         Ok(0_i32)
     })?;
 
     linker.func_wrap("terrarium", "suicide", |mut caller: Caller<'_, HostState>| {
-        caller.data_mut().result.suicide = true;
+        caller.data_mut().result.take_suicide();
         Ok(())
     })?;
 
     linker.func_wrap("terrarium", "signal_broadcast", |mut caller: Caller<'_, HostState>, byte: i32| {
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
         let (x, y) = {
             let c = caller.data().creature_ref();
             (c.x, c.y)
         };
-        caller.data_mut().result.actions.push(PendingAction::SignalBroadcast {
+        caller.data_mut().result.take_action(PendingAction::SignalBroadcast {
             byte: byte as u8,
             from_x: x,
             from_y: y,
@@ -242,6 +335,9 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
     })?;
 
     linker.func_wrap("terrarium", "signal_to", |mut caller: Caller<'_, HostState>, ptr: i32, byte: i32| {
+        if caller.data().result.tick_busy() {
+            return Ok(0_i32);
+        }
         let id_bytes = read_bytes(&mut caller, ptr, 16)?;
         let to_id = uuid_from_bytes(&id_bytes).ok_or_else(|| Error::msg("bad uuid"))?;
         let snapshot = caller.data().snapshot();
@@ -257,7 +353,7 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
             mark_dead(caller.data_mut().creature(), DeathReason::SignalOutOfRange);
             return Err(Error::msg("out of signal range"));
         }
-        caller.data_mut().result.actions.push(PendingAction::SignalTo {
+        caller.data_mut().result.take_action(PendingAction::SignalTo {
             to_id,
             byte: byte as u8,
             from_x: sx,
@@ -351,6 +447,7 @@ fn write_sense_struct(
     energy: i64,
     health: i32,
     max_health: i32,
+    orientation: i32,
 ) -> Result<(), Error> {
     let memory = caller
         .get_export("memory")
@@ -363,6 +460,7 @@ fn write_sense_struct(
         return Err(Error::msg("oob"));
     }
     data[ptr..ptr + 4].copy_from_slice(&kind.to_le_bytes());
+    data[ptr + 4..ptr + 8].copy_from_slice(&orientation.to_le_bytes());
     data[ptr + 8..ptr + 16].copy_from_slice(&energy.to_le_bytes());
     data[ptr + 16..ptr + 20].copy_from_slice(&health.to_le_bytes());
     data[ptr + 20..ptr + 24].copy_from_slice(&max_health.to_le_bytes());
@@ -423,6 +521,7 @@ fn host_trap_reason(msg: &str) -> DeathReason {
         "energy floor" => DeathReason::EnergyFloor,
         "out of vision" => DeathReason::OutOfVision,
         "bad direction" => DeathReason::BadDirection,
+        "move: only forward" => DeathReason::BadDirection,
         "spawn energy" => DeathReason::SpawnEnergyTooLow,
         "unknown target" => DeathReason::SignalUnknownTarget,
         "out of signal range" => DeathReason::SignalOutOfRange,
@@ -440,6 +539,7 @@ fn trap_death_reason(err: &Error) -> DeathReason {
         "energy floor",
         "out of vision",
         "bad direction",
+        "move: only forward",
         "spawn energy",
         "unknown target",
         "out of signal range",
@@ -569,6 +669,14 @@ pub fn cached_module(engine: &Engine, wasm: &[u8]) -> Option<Module> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn think_result_single_action_slot() {
+        let mut result = ThinkResult::default();
+        assert!(result.take_action(PendingAction::Move));
+        assert!(!result.take_action(PendingAction::Rotate { delta: 1 }));
+        assert_eq!(result.action, Some(PendingAction::Move));
+    }
 
     #[test]
     fn random_byte_seeded_and_in_range() {

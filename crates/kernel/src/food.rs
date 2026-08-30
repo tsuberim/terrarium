@@ -1,6 +1,6 @@
 use crate::energy_ledger::EnergyLedger;
 use crate::sim_config::SimConfig;
-use crate::world_tile::{count_energy_nodes, place_energy_node, WorldTiles};
+use crate::world_tile::{count_food, place_food, WorldTiles};
 
 fn hash_u64(seed: u64) -> u64 {
     let mut h = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -51,40 +51,40 @@ fn cell_open(tiles: &WorldTiles, occupied: &[(i32, i32)], q: i32, r: i32) -> boo
     !occupied.iter().any(|&(x, y)| x == q && y == r)
 }
 
-/// Try to place energy nodes using remaining free-mint budget.
-pub fn try_spawn_nodes(
+/// Try to place food tiles using remaining free-mint budget.
+pub fn try_spawn_food(
     ledger: &mut EnergyLedger,
     tiles: &mut WorldTiles,
     occupied: &[(i32, i32)],
     tick: u64,
     config: &SimConfig,
 ) -> u32 {
-    if tick % config.node_spawn_interval != 0 {
+    if tick % config.food_spawn_interval != 0 {
         return 0;
     }
     if ledger.free_budget() <= 0 {
         return 0;
     }
-    if count_energy_nodes(tiles) >= config.max_active_nodes {
+    if count_food(tiles) >= config.max_active_food {
         return 0;
     }
 
     let mut spawned = 0u32;
 
-    for attempt in 0..config.node_spawn_attempts {
+    for attempt in 0..config.food_spawn_attempts {
         if ledger.free_budget() <= 0 {
             break;
         }
-        if count_energy_nodes(tiles) >= config.max_active_nodes {
+        if count_food(tiles) >= config.max_active_food {
             break;
         }
-        let (q, r) = pick_spawn_cell(tick, attempt, &occupied, config.node_spawn_radius);
-        if !cell_open(tiles, &occupied, q, r) {
+        let (q, r) = pick_spawn_cell(tick, attempt, occupied, config.food_spawn_radius);
+        if !cell_open(tiles, occupied, q, r) {
             continue;
         }
-        let grant = ledger.try_mint_free(config.node_nominal_energy);
+        let grant = ledger.try_mint_free(config.food_nominal_energy);
         if grant > 0 {
-            place_energy_node(tiles, q, r, grant);
+            place_food(tiles, q, r, grant);
             spawned += 1;
         }
     }

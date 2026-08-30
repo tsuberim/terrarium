@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use terrarium_kernel::{
-    compile_wat, energy_nodes, run_tick, vm::Creature, DeathReason, EnergyLedger, SimConfig,
+    compile_wat, food, run_tick, vm::Creature, DeathReason, EnergyLedger, SimConfig,
     WorldEvent, WorldTile, WorldTiles, EXAMPLE_PROGRAMS, TICK_HZ,
 };
 use tokio::sync::broadcast;
@@ -48,6 +48,8 @@ pub struct CreaturePublic {
     pub health: i32,
     pub max_health: i32,
     pub owner_uid: String,
+    /// Body facing 0–5 (E, NE, NW, W, SW, SE).
+    pub facing: u8,
     /// WASM digest — same program shares the same hash.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_hash: Option<String>,
@@ -74,21 +76,24 @@ pub struct EnergyLedgerPublic {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorldMessage {
-    Snapshot {
-        tick: u64,
-        deploy_cost: i64,
-        corpse_energy: i64,
-        sim_config: SimConfig,
-        energy_ledger: EnergyLedgerPublic,
-        creatures: Vec<CreaturePublic>,
-        tiles: Vec<TilePublic>,
-    },
     Delta {
         tick: u64,
+        /// Full state sync (connect / lag recovery): all entities as upserts, meta populated.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        full: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        deploy_cost: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        corpse_energy: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sim_config: Option<SimConfig>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        energy_ledger: Option<EnergyLedgerPublic>,
         creatures_upsert: Vec<CreaturePublic>,
         creatures_remove: Vec<String>,
         tiles_upsert: Vec<TilePublic>,
         tiles_remove: Vec<[i64; 2]>,
+        actions: Vec<terrarium_kernel::CreatureAction>,
         events: Vec<WorldEvent>,
     },
 }
@@ -187,16 +192,32 @@ impl WorldEngine {
             .collect()
     }
 
-    pub fn snapshot(&self) -> WorldMessage {
+    pub fn world_http(&self) -> (i64, i64, Vec<CreaturePublic>, Vec<TilePublic>) {
         let state = self.inner.read();
-        WorldMessage::Snapshot {
+        (
+            self.deploy_cost,
+            self.sim_config.read().corpse_energy,
+            state.creatures.iter().map(creature_public).collect(),
+            tiles_public(&state.tiles),
+        )
+    }
+
+    pub fn full_delta(&self) -> WorldMessage {
+        let state = self.inner.read();
+        let config = self.sim_config.read().clone();
+        WorldMessage::Delta {
             tick: state.tick,
-            deploy_cost: self.deploy_cost,
-            corpse_energy: self.sim_config.read().corpse_energy,
-            sim_config: self.sim_config.read().clone(),
-            energy_ledger: ledger_public(&state.ledger),
-            creatures: state.creatures.iter().map(creature_public).collect(),
-            tiles: tiles_public(&state.tiles),
+            full: true,
+            deploy_cost: Some(self.deploy_cost),
+            corpse_energy: Some(config.corpse_energy),
+            sim_config: Some(config),
+            energy_ledger: Some(ledger_public(&state.ledger)),
+            creatures_upsert: state.creatures.iter().map(creature_public).collect(),
+            creatures_remove: vec![],
+            tiles_upsert: tiles_public(&state.tiles),
+            tiles_remove: vec![],
+            actions: vec![],
+            events: vec![],
         }
     }
 
@@ -228,7 +249,7 @@ impl WorldEngine {
         state.tiles.clear();
         state.ledger = EnergyLedger::default();
         drop(state);
-        let _ = self.events.send(self.snapshot());
+        let _ = self.events.send(self.full_delta());
         Ok(())
     }
 
@@ -238,10 +259,16 @@ impl WorldEngine {
         state.creatures.push(creature);
         let msg = WorldMessage::Delta {
             tick: state.tick,
+            full: false,
+            deploy_cost: None,
+            corpse_energy: None,
+            sim_config: None,
+            energy_ledger: None,
             creatures_upsert: vec![public],
             creatures_remove: vec![],
             tiles_upsert: vec![],
             tiles_remove: vec![],
+            actions: vec![],
             events: vec![],
         };
         drop(state);
@@ -253,10 +280,15 @@ impl WorldEngine {
         let mut state = self.inner.write();
         let tick = state.tick + 1;
 
-        let before: HashMap<String, (i32, i32, i64, i32, i32)> = state
+        let before: HashMap<String, (i32, i32, i64, i32, i32, u8)> = state
             .creatures
             .iter()
-            .map(|c| (c.id.clone(), (c.x, c.y, c.energy, c.health, c.max_health)))
+            .map(|c| {
+                (
+                    c.id.clone(),
+                    (c.x, c.y, c.energy, c.health, c.max_health, c.facing),
+                )
+            })
             .collect();
         let before_tiles = state.tiles.clone();
 
@@ -271,8 +303,9 @@ impl WorldEngine {
         state.tick = tick;
 
         let mut message = build_delta(tick, &before, &state.creatures, &before_tiles, &state.tiles);
-        if let WorldMessage::Delta { events, .. } = &mut message {
+        if let WorldMessage::Delta { events, actions, .. } = &mut message {
             *events = tick_result.events;
+            *actions = tick_result.actions;
         }
         let persist = if tick % self.persist_every == 0 {
             Some(PersistSnapshot {
@@ -295,7 +328,7 @@ impl WorldEngine {
 
 fn build_delta(
     tick: u64,
-    before: &HashMap<String, (i32, i32, i64, i32, i32)>,
+    before: &HashMap<String, (i32, i32, i64, i32, i32, u8)>,
     after: &[Creature],
     before_tiles: &WorldTiles,
     after_tiles: &WorldTiles,
@@ -313,8 +346,13 @@ fn build_delta(
     for c in after {
         let changed = before
             .get(&c.id)
-            .map(|(x, y, e, h, mh)| {
-                *x != c.x || *y != c.y || *e != c.energy || *h != c.health || *mh != c.max_health
+            .map(|(x, y, e, h, mh, f)| {
+                *x != c.x
+                    || *y != c.y
+                    || *e != c.energy
+                    || *h != c.health
+                    || *mh != c.max_health
+                    || *f != c.facing
             })
             .unwrap_or(true);
         if changed {
@@ -338,10 +376,16 @@ fn build_delta(
 
     WorldMessage::Delta {
         tick,
+        full: false,
+        deploy_cost: None,
+        corpse_energy: None,
+        sim_config: None,
+        energy_ledger: None,
         creatures_upsert,
         creatures_remove,
         tiles_upsert,
         tiles_remove,
+        actions: vec![],
         events: vec![],
     }
 }
@@ -361,6 +405,7 @@ fn creature_public(c: &Creature) -> CreaturePublic {
         health: c.health,
         max_health: c.max_health,
         owner_uid: c.owner_uid.clone(),
+        facing: c.facing,
         program_hash: Some(program_hash(&c.wasm)),
     }
 }
@@ -384,7 +429,7 @@ fn tile_public(pos: (i32, i32), tile: WorldTile) -> TilePublic {
             energy: Some(energy),
             death_reason: Some(death_reason),
         },
-        WorldTile::EnergyNode { energy } => TilePublic {
+        WorldTile::Food { energy } => TilePublic {
             x: pos.0 as i64,
             y: pos.1 as i64,
             kind: 4,
@@ -419,8 +464,8 @@ const IDLE_WAT: &str = r#"
 "#;
 
 async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
-    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, i64, i64, Option<Vec<u8>>, String, i64)>(
-        "SELECT id, owner_uid, x, y, energy, health, max_health, bytecode, code, born_tick FROM creatures ORDER BY id",
+    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, i64, i64, Option<Vec<u8>>, String, i64, i64)>(
+        "SELECT id, owner_uid, x, y, energy, health, max_health, bytecode, code, born_tick, facing FROM creatures ORDER BY id",
     )
     .fetch_all(db)
     .await?;
@@ -428,7 +473,8 @@ async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
     let idle = compile_wat(IDLE_WAT)?;
 
     rows.into_iter()
-        .map(|(id, owner_uid, x, y, energy, health, max_health, wasm_blob, code, born_tick)| {
+        .map(
+            |(id, owner_uid, x, y, energy, health, max_health, wasm_blob, code, born_tick, facing)| {
             let wasm = match wasm_blob.filter(|b| !b.is_empty()) {
                 Some(b) => b,
                 None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
@@ -448,8 +494,10 @@ async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
                 inbox: vec![],
                 death_reason: None,
                 born_tick: born_tick.max(0) as u64,
+                facing: (facing as u8).min(5),
             })
-        })
+        },
+        )
         .collect()
 }
 
@@ -504,8 +552,8 @@ async fn seed_ecosystem(
         let code = example.code.to_string();
 
         sqlx::query(
-            "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, born_tick, pc, stack)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, x'')",
+            "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, born_tick, facing, pc, stack)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, x'')",
         )
         .bind(spec.id)
         .bind(SEED_OWNER)
@@ -534,16 +582,17 @@ async fn seed_ecosystem(
             inbox: vec![],
             death_reason: None,
             born_tick: 0,
+            facing: 0,
         });
     }
 
     let occupied: Vec<(i32, i32)> = creatures.iter().map(|c| (c.x, c.y)).collect();
-    for tick in (0..sim_config.node_spawn_interval * 4).step_by(sim_config.node_spawn_interval as usize) {
-        energy_nodes::try_spawn_nodes(ledger, tiles, &occupied, tick, sim_config);
+    for tick in (0..sim_config.food_spawn_interval * 4).step_by(sim_config.food_spawn_interval as usize) {
+        food::try_spawn_food(ledger, tiles, &occupied, tick, sim_config);
     }
 
     for ((x, y), tile) in tiles.iter() {
-        if let WorldTile::EnergyNode { energy } = tile {
+        if let WorldTile::Food { energy } = tile {
             sqlx::query(
                 "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)
                  ON CONFLICT(x, y) DO UPDATE SET kind = excluded.kind, energy = excluded.energy, death_reason = excluded.death_reason",
@@ -590,7 +639,7 @@ async fn load_tiles(db: &SqlitePool) -> anyhow::Result<WorldTiles> {
                             .and_then(DeathReason::parse)
                             .unwrap_or(DeathReason::WasmTrap),
                     },
-                    4 => WorldTile::EnergyNode {
+                    4 => WorldTile::Food {
                         energy: energy.unwrap_or(0),
                     },
                     _ => return None,
@@ -634,13 +683,14 @@ pub async fn persist_world(
 
     for creature in creatures {
         sqlx::query(
-            "UPDATE creatures SET x = ?, y = ?, energy = ?, health = ?, max_health = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
+            "UPDATE creatures SET x = ?, y = ?, energy = ?, health = ?, max_health = ?, facing = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
         )
         .bind(creature.x as i64)
         .bind(creature.y as i64)
         .bind(creature.energy)
         .bind(creature.health as i64)
         .bind(creature.max_health as i64)
+        .bind(creature.facing as i64)
         .bind(&creature.wasm)
         .bind(creature.born_tick as i64)
         .bind(&creature.id)
@@ -672,7 +722,7 @@ pub async fn persist_world(
                 .execute(&mut *tx)
                 .await?;
             }
-            WorldTile::EnergyNode { energy } => {
+            WorldTile::Food { energy } => {
                 sqlx::query(
                     "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)",
                 )
@@ -843,6 +893,7 @@ mod tests {
                 inbox: vec![],
                 death_reason: None,
                 born_tick: 0,
+                facing: 0,
             })
             .unwrap();
     }
@@ -866,10 +917,13 @@ mod tests {
 
         engine.tick_step();
 
-        let WorldMessage::Snapshot { creatures, .. } = engine.snapshot() else {
-            panic!("expected snapshot");
+        let WorldMessage::Delta {
+            creatures_upsert, ..
+        } = engine.full_delta()
+        else {
+            panic!("expected delta");
         };
-        let c = creatures
+        let c = creatures_upsert
             .iter()
             .find(|c| c.id == "a")
             .expect("creature a");
