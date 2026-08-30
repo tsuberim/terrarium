@@ -8,6 +8,8 @@ Creatures are **WebAssembly modules** written in WAT. The server compiles WAT to
 - Export `(func "tick")` — called once per sim tick
 - Export `(memory "memory")` if using `recv`, `signal_to`, or `sense` (needs scratch bytes at ptr)
 
+**One action per tick.** Each creature gets a single `action` slot per tick — at most one of: `move`, `rotate`, `eat`, `hit`, `dig`, `place`, `spawn`, `signal_broadcast`, `signal_to`, or `suicide`. There is no action queue; further calls are no-ops (return `0`). Sensing, `sleep`, and reads are unlimited.
+
 ## Host syscalls
 
 | Import | Signature | Effect |
@@ -16,12 +18,14 @@ Creatures are **WebAssembly modules** written in WAT. The server compiles WAT to
 | `energy` | `() -> i64` | Current energy |
 | `health` | `() -> i64` | Current health |
 | `pos_x` / `pos_y` | `() -> i32` | Axial q/r position |
-| `sense` | `(i32 dq, i32 dr, i32 ptr) -> i32` | Write cell snapshot at `ptr`; returns 1 |
-| `move` | `(i32 dir) -> i32` | Queue move (dirs: E=0 NE=1 NW=2 W=3 SW=4 SE=5) |
-| `dig` / `place` | `(i32 dir) -> i32` | Queue action |
-| `eat` | `(i32 dir) -> i32` | Consume adjacent corpse or energy node |
-| `hit` | `(i32 dir) -> i32` | Damage adjacent live creature (costs energy) |
-| `spawn` | `(i32 dir, i32 energy) -> i32` | Bud clone |
+| `facing` | `() -> i32` | Body facing 0–5 (E, NE, NW, W, SW, SE) |
+| `rotate` | `(i32 delta) -> i32` | Turn by `delta` hex steps (clockwise = +1); facing updates end of tick |
+| `sense` | `(i32 dq, i32 dr, i32 ptr) -> i32` | Write cell snapshot at `ptr`; returns 1 if in FOV, else 0 |
+| `move` | `(i32 rel) -> i32` | Step **forward** onto an empty cell only (`rel=0`); blocked by solid, food, corpse, or creatures |
+| `dig` / `place` | `(i32 rel) -> i32` | Act on **forward** adjacent cell only (`rel=0`) |
+| `eat` | `(i32 rel) -> i32` | Eat corpse or food on **forward** cell only (`rel=0`) |
+| `hit` | `(i32 rel) -> i32` | Hit creature on **forward** cell only (`rel=0`; costs energy) |
+| `spawn` | `(i32 rel, i32 energy) -> i32` | Bud clone on **forward** empty cell only (`rel=0`) |
 | `suicide` | `() -> ()` | Die, credit owner |
 | `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
 | `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal (16-byte UUID at ptr) |
@@ -31,14 +35,15 @@ Creatures are **WebAssembly modules** written in WAT. The server compiles WAT to
 
 ## Tile kinds (`sense` struct field `kind`)
 
-`empty=0`, `solid=1`, `creature=2`, `corpse=3`, `node=4`
+`empty=0`, `solid=1`, `creature=2`, `corpse=3`, `food=4`
 
 ## Sense struct (little-endian, 24 bytes)
 
 | Offset | Field |
 |--------|-------|
 | 0 | kind (i32) |
-| 8 | energy (i64) — creature, corpse, or node energy in raw units (÷ 100 000 = **glims**, ◆) |
+| 4 | orientation (i32) — creature facing 0–5 when kind=creature, else −1 |
+| 8 | energy (i64) — creature, corpse, or food energy in raw units (÷ 100 000 = **glims**, ◆) |
 | 16 | health (i32) — live creature only |
 | 20 | max_health (i32) — live creature only |
 

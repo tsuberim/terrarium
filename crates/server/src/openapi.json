@@ -60,7 +60,7 @@
         "properties": {
           "x": { "type": "integer" },
           "y": { "type": "integer" },
-          "kind": { "type": "integer", "description": "1=solid, 3=corpse, 4=energy node" },
+          "kind": { "type": "integer", "description": "1=solid, 3=corpse, 4=food" },
           "energy": { "type": "integer", "format": "int64" },
           "death_reason": { "type": "string" }
         }
@@ -171,7 +171,7 @@
       "get": {
         "tags": ["world", "public"],
         "summary": "World WebSocket",
-        "description": "Real-time deltas. Upgrade to WebSocket; messages are JSON snapshots and deltas.",
+        "description": "Real-time deltas. Upgrade to WebSocket; messages are JSON deltas (`full: true` on connect/resync).",
         "responses": {
           "101": { "description": "Switching Protocols" }
         }

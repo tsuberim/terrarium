@@ -17,7 +17,7 @@ Every energy change is exactly one of:
 | **Import** | Outside → sim | No | Deploy (credits → creature), dev faucet → credits |
 | **Transfer** | Pool → pool | No | Spawn (parent → child), eat corpse, suicide payout to creature |
 | **Destroy** | Sim → void | — (feeds budget) | Opcode gas, action extras, health-regen cost, death leak |
-| **Free mint** | Void → sim | **Yes** | Terrain energy nodes, future ambient pickups |
+| **Free mint** | Void → sim | **Yes** | Terrain food, future ambient pickups |
 
 Imports are paid (or dev tooling) and intentionally increase total in-world energy. Transfers conserve total. Destruction decreases total and **credits the free-mint allowance**. Free mint increases total but only within the allowance.
 
@@ -57,11 +57,11 @@ Monotonic counter `energy_free_minted`. Increment when energy appears from nothi
 
 | Source | Notes |
 |--------|-------|
-| **Energy nodes** (terrain) | Primary v1 free source; see below |
+| **Food** (terrain) | Primary v1 free source; see below |
 | Admin / cheat spawn | Dev only; still goes through gate in prod builds |
 | Future: radiation, sun, etc. | Same gate |
 
-**Not free mint:** deploy, spawn, eat (corpse or node — node mint happens at node **creation** or **regen**, not at eat).
+**Not free mint:** deploy, spawn, eat (corpse or food — food mint happens at food **creation** or **regen**, not at eat).
 
 ---
 
@@ -129,26 +129,26 @@ Server applies `TickEnergyAccounting` to the persisted ledger after each tick.
 
 ---
 
-## Energy nodes (first free source)
+## Food (first free source)
 
-Procedural terrain exposes **energy nodes** — edible tiles that grant energy on `eat`.
+Procedural terrain exposes **food** tiles — edible cells that grant energy on `eat`.
 
-**Mint timing (recommended):** energy is reserved from the budget when the node is **placed or refilled**, not when eaten. Eating only transfers node → creature (transfer class).
+**Mint timing (recommended):** energy is reserved from the budget when food is **placed or refilled**, not when eaten. Eating only transfers food → creature (transfer class).
 
 ```
-spawn node at (q,r) with nominal value V
+spawn food at (q,r) with nominal value V
   grant = ledger.try_mint_free(V)
   tile.energy = grant          // may be 0 if budget exhausted
 ```
 
-Scavengers/predators compete for nodes; when budget is dry, new nodes appear empty until more action costs accumulate.
+Scavengers/predators compete for food; when budget is dry, new food appears empty until more action costs accumulate.
 
-**Node lifecycle (sketch):**
+**Food lifecycle (sketch):**
 
-1. Map generator scores cells (noise); top fraction become node **sites**.
-2. On world init or chunk wake, sites try to fill from budget up to `NODE_CAP` per cell.
+1. Map generator scores cells (noise); top fraction become food **sites**.
+2. On world init or chunk wake, sites try to fill from budget up to `FOOD_CAP` per cell.
 3. Optional slow regen: each regen tick calls `try_mint_free` for a small drip.
-4. `eat` on node: transfer `tile.energy` to creature, clear or reduce node.
+4. `eat` on food: transfer `tile.energy` to creature, clear or reduce food.
 
 ---
 
@@ -158,8 +158,8 @@ When `try_mint_free` returns less than requested:
 
 | Context | Behavior |
 |---------|----------|
-| Node placement | Create node with `energy = grant` (partial or empty) |
-| Node regen | Skip or partial fill |
+| Food placement | Create food with `energy = grant` (partial or empty) |
+| Food regen | Skip or partial fill |
 | Admin spawn | Return error / partial to caller |
 
 Never silently grant over budget. Partial grants are fine for terrain; API paths should surface errors.
@@ -190,10 +190,10 @@ Dev panel: sparkline of destroy rate vs free-mint rate; budget remaining.
 |-------|------|
 | **1 — Ledger** | `EnergyLedger` in kernel; `record_destroy` on existing sinks; persist columns; WS field |
 | **2 — Tick accounting** | `TickEnergyAccounting` in `TickResult`; tests for 2:1 cap |
-| **3 — Nodes** | Terrain kind `energy_node`; procedural sites; eat transfers; mint at fill |
-| **4 — Balance pass** | Tune node density, nominal value, regen vs typical destroy rate |
+| **3 — Food** | Terrain kind `food`; procedural sites; eat transfers; mint at fill |
+| **4 — Balance pass** | Tune food density, nominal value, regen vs typical destroy rate |
 
-Phase 1 can ship without nodes; the world simply accrues budget while free sources are empty.
+Phase 1 can ship without food; the world simply accrues budget while free sources are empty.
 
 ---
 

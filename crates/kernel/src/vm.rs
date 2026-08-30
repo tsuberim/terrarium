@@ -8,7 +8,7 @@ use crate::abi::tile;
 use crate::hex;
 use crate::abi::corpse_yield_energy;
 use crate::energy_ledger::EnergyLedger;
-use crate::energy_nodes::try_spawn_nodes;
+use crate::food::try_spawn_food;
 use crate::events::{DeathReason, TickResult, WorldEvent};
 use crate::host::{self, PendingAction, ThinkResult};
 use crate::sim_config::SimConfig;
@@ -40,6 +40,8 @@ pub struct Creature {
     pub death_reason: Option<DeathReason>,
     /// Sim tick when the creature was deployed or spawned.
     pub born_tick: u64,
+    /// Body facing 0–5 (E, NE, NW, W, SW, SE). Visible to other creatures via sense.
+    pub facing: u8,
 }
 
 pub(crate) fn mark_dead(creature: &mut Creature, reason: DeathReason) {
@@ -56,6 +58,10 @@ fn death_event(creature: &Creature) -> WorldEvent {
         x: creature.x,
         y: creature.y,
         reason: creature.death_reason.unwrap_or(DeathReason::WasmTrap),
+        facing: creature.facing,
+        energy: creature.energy,
+        health: creature.health,
+        max_health: creature.max_health,
     }
 }
 
@@ -66,6 +72,7 @@ pub struct Snapshot {
     pub energy: HashMap<String, i64>,
     pub health: HashMap<String, i32>,
     pub max_health: HashMap<String, i32>,
+    pub facing: HashMap<String, u8>,
 }
 
 pub fn run_tick(
@@ -105,7 +112,7 @@ pub fn run_tick(
     }
 
     for (i, think) in &pending {
-        if think.suicide || !think.actions.is_empty() {
+        if think.suicide || think.action.is_some() {
             continue;
         }
         let c = &mut creatures[*i];
@@ -123,12 +130,23 @@ pub fn run_tick(
 
     let mut move_targets: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (i, think) in &pending {
-        for action in &think.actions {
-            if let PendingAction::Move { dir } = action {
-                let c = &creatures[*i];
-                if let Some((nx, ny)) = hex::neighbor(c.x, c.y, *dir) {
-                    move_targets.entry((nx, ny)).or_default().push(*i);
+        let c = &creatures[*i];
+        let mut x = c.x;
+        let mut y = c.y;
+        let mut facing = c.facing;
+        if let Some(action) = &think.action {
+            match action {
+                PendingAction::Rotate { delta } => {
+                    facing = (facing as i32 + *delta).rem_euclid(6) as u8;
                 }
+                PendingAction::Move => {
+                    if let Some((nx, ny)) = hex::neighbor(x, y, facing) {
+                        move_targets.entry((nx, ny)).or_default().push(*i);
+                        x = nx;
+                        y = ny;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -167,16 +185,34 @@ pub fn run_tick(
             continue;
         }
 
-        for action in think.actions {
+        if let Some(action) = think.action {
             match action {
-                PendingAction::Move { dir } => {
+                PendingAction::Move => {
                     if *blocked_moves.get(&i).unwrap_or(&false) {
                         continue;
                     }
+                    let dir = c.facing;
                     if let Some((nx, ny)) = hex::neighbor(c.x, c.y, dir) {
+                        result.actions.push(crate::events::CreatureAction::Move {
+                            creature_id: c.id.clone(),
+                            from_x: c.x,
+                            from_y: c.y,
+                            to_x: nx,
+                            to_y: ny,
+                        });
                         c.x = nx;
                         c.y = ny;
                     }
+                }
+                PendingAction::Rotate { delta } => {
+                    let from_facing = c.facing;
+                    let to_facing = (c.facing as i32 + delta).rem_euclid(6) as u8;
+                    result.actions.push(crate::events::CreatureAction::Rotate {
+                        creature_id: c.id.clone(),
+                        from_facing,
+                        to_facing,
+                    });
+                    c.facing = to_facing;
                 }
                 PendingAction::Dig { dir } => {
                     if let Some((x, y)) = hex::neighbor(c.x, c.y, dir) {
@@ -213,21 +249,33 @@ pub fn run_tick(
             Some(WorldTile::Corpse { energy, .. }) => {
                 tiles.remove(&(x, y));
                 creatures[i].energy += energy;
+                result.actions.push(crate::events::CreatureAction::Eat {
+                    creature_id: creatures[i].id.clone(),
+                    x,
+                    y,
+                });
                 result.events.push(WorldEvent::Eat {
                     actor_id: creatures[i].id.clone(),
                     x,
                     y,
                     energy,
+                    tile_kind: crate::abi::tile::CORPSE,
                 });
             }
-            Some(WorldTile::EnergyNode { energy }) if energy > 0 => {
+            Some(WorldTile::Food { energy }) if energy > 0 => {
                 tiles.remove(&(x, y));
                 creatures[i].energy += energy;
+                result.actions.push(crate::events::CreatureAction::Eat {
+                    creature_id: creatures[i].id.clone(),
+                    x,
+                    y,
+                });
                 result.events.push(WorldEvent::Eat {
                     actor_id: creatures[i].id.clone(),
                     x,
                     y,
                     energy,
+                    tile_kind: crate::abi::tile::FOOD,
                 });
             }
             _ => {}
@@ -253,6 +301,11 @@ pub fn run_tick(
         creatures[victim_idx].health -= config.hit_damage;
         let victim_health = creatures[victim_idx].health;
         let victim_id = creatures[victim_idx].id.clone();
+        result.actions.push(crate::events::CreatureAction::Hit {
+            creature_id: creatures[i].id.clone(),
+            x,
+            y,
+        });
         result.events.push(WorldEvent::Hit {
             actor_id: creatures[i].id.clone(),
             victim_id,
@@ -274,17 +327,17 @@ pub fn run_tick(
         let px = creatures[i].x;
         let py = creatures[i].y;
         let Some((x, y)) = hex::neighbor(px, py, dir) else {
-            mark_dead(&mut creatures[i], DeathReason::SpawnFailed);
             continue;
         };
         if snapshot.id_at.contains_key(&(x, y))
             || blocks_movement(tiles, x, y)
             || sense_kind(tiles, x, y, false) != tile::EMPTY
         {
-            mark_dead(&mut creatures[i], DeathReason::SpawnFailed);
             continue;
         }
         let parent_id = creatures[i].id.clone();
+        let parent_x = creatures[i].x;
+        let parent_y = creatures[i].y;
         let owner_uid = creatures[i].owner_uid.clone();
         let wasm = creatures[i].wasm.clone();
         let code = creatures[i].code.clone();
@@ -297,6 +350,8 @@ pub fn run_tick(
         result.events.push(WorldEvent::Spawn {
             creature_id: child_id.clone(),
             parent_id: parent_id.clone(),
+            parent_x,
+            parent_y,
             x,
             y,
         });
@@ -315,6 +370,7 @@ pub fn run_tick(
             inbox: vec![],
             death_reason: None,
             born_tick: tick,
+            facing: creatures[i].facing,
         });
     }
 
@@ -466,7 +522,7 @@ pub fn run_tick(
         place_corpse(tiles, x, y, energy, reason);
     }
 
-    try_spawn_nodes(
+    try_spawn_food(
         ledger,
         tiles,
         &creatures.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>(),
@@ -485,12 +541,14 @@ fn build_snapshot(creatures: &[Creature]) -> Snapshot {
     let mut energy = HashMap::new();
     let mut health = HashMap::new();
     let mut max_health = HashMap::new();
+    let mut facing = HashMap::new();
     for c in creatures.iter().filter(|c| c.alive) {
         positions.insert(c.id.clone(), (c.x, c.y));
         id_at.insert((c.x, c.y), c.id.clone());
         energy.insert(c.id.clone(), c.energy);
         health.insert(c.id.clone(), c.health);
         max_health.insert(c.id.clone(), c.max_health);
+        facing.insert(c.id.clone(), c.facing);
     }
     Snapshot {
         positions,
@@ -498,6 +556,7 @@ fn build_snapshot(creatures: &[Creature]) -> Snapshot {
         energy,
         health,
         max_health,
+        facing,
     }
 }
 
@@ -587,11 +646,89 @@ mod tests {
             inbox: vec![],
             death_reason: None,
             born_tick: 0,
+            facing: 0,
         }];
         let mut tiles = WorldTiles::new();
         let mut ledger = EnergyLedger::default();
         let config = SimConfig::default();
         run_tick(&mut creatures, &mut tiles, &mut ledger, &config, 1);
         assert_eq!(creatures[0].x, 1);
+        assert_eq!(creatures[0].facing, 0);
+    }
+
+    #[test]
+    fn move_forward_is_relative_to_facing() {
+        const CODE: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 0
+    call $move
+    drop
+    call $sleep)
+)
+"#;
+        let mut creatures = vec![Creature {
+            id: "a".into(),
+            x: 0,
+            y: 0,
+            energy: 1_000_000_000,
+            health: 100,
+            max_health: 100,
+            owner_uid: "u".into(),
+            parent_id: None,
+            wasm: compile_wat(CODE).unwrap(),
+            code: CODE.into(),
+            alive: true,
+            inbox: vec![],
+            death_reason: None,
+            born_tick: 0,
+            facing: 2,
+        }];
+        let mut tiles = WorldTiles::new();
+        let mut ledger = EnergyLedger::default();
+        let config = SimConfig::default();
+        run_tick(&mut creatures, &mut tiles, &mut ledger, &config, 1);
+        assert_eq!(creatures[0].x, 0);
+        assert_eq!(creatures[0].y, -1);
+        assert_eq!(creatures[0].facing, 2);
+    }
+
+    #[test]
+    fn move_non_forward_traps() {
+        const CODE: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (func (export "tick")
+    i32.const 1
+    call $move
+    drop
+    call $sleep)
+)
+"#;
+        let mut creatures = vec![Creature {
+            id: "a".into(),
+            x: 0,
+            y: 0,
+            energy: 1_000_000_000,
+            health: 100,
+            max_health: 100,
+            owner_uid: "u".into(),
+            parent_id: None,
+            wasm: compile_wat(CODE).unwrap(),
+            code: CODE.into(),
+            alive: true,
+            inbox: vec![],
+            death_reason: None,
+            born_tick: 0,
+            facing: 0,
+        }];
+        let mut tiles = WorldTiles::new();
+        let mut ledger = EnergyLedger::default();
+        let config = SimConfig::default();
+        run_tick(&mut creatures, &mut tiles, &mut ledger, &config, 1);
+        assert!(creatures.is_empty());
     }
 }

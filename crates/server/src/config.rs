@@ -24,7 +24,9 @@ impl Config {
 
         Ok(Self {
             listen_addr,
-            database_url: env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:data/terrarium.db".into()),
+            database_url: normalize_sqlite_url(
+                &env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://data/terrarium.db?mode=rwc".into()),
+            ),
             firebase_project_id,
             faucet_enabled: env_bool("FAUCET_ENABLED", true),
             faucet_max: env::var("FAUCET_MAX")
@@ -45,6 +47,28 @@ fn env_bool(name: &str, default: bool) -> bool {
         .ok()
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(default)
+}
+
+/// sqlx requires `sqlite://` (not bare `sqlite:`) and `mode=rwc` for file creation.
+fn normalize_sqlite_url(url: &str) -> String {
+    if url.contains(":memory:") {
+        return url.to_string();
+    }
+    let mut out = if url.starts_with("sqlite://") {
+        url.to_string()
+    } else if let Some(rest) = url.strip_prefix("sqlite:") {
+        format!("sqlite://{rest}")
+    } else {
+        url.to_string()
+    };
+    if out.contains('?') {
+        if !out.contains("mode=") {
+            out.push_str("&mode=rwc");
+        }
+    } else {
+        out.push_str("?mode=rwc");
+    }
+    out
 }
 
 pub fn ensure_parent_dir(database_url: &str) -> anyhow::Result<()> {
@@ -69,6 +93,14 @@ pub fn ensure_parent_dir(database_url: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_sqlite_url_fixes_legacy_prefix() {
+        assert_eq!(
+            normalize_sqlite_url("sqlite:data/terrarium.db"),
+            "sqlite://data/terrarium.db?mode=rwc"
+        );
+    }
 
     #[test]
     fn ensure_parent_dir_strips_sqlite_query() {

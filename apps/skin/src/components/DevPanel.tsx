@@ -17,6 +17,8 @@ const DEFAULTS: SimConfig = {
   dig_extra: 25_000,
   place_extra: 25_000,
   hit_extra: 25_000,
+  rotate_extra: 25_000,
+  vis_half_arc: 1,
   signal_inbox_cap: 8,
   max_health: 100,
   hit_damage: 34,
@@ -79,6 +81,17 @@ export function DevPanel({ config, onConfigChange }: Props) {
                 max={12}
                 value={local.r_vis}
                 onChange={(e) => setLocal({ ...local, r_vis: Number(e.target.value) })}
+                className="w-14 rounded border border-white/[0.08] bg-black/30 px-1 py-0.5 text-right font-mono text-white/70"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-2 text-white/40">
+              Vis half-arc
+              <input
+                type="number"
+                min={0}
+                max={3}
+                value={local.vis_half_arc}
+                onChange={(e) => setLocal({ ...local, vis_half_arc: Number(e.target.value) })}
                 className="w-14 rounded border border-white/[0.08] bg-black/30 px-1 py-0.5 text-right font-mono text-white/70"
               />
             </label>

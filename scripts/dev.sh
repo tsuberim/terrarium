@@ -8,7 +8,8 @@ cd "$(dirname "$0")/.."
 command -v cargo-watch >/dev/null || { echo "Run ./scripts/setup-dev.sh first"; exit 1; }
 
 export LISTEN_ADDR="${LISTEN_ADDR:-0.0.0.0:8080}"
-export DATABASE_URL="${DATABASE_URL:-sqlite:data/terrarium.db}"
+export DATABASE_URL="${DATABASE_URL:-sqlite://data/terrarium.db?mode=rwc}"
+export CARGO_TARGET_DIR="$PWD/target"
 export FAUCET_ENABLED="${FAUCET_ENABLED:-true}"
 export DEV_MODE="${DEV_MODE:-true}"
 

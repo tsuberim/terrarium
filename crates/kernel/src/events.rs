@@ -84,10 +84,17 @@ pub enum WorldEvent {
         x: i32,
         y: i32,
         reason: DeathReason,
+        /// Render snapshot — client draws death FX without inferring from prior state.
+        facing: u8,
+        energy: i64,
+        health: i32,
+        max_health: i32,
     },
     Spawn {
         creature_id: String,
         parent_id: String,
+        parent_x: i32,
+        parent_y: i32,
         x: i32,
         y: i32,
     },
@@ -104,12 +111,42 @@ pub enum WorldEvent {
         x: i32,
         y: i32,
         energy: i64,
+        /// `tile::CORPSE` (3) or `tile::FOOD` (4).
+        tile_kind: i32,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CreatureAction {
+    Move {
+        creature_id: String,
+        from_x: i32,
+        from_y: i32,
+        to_x: i32,
+        to_y: i32,
+    },
+    Rotate {
+        creature_id: String,
+        from_facing: u8,
+        to_facing: u8,
+    },
+    Eat {
+        creature_id: String,
+        x: i32,
+        y: i32,
+    },
+    Hit {
+        creature_id: String,
+        x: i32,
+        y: i32,
     },
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct TickResult {
     pub events: Vec<WorldEvent>,
+    pub actions: Vec<CreatureAction>,
     pub destroyed: i64,
     pub free_minted: i64,
     /// Suicide energy returned to human accounts (uid → glims).

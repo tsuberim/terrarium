@@ -22,6 +22,8 @@ export type Creature = {
   health: number;
   max_health: number;
   owner_uid: string;
+  /** Body facing 0–5 (E, NE, NW, W, SW, SE). */
+  facing: number;
   /** WASM digest — used when sprite mode is hash. */
   program_hash?: string;
 };
@@ -35,6 +37,9 @@ export type SimConfig = {
   dig_extra: number;
   place_extra: number;
   hit_extra: number;
+  rotate_extra: number;
+  /** Frontal vision half-width in hex direction steps (1 = ±60°). */
+  vis_half_arc: number;
   signal_inbox_cap: number;
   max_health: number;
   hit_damage: number;
@@ -75,8 +80,12 @@ export type WorldEvent =
         | "signal_failed"
         | "killed"
         | "eaten";
+      facing: number;
+      energy: number;
+      health: number;
+      max_health: number;
     }
-  | { type: "spawn"; creature_id: string; parent_id: string; x: number; y: number }
+  | { type: "spawn"; creature_id: string; parent_id: string; parent_x: number; parent_y: number; x: number; y: number }
   | {
       type: "hit";
       actor_id: string;
@@ -86,7 +95,14 @@ export type WorldEvent =
       damage: number;
       victim_health: number;
     }
-  | { type: "eat"; actor_id: string; x: number; y: number; energy: number };
+  | { type: "eat"; actor_id: string; x: number; y: number; energy: number; tile_kind: number };
+
+/** Explicit per-tick creature action from the sim (matches kernel wire format). */
+export type CreatureAction =
+  | { kind: "move"; creature_id: string; from_x: number; from_y: number; to_x: number; to_y: number }
+  | { kind: "rotate"; creature_id: string; from_facing: number; to_facing: number }
+  | { kind: "eat"; creature_id: string; x: number; y: number }
+  | { kind: "hit"; creature_id: string; x: number; y: number };
 
 export type DeathReason = Extract<WorldEvent, { type: "death" }>["reason"];
 

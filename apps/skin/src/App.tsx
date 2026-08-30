@@ -22,7 +22,7 @@ type Hover = { x: number; y: number };
 export default function App() {
   const { user, ready } = useAuth();
   const [credits, setCredits] = useState<number | null>(null);
-  const { creatures, tiles, deployCost, corpseEnergy, simConfig, connected, fxEvents, setSimConfig, mergeCreatureMeta } =
+  const { creatures, tiles, deployCost, corpseEnergy, simConfig, tick, connected, fxEvents, runtimeRef, setSimConfig, mergeCreatureMeta } =
     useWorldStream();
   const {
     view,
@@ -208,6 +208,8 @@ export default function App() {
         canDeploy={canDeploy}
         userUid={user?.uid}
         senseRange={simConfig?.r_vis ?? 5}
+        signalRange={simConfig?.r_sig ?? 5}
+        visHalfArc={simConfig?.vis_half_arc ?? 1}
         corpseEnergy={corpseEnergy}
         spriteMode={spriteMode}
         view={view}
@@ -219,6 +221,9 @@ export default function App() {
         onManualCamera={exitFollow}
         onZoomChange={setZoom}
         fxEvents={fxEvents}
+        runtimeRef={runtimeRef}
+        worldTick={tick}
+        tickHz={2}
       />
       <HudOverlay
         online={connected}

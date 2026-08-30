@@ -24,6 +24,6 @@ export function describeCell(
       ? `Corpse · ${formatGlimLabel(tile.energy ?? 0)} · ${reason}`
       : `Corpse · ${formatGlimLabel(tile.energy ?? 0)}`;
   }
-  if (tile.kind === 4) return `Energy node · ${formatGlimLabel(tile.energy ?? 0)}`;
+  if (tile.kind === 4) return `Food · ${formatGlimLabel(tile.energy ?? 0)}`;
   return "Unknown";
 }

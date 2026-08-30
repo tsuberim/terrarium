@@ -18,7 +18,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut sender, mut receiver) = socket.split();
     let mut sub = state.engine.subscribe();
 
-    if send_json(&mut sender, state.engine.snapshot())
+    if send_json(&mut sender, state.engine.full_delta())
         .await
         .is_err()
     {
@@ -35,7 +35,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     }
                     Err(RecvError::Lagged(_)) => {
-                        if send_json(&mut sender, state.engine.snapshot()).await.is_err() {
+                        if send_json(&mut sender, state.engine.full_delta()).await.is_err() {
                             break;
                         }
                     }

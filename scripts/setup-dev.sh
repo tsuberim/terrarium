@@ -22,7 +22,7 @@ print(f\"VITE_FIREBASE_APP_ID={cfg['appId']}\")
 
 mkdir -p data
 grep -q '^DEV_MODE=' .env 2>/dev/null || echo 'DEV_MODE=true' >> .env
-grep -q '^DATABASE_URL=' .env 2>/dev/null || echo 'DATABASE_URL=sqlite:data/terrarium.db' >> .env
+grep -q '^DATABASE_URL=' .env 2>/dev/null || echo 'DATABASE_URL=sqlite://data/terrarium.db?mode=rwc' >> .env
 
 npm install
 npm --prefix apps/skin install

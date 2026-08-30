@@ -2,7 +2,7 @@ import type { CameraView, NavFocus } from "./navigation";
 
 const KEY = "terrarium.viewer";
 const MIN_ZOOM = 0.35;
-const MAX_ZOOM = 3;
+const MAX_ZOOM = 8;
 
 export type ViewerPrefs = {
   view: CameraView;

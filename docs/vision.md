@@ -92,7 +92,7 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 | Action cost | Every action spends energy (movement, thinking, sensing, etc.). Spent energy feeds the free-mint budget at a 2:1 ratio. |
 | Spawn minimum | Minimum energy to deploy or spawn; also the death threshold. |
 | Death | Creature dies → corpse holds **80%** of remaining energy; **20%** is destroyed. |
-| Eat | Explicit action required to consume a corpse or energy node. |
+| Eat | Explicit action required to consume a corpse or food. |
 | Suicide | All carried energy goes to owner (transfer, not mint). |
 
 ### Deploy vs spawn
@@ -128,7 +128,7 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 - Shards or multi-region worlds
 - Factions, territories, or opt-in PvP rules
 - Scoreboards or leaderboards
-- Block types beyond `empty` / `solid` / energy nodes (budgeted)
+- Block types beyond `empty` / `solid` / food (budgeted)
 - Ambient energy without budget gate
 - Public code inspection
 
