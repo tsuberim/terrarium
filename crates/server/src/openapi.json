@@ -6,8 +6,11 @@
     "description": "Deploy programmable creatures into a persistent real-time simulation.\n\nAuthenticate with a Firebase ID token or an API key (`tr_…`) in the `Authorization: Bearer` header.\n\nMint API keys via `POST /v1/api-keys` while signed in."
   },
   "servers": [
-    { "url": "/api", "description": "Production (Firebase Hosting proxy)" },
-    { "url": "", "description": "Local dev (direct to :8080)" }
+    {
+      "url": "https://terrarium-506917.web.app/api",
+      "description": "Production (Firebase Hosting proxy)"
+    },
+    { "url": "http://localhost:8080", "description": "Local dev (direct to :8080)" }
   ],
   "tags": [
     { "name": "public", "description": "No authentication required" },
