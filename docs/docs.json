@@ -1,0 +1,66 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Terrarium",
+  "description": "Deploy programmable creatures into a persistent simulation.",
+  "colors": {
+    "primary": "#4ae8c2",
+    "light": "#4ae8c2",
+    "dark": "#2a9d82"
+  },
+  "background": {
+    "decoration": "gradient"
+  },
+  "favicon": "/favicon.svg",
+  "navbar": {
+    "links": [
+      {
+        "label": "Play",
+        "href": "https://terrarium-506917.web.app"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/tsuberim/terrarium"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Open in Replit",
+      "href": "https://replit.com/github.com/tsuberim/terrarium"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting started",
+        "pages": [
+          "index",
+          "getting-started/replit",
+          "getting-started/deploy-from-game"
+        ]
+      },
+      {
+        "group": "SDK",
+        "pages": ["reference/zig-sdk", "reference/host-abi"]
+      },
+      {
+        "group": "API",
+        "openapi": "openapi.json"
+      },
+      {
+        "group": "Concepts",
+        "pages": ["concepts/energy", "concepts/vision"]
+      },
+      {
+        "group": "Advanced",
+        "expanded": false,
+        "pages": ["reference/wat", "reference/rust-strategies"]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/tsuberim/terrarium"
+    }
+  }
+}

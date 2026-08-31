@@ -21,6 +21,7 @@ type Props = {
   onSignOut: () => void;
   onFaucet: () => void;
   onApiKeysOpen: () => void;
+  onCodeOpen: () => void;
 };
 
 export function HudOverlay({
@@ -42,6 +43,7 @@ export function HudOverlay({
   onSignOut,
   onFaucet,
   onApiKeysOpen,
+  onCodeOpen,
 }: Props) {
   const followLabel = followId ? `${followId.slice(0, 8)}…` : null;
   const statusText = error
@@ -121,6 +123,9 @@ export function HudOverlay({
           )}
           {signedIn ? (
             <>
+              <button type="button" className="hud-action" onClick={onCodeOpen} disabled={busy}>
+                Code
+              </button>
               <button type="button" className="hud-action" onClick={onApiKeysOpen} disabled={busy}>
                 Keys
               </button>

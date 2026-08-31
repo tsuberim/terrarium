@@ -1,6 +1,6 @@
 # Terrarium
 
-Persistent 2D programmable-creature simulation. See [docs/vision.md](docs/vision.md).
+Persistent 2D programmable-creature simulation. See [docs](https://terrarium.mintlify.app).
 
 ## Local dev
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EventFeed } from "./components/EventFeed";
 import { ApiKeysDialog } from "./components/ApiKeysDialog";
+import { AuthorDialog } from "./components/AuthorDialog";
 import { DeployDialog } from "./components/DeployDialog";
 import { DevPanel } from "./components/DevPanel";
 import { HudOverlay } from "./components/HudOverlay";
@@ -40,6 +41,7 @@ export default function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [deployCell, setDeployCell] = useState<{ x: number; y: number } | null>(null);
   const [apiKeysOpen, setApiKeysOpen] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
   const [hover, setHover] = useState<Hover | null>(null);
   const [deathNotice, setDeathNotice] = useState<string | null>(null);
 
@@ -181,7 +183,7 @@ export default function App() {
 
   const message =
     deployCell
-      ? "Write a program for your creature"
+      ? "Code in Replit or upload WASM"
       : jumpOpen
         ? "Search by coordinates or creature id"
         : user && canDeploy
@@ -234,6 +236,16 @@ export default function App() {
         onSignOut={() => void signOutUser()}
         onFaucet={() => void faucet()}
         onApiKeysOpen={() => setApiKeysOpen(true)}
+        onCodeOpen={() => setCodeOpen(true)}
+      />
+      <AuthorDialog
+        open={codeOpen}
+        cell={deployCell}
+        onClose={() => setCodeOpen(false)}
+        onOpenKeys={() => {
+          setCodeOpen(false);
+          setApiKeysOpen(true);
+        }}
       />
       <JumpDialog
         open={jumpOpen}

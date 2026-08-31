@@ -6,6 +6,16 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - "strategies/**"
+      - "scripts/**"
+      - "firebase.json"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +25,9 @@ concurrency:
 jobs:
   test:
     uses: ./.github/workflows/reusable-test.yml
+    permissions:
+      contents: read
+      actions: write
 
   server:
     needs: test
@@ -100,17 +113,14 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
-      - id: cloud-run-url
-        run: |
-          URL="$(gcloud run services describe "${{ secrets.CLOUD_RUN_SERVICE }}" \
+      - run: |
+          chmod +x scripts/smoke-prod.sh
+          CLOUD_RUN_URL="$(gcloud run services describe "${{ secrets.CLOUD_RUN_SERVICE }}" \
             --project="${{ secrets.GCP_PROJECT_ID }}" \
             --region="${{ secrets.GCP_REGION }}" \
             --format='value(status.url)')"
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-      - run: chmod +x scripts/smoke-prod.sh
-      - run: ./scripts/smoke-prod.sh
-        env:
-          CLOUD_RUN_URL: ${{ steps.cloud-run-url.outputs.url }}
-          HOSTING_URL: https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app
-          SMOKE_ATTEMPTS: "24"
-          SMOKE_SLEEP_SECS: "5"
+          CLOUD_RUN_URL="$CLOUD_RUN_URL" \
+          HOSTING_URL="https://${{ secrets.FIREBASE_PROJECT_ID }}.web.app" \
+          SMOKE_ATTEMPTS="24" \
+          SMOKE_SLEEP_SECS="5" \
+          ./scripts/smoke-prod.sh

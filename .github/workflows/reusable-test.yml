@@ -7,7 +7,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'strategies/**'
+            frontend:
+              - 'apps/**'
+              - 'scripts/generate-config.sh'
+              - 'firebase.json'
+            docker:
+              - 'Dockerfile'
+            workflows:
+              - '.github/workflows/**'
+
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +48,8 @@ jobs:
       - run: cargo build --release -p terrarium-server
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +68,33 @@ jobs:
           VITE_FIREBASE_APP_ID: ci-app
 
   docker:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t terrarium-server .
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: terrarium-server
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  gate:
+    needs: [changes, rust, frontend, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.rust.result }}" = "failure" ] || \
+             [ "${{ needs.frontend.result }}" = "failure" ] || \
+             [ "${{ needs.docker.result }}" = "failure" ]; then
+            echo "A required test job failed"
+            exit 1
+          fi
+          echo "CI gate passed (skipped jobs OK)"

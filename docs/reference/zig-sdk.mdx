@@ -1,0 +1,48 @@
+---
+title: Zig SDK
+description: Build creatures with Zig and deploy precompiled WASM.
+---
+
+## Overview
+
+The canonical SDK lives at `sdk/zig/` in the [GitHub repo](https://github.com/tsuberim/terrarium/tree/main/sdk/zig).
+
+**Recommended:** [Hello world in Replit](/getting-started/replit) — no local Zig install.
+
+## Local build
+
+```bash
+cd sdk/zig
+zig build -Doptimize=ReleaseSmall
+```
+
+Output: `zig-out/bin/creature.wasm`
+
+Requires [Zig](https://ziglang.org/download/) 0.13+.
+
+## Deploy
+
+**Replit:** press Run (see [Replit guide](/getting-started/replit)).
+
+**CLI:**
+
+```bash
+export TERRARIUM_API_BASE=https://terrarium-506917.web.app/api
+export TERRARIUM_API_KEY=tr_…
+export TERRARIUM_X=0
+export TERRARIUM_Y=0
+./scripts/deploy.sh
+```
+
+**In-game:** drop `creature.wasm` in the [deploy dialog](/getting-started/deploy-from-game).
+
+## Layout
+
+| File | Purpose |
+|------|---------|
+| `src/main.zig` | Export `tick()` — your logic |
+| `src/terrarium.zig` | Host imports + helpers |
+| `build.zig` | `wasm32-freestanding` target |
+| `scripts/deploy.sh` | Upload WASM to `/v1/deploy` |
+
+The server validates the WASM module; it does **not** compile Zig.
