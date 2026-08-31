@@ -111,8 +111,8 @@ GitHub Actions (`.github/workflows/`):
 
 | Workflow | Trigger | Jobs |
 |----------|---------|------|
-| `ci.yml` | PR + push to `main` | `cargo test`, release build, frontend build, `docker build` |
-| `deploy.yml` | push to `main` | test → Cloud Run + Firebase Hosting (parallel after test) |
+| `ci.yml` | PR | Reusable test (Rust, frontend, Docker) |
+| `deploy.yml` | push to `main`, manual | Reusable test → Cloud Run + Firebase Hosting (parallel after test) |
 
 Deploy uses Workload Identity Federation (no long-lived GCP keys in CI). Secrets are listed in [secrets.md](secrets.md).
 
