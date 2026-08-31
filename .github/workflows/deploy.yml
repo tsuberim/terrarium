@@ -6,6 +6,16 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - "strategies/**"
+      - "scripts/**"
+      - "firebase.json"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 concurrency:

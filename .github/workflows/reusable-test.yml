@@ -7,7 +7,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'strategies/**'
+            frontend:
+              - 'apps/**'
+              - 'scripts/generate-config.sh'
+              - 'firebase.json'
+            docker:
+              - 'Dockerfile'
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            workflows:
+              - '.github/workflows/**'
+
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +51,8 @@ jobs:
       - run: cargo build --release -p terrarium-server
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +71,8 @@ jobs:
           VITE_FIREBASE_APP_ID: ci-app
 
   docker:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

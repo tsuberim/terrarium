@@ -3,6 +3,16 @@ name: CI
 # PRs only — push to main is covered by deploy.yml (test + optional prod deploy).
 on:
   pull_request:
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Dockerfile"
+      - "strategies/**"
+      - "scripts/**"
+      - "firebase.json"
+      - ".github/workflows/**"
 
 jobs:
   test:
