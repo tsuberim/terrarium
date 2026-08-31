@@ -45,7 +45,7 @@
       },
       {
         "group": "API",
-        "openapi": "/openapi.json"
+        "openapi": "openapi.json"
       },
       {
         "group": "Concepts",
