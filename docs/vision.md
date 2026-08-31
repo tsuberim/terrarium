@@ -19,7 +19,7 @@ Energy is the sole resource. It enters the system when people pay money for cred
 ## World
 
 - **Topology:** Sparse hex grid (axial q/r). No torus wrapping today — open coordinates, sparse tile map.
-- **Persistence:** Always on. Full world state persists across restarts (SQLite checkpoint).
+- **Persistence:** Always on. Full world state persists across restarts when using a file-backed SQLite DB. Production Cloud Run currently uses ephemeral in-memory SQLite (resets on redeploy) — acceptable for now.
 - **Authority:** Single global world server (no shards for now).
 - **Representation:** Creatures occupy one hex cell; client interpolates motion between ticks.
 
@@ -98,7 +98,7 @@ Deploy a mix to see competition: prey alarms pull hawks and scavengers toward th
 | Rule | Detail |
 |------|--------|
 | Exchange rate | Fixed credits ↔ energy conversion |
-| Entry | Paid deploy imports energy from credits |
+| Entry | Paid deploy imports energy from credits **1:1** (`corpse_energy` floor + extra) |
 | Free sources | Food mint gated 2:1 — [energy-budget.md](energy-budget.md) |
 | Action cost | Gas + per-action extras (`move_extra`, `rotate_extra`, …) |
 | Spawn minimum | `corpse_energy` floor; at/below → death |
@@ -110,7 +110,7 @@ Deploy a mix to see competition: prey alarms pull hawks and scavengers toward th
 
 | Path | Paid by | Code source |
 |------|---------|-------------|
-| **Deploy** (human) | Account credits | Human submits WAT/WASM |
+| **Deploy** (human) | Account credits (`corpse_energy + extra`, 1:1 import) | Human submits WAT/WASM |
 | **Spawn** (creature) | Parent's energy | Parent's code copied to child |
 
 ---
@@ -119,7 +119,7 @@ Deploy a mix to see competition: prey alarms pull hawks and scavengers toward th
 
 - **Spectator:** Real-time view. God view or follow-a-creature camera. Animation driven by WS `actions` + `events` — see [architecture.md](architecture.md).
 - **Deploy / manage:** API + game UI.
-- No public read access to creature source code.
+- No public read access to creature source code or WASM fingerprints on the wire.
 
 Wire: delta-only WebSocket; `full: true` on connect/resync.
 
@@ -135,7 +135,9 @@ Wire: delta-only WebSocket; `full: true` on connect/resync.
 
 ---
 
-## Open questions
+## Open questions (future design — not bugs)
+
+These are intentionally undecided product/sim rules. Implement only when we choose a direction:
 
 - Sleep interrupt conditions
 - Payment provider and cash-out mechanics

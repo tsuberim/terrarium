@@ -3,8 +3,6 @@ import { HEX_RADIUS, hexPathAt } from "./hex";
 import { drawEyesShutdown, drawLiveEyes } from "./sphereEyes";
 import { drawEatMouth } from "./eatFx";
 
-export type SpriteMode = "id" | "hash";
-
 export type CreaturePalette = {
   hue: number;
   bodyHighlight: string;
@@ -34,13 +32,12 @@ function hsl(h: number, s: number, l: number, a = 1): string {
   return `hsla(${h % 360} ${s}% ${l}% / ${a})`;
 }
 
-export function spriteSeed(creature: Creature, mode: SpriteMode): string {
-  if (mode === "hash" && creature.program_hash) return creature.program_hash;
+export function spriteSeed(creature: Creature): string {
   return creature.id;
 }
 
-export function creaturePalette(creature: Creature, mode: SpriteMode): CreaturePalette {
-  const seed = spriteSeed(creature, mode);
+export function creaturePalette(creature: Creature): CreaturePalette {
+  const seed = spriteSeed(creature);
   const cached = cache.get(seed);
   if (cached) return cached;
 

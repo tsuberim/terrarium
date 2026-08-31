@@ -81,9 +81,9 @@ pub async fn deploy_creature(
         )));
     }
 
-    let cost = extra;
+    let cost = CORPSE_ENERGY + extra;
     let id = Uuid::new_v4().to_string();
-    let energy = CORPSE_ENERGY + extra;
+    let energy = cost;
 
     if !state.engine.is_deployable(x, y) {
         return Err(DeployError::Occupied);

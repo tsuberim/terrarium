@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::persist::{load_creatures, load_ledger, load_tiles, PersistSnapshot};
 use crate::seed::seed_ecosystem;
 use crate::wire::{
-    build_creature_delta, build_tile_delta, creature_public, ledger_public, tiles_public,
+    build_creature_delta, build_tile_delta, creature_public, tiles_public,
 };
 pub use crate::wire::{CreaturePublic, TilePublic, WorldMessage};
 
@@ -116,7 +116,6 @@ impl WorldEngine {
             deploy_cost: Some(self.deploy_cost),
             corpse_energy: Some(config.corpse_energy),
             sim_config: Some(config),
-            energy_ledger: Some(ledger_public(&state.ledger)),
             creatures_upsert: state.creatures.iter().map(creature_public).collect(),
             creatures_remove: vec![],
             tiles_upsert: tiles_public(&state.tiles),

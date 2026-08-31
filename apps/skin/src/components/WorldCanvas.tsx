@@ -2,7 +2,7 @@ import { useEffect, useRef, type RefObject } from "react";
 import type { Creature, WorldTile } from "../lib/api";
 import { drawEatFx, EAT_LIFE_MS } from "../lib/eatFx";
 import { drawHitFx, HIT_LIFE_MS } from "../lib/hitFx";
-import { creatureAnim, drawCreatureSprite, lifeModifiers, SPAWN_LIFE_MS, DEATH_LIFE_MS, BODY_R, type LifeFx, type SpriteMode } from "../lib/creatureSprite";
+import { creatureAnim, drawCreatureSprite, lifeModifiers, SPAWN_LIFE_MS, DEATH_LIFE_MS, BODY_R, type LifeFx } from "../lib/creatureSprite";
 import { drawTileSprite } from "../lib/tileSprite";
 import { drawWorldBackground } from "../lib/worldBackground";
 import type { WorldRuntime } from "../lib/worldRuntime";
@@ -37,7 +37,6 @@ type Props = {
   corpseEnergy?: number;
   view: "god" | "follow";
   followId?: string | null;
-  spriteMode?: SpriteMode;
   focus?: { x: number; y: number; seq: number } | null;
   initialZoom?: number;
   onCellSelect: (x: number, y: number) => void;
@@ -80,7 +79,6 @@ export function WorldCanvas({
   corpseEnergy = 1_000_000,
   view,
   followId = null,
-  spriteMode = "id",
   focus = null,
   initialZoom = 1,
   onCellSelect,
@@ -108,7 +106,6 @@ export function WorldCanvas({
   const onZoomChangeRef = useRef(onZoomChange);
   const viewRef = useRef(view);
   const followIdRef = useRef(followId);
-  const spriteModeRef = useRef(spriteMode);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const worldTickRef = useRef(worldTick);
   const tickMsRef = useRef(tickMs);
@@ -129,7 +126,6 @@ export function WorldCanvas({
   onZoomChangeRef.current = onZoomChange;
   viewRef.current = view;
   followIdRef.current = followId;
-  spriteModeRef.current = spriteMode;
 
   useEffect(() => {
     const canvas = canvasRef.current;

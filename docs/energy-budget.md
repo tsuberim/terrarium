@@ -168,19 +168,9 @@ Never silently grant over budget. Partial grants are fine for terrain; API paths
 
 ## Observability
 
-Expose on **full delta** (`full: true`, connect + lag recovery) and REST `/v1/world` where applicable:
+`EnergyLedger` is **internal** — persisted in SQLite for sim accounting and dev tooling, **not** exposed on WebSocket or REST. Operators can inspect via DB or a future admin panel.
 
-```json
-{
-  "energy_ledger": {
-    "destroyed": 125000000,
-    "free_minted": 42000000,
-    "free_budget": 20500000
-  }
-}
-```
-
-Dev panel: sparkline of destroy rate vs free-mint rate; budget remaining.
+Public wire (`full: true` delta, REST `/v1/world`) includes `deploy_cost`, `corpse_energy`, `sim_config`, creatures, and tiles only.
 
 ---
 
@@ -188,9 +178,9 @@ Dev panel: sparkline of destroy rate vs free-mint rate; budget remaining.
 
 | Phase | Work |
 |-------|------|
-| **1 — Ledger** | `EnergyLedger` in kernel; `record_destroy` on existing sinks; persist columns; WS `energy_ledger` on full delta |
+| **1 — Ledger** | `EnergyLedger` in kernel; `record_destroy` on existing sinks; persist columns; **internal only** (not on public wire) |
 | **2 — Tick accounting** | `TickEnergyAccounting` in `TickResult`; tests for 2:1 cap |
-| **3 — Food** | Terrain kind `food`; procedural sites; eat transfers; mint at fill |
+| **3 — Food** | Simple periodic food spawn (no terrain noise yet); eat transfers; mint at fill |
 | **4 — Balance pass** | Tune food density, nominal value, regen vs typical destroy rate |
 
 Phase 1 can ship without food; the world simply accrues budget while free sources are empty.

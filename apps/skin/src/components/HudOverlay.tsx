@@ -1,4 +1,3 @@
-import type { SpriteMode } from "../lib/creatureSprite";
 import type { Creature } from "../lib/api";
 import { GlimAmount } from "./GlimAmount";
 import { formatGlimString } from "../lib/glim";
@@ -10,14 +9,12 @@ type Props = {
   busy: boolean;
   view: "god" | "follow";
   followId: string | null;
-  spriteMode: SpriteMode;
   myCreatures: Creature[];
   cell: { x: number; y: number; label: string } | null;
   message: string | null;
   deathNotice?: string | null;
   error?: string | null;
   onViewChange: (view: "god" | "follow") => void;
-  onSpriteModeChange: (mode: SpriteMode) => void;
   onJumpOpen: () => void;
   onFollowCreature: (id: string) => void;
   onSignIn: () => void;
@@ -33,14 +30,12 @@ export function HudOverlay({
   busy,
   view,
   followId,
-  spriteMode,
   myCreatures,
   cell,
   message,
   deathNotice,
   error,
   onViewChange,
-  onSpriteModeChange,
   onJumpOpen,
   onFollowCreature,
   onSignIn,
@@ -86,26 +81,6 @@ export function HudOverlay({
           <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen}>
             ⌕
           </button>
-        </div>
-
-        <div className="mt-1.5 flex items-center gap-1.5 border-t border-white/[0.05] pt-1.5">
-          <span className="shrink-0 text-[9px] uppercase tracking-wide text-white/25">Look</span>
-          <div className="hud-segment min-w-0 flex-1">
-            <button
-              type="button"
-              className={`hud-segment-btn flex-1 ${spriteMode === "id" ? "hud-segment-btn-active" : ""}`}
-              onClick={() => onSpriteModeChange("id")}
-            >
-              ID
-            </button>
-            <button
-              type="button"
-              className={`hud-segment-btn flex-1 ${spriteMode === "hash" ? "hud-segment-btn-active" : ""}`}
-              onClick={() => onSpriteModeChange("hash")}
-            >
-              Hash
-            </button>
-          </div>
         </div>
 
         {signedIn && myCreatures.length > 0 && (

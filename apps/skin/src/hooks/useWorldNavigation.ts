@@ -6,7 +6,7 @@ import {
   type NavFocus,
   writeLocation,
 } from "../lib/navigation";
-import { loadViewerPrefs, resolveInitialViewerState, saveViewerPrefs } from "../lib/viewerPrefs";
+import { resolveInitialViewerState, saveViewerPrefs } from "../lib/viewerPrefs";
 
 export type FocusTarget = NavFocus & { seq: number };
 
@@ -31,7 +31,6 @@ export function useWorldNavigation(creatures: Creature[]) {
         followId: nextFollowId,
         focus: nextFocus,
         zoom: nextZoom,
-        spriteMode: loadViewerPrefs().spriteMode,
       });
     },
     [],

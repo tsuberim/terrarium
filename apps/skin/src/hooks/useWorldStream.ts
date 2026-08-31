@@ -26,12 +26,8 @@ function tileKey(x: number, y: number) {
   return `${x},${y}`;
 }
 
-function mergeCreature(prev: Creature | undefined, next: Creature): Creature {
-  return {
-    ...prev,
-    ...next,
-    program_hash: next.program_hash ?? prev?.program_hash,
-  };
+function mergeCreature(_prev: Creature | undefined, next: Creature): Creature {
+  return next;
 }
 
 function snapshotCreatures(map: Map<string, Creature>) {

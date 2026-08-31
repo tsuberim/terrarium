@@ -121,9 +121,9 @@ Connect: `GET /api/v1/world/ws`
 
 Today all creatures tick every frame. Path to **tons of entities** without breaking Hz:
 
-### Phase A — Dirty tracking (next)
-- Don't clone tile map each tick; track changed cells in kernel
-- Spatial hash for creature collision (O(1) not O(n²))
+### Phase A — Dirty tracking (done)
+- Per-tick creature/tile dirty sets in kernel; delta builders on server (`wire.rs`)
+- Spatial hash for creature collision remains future work
 
 ### Phase B — Time budgets
 - `TICK_BUDGET_US` (default 500ms @ 2Hz)
@@ -167,8 +167,11 @@ The canvas reads **display tiles** and **interpolated poses**, not raw sim posit
 | Path | Role |
 |------|------|
 | `crates/server/src/engine.rs` | RAM world, sim thread, broadcast |
+| `crates/server/src/wire.rs` | Public wire types + delta builders |
+| `crates/server/src/persist.rs` | SQLite checkpoint worker |
+| `crates/server/src/deploy.rs` | Deploy + credit debit |
 | `crates/server/src/ws.rs` | Per-client fan-out |
-| `crates/kernel/` | VM, tick loop, energy ledger, no I/O |
+| `crates/kernel/` | VM, tick loop, energy ledger (internal), no I/O |
 | `docs/energy-budget.md` | Free-mint budget (2:1 destroy ratio) |
 | `apps/skin/src/hooks/useWorldStream.ts` | WS connect, sim state maps |
 | `apps/skin/src/lib/worldRuntime.ts` | Action/event animation + display tiles |

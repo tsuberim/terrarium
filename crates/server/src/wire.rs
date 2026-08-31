@@ -4,8 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 use terrarium_kernel::{
-    vm::Creature, CreatureAction, DeathReason, EnergyLedger, SimConfig, WorldEvent, WorldTile,
-    WorldTiles,
+    vm::Creature, CreatureAction, DeathReason, SimConfig, WorldEvent, WorldTile, WorldTiles,
 };
 
 #[derive(Clone, Serialize)]
@@ -18,8 +17,6 @@ pub struct CreaturePublic {
     pub max_health: i32,
     pub owner_uid: String,
     pub facing: u8,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub program_hash: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -31,13 +28,6 @@ pub struct TilePublic {
     pub energy: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub death_reason: Option<DeathReason>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct EnergyLedgerPublic {
-    pub destroyed: i64,
-    pub free_minted: i64,
-    pub free_budget: i64,
 }
 
 #[derive(Clone, Serialize)]
@@ -53,8 +43,6 @@ pub enum WorldMessage {
         corpse_energy: Option<i64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         sim_config: Option<SimConfig>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        energy_ledger: Option<EnergyLedgerPublic>,
         creatures_upsert: Vec<CreaturePublic>,
         creatures_remove: Vec<String>,
         tiles_upsert: Vec<TilePublic>,
@@ -80,7 +68,6 @@ impl WorldMessage {
             deploy_cost: None,
             corpse_energy: None,
             sim_config: None,
-            energy_ledger: None,
             creatures_upsert,
             creatures_remove,
             tiles_upsert,
@@ -89,12 +76,6 @@ impl WorldMessage {
             events,
         }
     }
-}
-
-pub fn program_hash(wasm: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(wasm);
-    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn creature_public(c: &Creature) -> CreaturePublic {
@@ -107,7 +88,6 @@ pub fn creature_public(c: &Creature) -> CreaturePublic {
         max_health: c.max_health,
         owner_uid: c.owner_uid.clone(),
         facing: c.facing,
-        program_hash: Some(program_hash(&c.wasm)),
     }
 }
 
@@ -137,14 +117,6 @@ pub fn tile_public(pos: (i32, i32), tile: WorldTile) -> TilePublic {
             energy: Some(energy),
             death_reason: None,
         },
-    }
-}
-
-pub fn ledger_public(ledger: &EnergyLedger) -> EnergyLedgerPublic {
-    EnergyLedgerPublic {
-        destroyed: ledger.destroyed,
-        free_minted: ledger.free_minted,
-        free_budget: ledger.free_budget(),
     }
 }
 
