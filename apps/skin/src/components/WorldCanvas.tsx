@@ -603,6 +603,8 @@ export function WorldCanvas({
       container.removeEventListener("pointercancel", onPointerUp);
       container.removeEventListener("pointerleave", clearHover);
     };
+  // Mount-only: canvas loop reads live refs each frame; stable ref identities by design.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -613,7 +615,7 @@ export function WorldCanvas({
     const { panX, panY } = cellToPan(focus.x, focus.y, w, h, cameraRef.current.zoom);
     cameraRef.current.panX = panX;
     cameraRef.current.panY = panY;
-  }, [focus?.seq]);
+  }, [focus]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -39,7 +39,7 @@ export function useWorldNavigation(creatures: Creature[]) {
 
   useEffect(() => {
     persist(view, followId, focus ? { x: focus.x, y: focus.y } : null, zoom);
-  }, [view, followId, focus?.x, focus?.y, zoom, persist]);
+  }, [view, followId, focus, zoom, persist]);
 
   useEffect(() => {
     const onPop = () => {

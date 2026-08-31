@@ -48,13 +48,15 @@ pub async fn list_keys(db: &SqlitePool, uid: &str) -> anyhow::Result<Vec<ApiKeyP
 
     Ok(rows
         .into_iter()
-        .map(|(id, name, prefix, created_at, last_used_at)| ApiKeyPublic {
-            id,
-            name,
-            prefix,
-            created_at,
-            last_used_at,
-        })
+        .map(
+            |(id, name, prefix, created_at, last_used_at)| ApiKeyPublic {
+                id,
+                name,
+                prefix,
+                created_at,
+                last_used_at,
+            },
+        )
         .collect())
 }
 
@@ -70,11 +72,10 @@ pub async fn mint_key(
     .execute(db)
     .await?;
 
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE owner_uid = ?")
-            .bind(uid)
-            .fetch_one(db)
-            .await?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE owner_uid = ?")
+        .bind(uid)
+        .fetch_one(db)
+        .await?;
     if count >= MAX_KEYS_PER_USER {
         anyhow::bail!("max {MAX_KEYS_PER_USER} API keys per account");
     }
@@ -96,11 +97,10 @@ pub async fn mint_key(
     .execute(db)
     .await?;
 
-    let created_at: String =
-        sqlx::query_scalar("SELECT created_at FROM api_keys WHERE id = ?")
-            .bind(&id)
-            .fetch_one(db)
-            .await?;
+    let created_at: String = sqlx::query_scalar("SELECT created_at FROM api_keys WHERE id = ?")
+        .bind(&id)
+        .fetch_one(db)
+        .await?;
 
     Ok(MintApiKeyResponse {
         key: ApiKeyPublic {

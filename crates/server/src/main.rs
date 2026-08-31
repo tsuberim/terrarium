@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use sqlx::sqlite::SqlitePoolOptions;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 mod accounts;
 mod api_keys;
@@ -43,9 +43,10 @@ async fn main() -> anyhow::Result<()> {
         .connect(&config.database_url)
         .await?;
     sqlx::migrate!().run(&db).await?;
-    let tables: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'")
-        .fetch_one(&db)
-        .await?;
+    let tables: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'")
+            .fetch_one(&db)
+            .await?;
     if tables.0 == 0 {
         anyhow::bail!("database migration failed: accounts table missing");
     }

@@ -16,9 +16,13 @@ pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
 
     tokio::spawn(async move {
         while let Some(snapshot) = persist_rx.recv().await {
-            if let Err(err) =
-                persist_world(&db_persist, &snapshot.creatures, &snapshot.tiles, &snapshot.ledger)
-                    .await
+            if let Err(err) = persist_world(
+                &db_persist,
+                &snapshot.creatures,
+                &snapshot.tiles,
+                &snapshot.ledger,
+            )
+            .await
             {
                 tracing::error!(error = %err, "checkpoint failed");
             }

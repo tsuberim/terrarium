@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use sqlx::SqlitePool;
-use terrarium_kernel::{
-    run_tick, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles,
-};
+use terrarium_kernel::{run_tick, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles};
 use tokio::sync::broadcast;
 
 use crate::config::Config;
@@ -203,10 +201,8 @@ impl WorldEngine {
         state.ledger = ledger;
         state.tick = tick;
 
-        let (creatures_upsert, creatures_remove) =
-            build_creature_delta(&before, &state.creatures);
-        let (tiles_upsert, tiles_remove) =
-            build_tile_delta(&tick_result.tiles_dirty, &state.tiles);
+        let (creatures_upsert, creatures_remove) = build_creature_delta(&before, &state.creatures);
+        let (tiles_upsert, tiles_remove) = build_tile_delta(&tick_result.tiles_dirty, &state.tiles);
         let message = WorldMessage::tick_delta(
             tick,
             creatures_upsert,
@@ -216,7 +212,7 @@ impl WorldEngine {
             tick_result.actions,
             tick_result.events,
         );
-        let persist = if tick % self.persist_every == 0 {
+        let persist = if tick.is_multiple_of(self.persist_every) {
             Some(PersistSnapshot {
                 creatures: state.creatures.clone(),
                 tiles: state.tiles.clone(),
@@ -334,10 +330,7 @@ mod tests {
 
         let WorldMessage::Delta {
             creatures_upsert, ..
-        } = engine.full_delta()
-        else {
-            panic!("expected delta");
-        };
+        } = engine.full_delta();
         let c = creatures_upsert
             .iter()
             .find(|c| c.id == "a")
@@ -353,9 +346,14 @@ mod tests {
         for _ in 0..30 {
             let step = engine.tick_step();
             if let Some(snapshot) = step.persist {
-                persist_world(&engine.db, &snapshot.creatures, &snapshot.tiles, &snapshot.ledger)
-                    .await
-                    .unwrap();
+                persist_world(
+                    &engine.db,
+                    &snapshot.creatures,
+                    &snapshot.tiles,
+                    &snapshot.ledger,
+                )
+                .await
+                .unwrap();
             }
         }
 

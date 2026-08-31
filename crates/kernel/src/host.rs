@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use uuid::Uuid;
-use wasmtime::{Caller, Engine, Error, Linker, Module, Store, Config};
+use wasmtime::{Caller, Config, Engine, Error, Linker, Module, Store};
 
 use crate::abi::{RECV_STRUCT_SIZE, SENSE_STRUCT_SIZE};
 use crate::energy_ledger::EnergyLedger;
@@ -16,12 +16,25 @@ use crate::world_tile::{sense_kind, WorldTile, WorldTiles};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingAction {
     Move,
-    Dig { dir: u8 },
-    Place { dir: u8 },
-    Eat { dir: u8 },
-    Hit { dir: u8 },
-    Rotate { delta: i32 },
-    Spawn { dir: u8, energy: i64 },
+    Dig {
+        dir: u8,
+    },
+    Place {
+        dir: u8,
+    },
+    Eat {
+        dir: u8,
+    },
+    Hit {
+        dir: u8,
+    },
+    Rotate {
+        delta: i32,
+    },
+    Spawn {
+        dir: u8,
+        energy: i64,
+    },
     SignalTo {
         to_id: String,
         byte: u8,
@@ -158,7 +171,11 @@ impl HostState {
 }
 
 pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> {
-    linker.func_wrap("terrarium", "sleep", |_caller: Caller<'_, HostState>| Ok(()))?;
+    linker.func_wrap(
+        "terrarium",
+        "sleep",
+        |_caller: Caller<'_, HostState>| Ok(()),
+    )?;
 
     linker.func_wrap("terrarium", "energy", |caller: Caller<'_, HostState>| {
         Ok(caller.data().creature_ref().energy)
@@ -189,182 +206,267 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
         )))
     })?;
 
-    linker.func_wrap("terrarium", "sense", |mut caller: Caller<'_, HostState>, dq: i32, dr: i32, ptr: i32| {
-        if !caller.data().can_sense(dq, dr) {
-            return Ok(0_i32);
-        }
-        let c = caller.data().creature_ref();
-        let x = c.x + dq;
-        let y = c.y + dr;
-        let snapshot = caller.data().snapshot();
-        let tiles = caller.data().tiles();
-        let has_creature = snapshot.id_at.contains_key(&(x, y));
-        let kind = sense_kind(tiles, x, y, has_creature);
-        let mut energy = 0i64;
-        let mut health = 0i32;
-        let mut max_health = 0i32;
-        let mut orientation = -1i32;
-        if let Some(id) = snapshot.id_at.get(&(x, y)) {
-            energy = snapshot.energy.get(id).copied().unwrap_or(0);
-            health = snapshot.health.get(id).copied().unwrap_or(0);
-            max_health = snapshot.max_health.get(id).copied().unwrap_or(0);
-            orientation = snapshot.facing.get(id).copied().unwrap_or(0) as i32;
-        } else if let Some(WorldTile::Corpse { energy: e, .. }) = tiles.get(&(x, y)) {
-            energy = *e;
-        } else if let Some(WorldTile::Food { energy: e }) = tiles.get(&(x, y)) {
-            energy = *e;
-        }
-        write_sense_struct(&mut caller, ptr, kind, energy, health, max_health, orientation)?;
-        Ok(1)
-    })?;
-
-    linker.func_wrap("terrarium", "random_byte", |mut caller: Caller<'_, HostState>| {
-        Ok(i32::from(next_random(caller.data_mut())))
-    })?;
-
-    linker.func_wrap("terrarium", "move", |mut caller: Caller<'_, HostState>, d: i32| {
-        HostState::require_forward(d)?;
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let extra = caller.data().config().move_extra;
-        caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.take_action(PendingAction::Move);
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "dig", |mut caller: Caller<'_, HostState>, d: i32| {
-        HostState::require_forward(d)?;
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let dir = caller.data().creature_ref().facing;
-        let extra = caller.data().config().dig_extra;
-        caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.take_action(PendingAction::Dig { dir });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "place", |mut caller: Caller<'_, HostState>, d: i32| {
-        HostState::require_forward(d)?;
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let dir = caller.data().creature_ref().facing;
-        let extra = caller.data().config().place_extra;
-        caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.take_action(PendingAction::Place { dir });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "eat", |mut caller: Caller<'_, HostState>, d: i32| {
-        HostState::require_forward(d)?;
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let dir = caller.data().creature_ref().facing;
-        caller.data_mut().result.take_action(PendingAction::Eat { dir });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "hit", |mut caller: Caller<'_, HostState>, d: i32| {
-        HostState::require_forward(d)?;
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let dir = caller.data().creature_ref().facing;
-        let extra = caller.data().config().hit_extra;
-        caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.take_action(PendingAction::Hit { dir });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "rotate", |mut caller: Caller<'_, HostState>, delta: i32| {
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let extra = caller.data().config().rotate_extra;
-        caller.data_mut().pay_action(extra)?;
-        caller.data_mut().result.take_action(PendingAction::Rotate { delta });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "spawn", |mut caller: Caller<'_, HostState>, d: i32, energy: i32| {
-        HostState::require_forward(d)?;
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let dir = caller.data().creature_ref().facing;
-        let energy = energy as i64;
-        let floor = caller.data().config().corpse_energy;
-        if energy <= floor {
-            mark_dead(caller.data_mut().creature(), DeathReason::SpawnEnergyTooLow);
-            return Err(Error::msg("spawn energy"));
-        }
-        caller.data_mut().result.take_action(PendingAction::Spawn { dir, energy });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "suicide", |mut caller: Caller<'_, HostState>| {
-        caller.data_mut().result.take_suicide();
-        Ok(())
-    })?;
-
-    linker.func_wrap("terrarium", "signal_broadcast", |mut caller: Caller<'_, HostState>, byte: i32| {
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let (x, y) = {
+    linker.func_wrap(
+        "terrarium",
+        "sense",
+        |mut caller: Caller<'_, HostState>, dq: i32, dr: i32, ptr: i32| {
+            if !caller.data().can_sense(dq, dr) {
+                return Ok(0_i32);
+            }
             let c = caller.data().creature_ref();
-            (c.x, c.y)
-        };
-        caller.data_mut().result.take_action(PendingAction::SignalBroadcast {
-            byte: byte as u8,
-            from_x: x,
-            from_y: y,
-        });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "signal_to", |mut caller: Caller<'_, HostState>, ptr: i32, byte: i32| {
-        if caller.data().result.tick_busy() {
-            return Ok(0_i32);
-        }
-        let id_bytes = read_bytes(&mut caller, ptr, 16)?;
-        let to_id = uuid_from_bytes(&id_bytes).ok_or_else(|| Error::msg("bad uuid"))?;
-        let snapshot = caller.data().snapshot();
-        let Some(&(tx, ty)) = snapshot.positions.get(&to_id) else {
-            mark_dead(caller.data_mut().creature(), DeathReason::SignalUnknownTarget);
-            return Err(Error::msg("unknown target"));
-        };
-        let (sx, sy) = {
-            let c = caller.data().creature_ref();
-            (c.x, c.y)
-        };
-        if !in_sig_range(sx, sy, tx, ty, caller.data().config()) {
-            mark_dead(caller.data_mut().creature(), DeathReason::SignalOutOfRange);
-            return Err(Error::msg("out of signal range"));
-        }
-        caller.data_mut().result.take_action(PendingAction::SignalTo {
-            to_id,
-            byte: byte as u8,
-            from_x: sx,
-            from_y: sy,
-        });
-        Ok(0_i32)
-    })?;
-
-    linker.func_wrap("terrarium", "recv", |mut caller: Caller<'_, HostState>, ptr: i32| {
-        let sig = caller.data_mut().creature().inbox.first().cloned();
-        if let Some(sig) = sig {
-            write_recv_struct(&mut caller, ptr, &sig)?;
-            caller.data_mut().creature().inbox.remove(0);
+            let x = c.x + dq;
+            let y = c.y + dr;
+            let snapshot = caller.data().snapshot();
+            let tiles = caller.data().tiles();
+            let has_creature = snapshot.id_at.contains_key(&(x, y));
+            let kind = sense_kind(tiles, x, y, has_creature);
+            let mut energy = 0i64;
+            let mut health = 0i32;
+            let mut max_health = 0i32;
+            let mut orientation = -1i32;
+            if let Some(id) = snapshot.id_at.get(&(x, y)) {
+                energy = snapshot.energy.get(id).copied().unwrap_or(0);
+                health = snapshot.health.get(id).copied().unwrap_or(0);
+                max_health = snapshot.max_health.get(id).copied().unwrap_or(0);
+                orientation = snapshot.facing.get(id).copied().unwrap_or(0) as i32;
+            } else if let Some(WorldTile::Corpse { energy: e, .. }) = tiles.get(&(x, y)) {
+                energy = *e;
+            } else if let Some(WorldTile::Food { energy: e }) = tiles.get(&(x, y)) {
+                energy = *e;
+            }
+            write_sense_struct(
+                &mut caller,
+                ptr,
+                kind,
+                energy,
+                health,
+                max_health,
+                orientation,
+            )?;
             Ok(1)
-        } else {
-            write_i32(&mut caller, ptr, 0)?;
-            Ok(0)
-        }
-    })?;
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "random_byte",
+        |mut caller: Caller<'_, HostState>| Ok(i32::from(next_random(caller.data_mut()))),
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "move",
+        |mut caller: Caller<'_, HostState>, d: i32| {
+            HostState::require_forward(d)?;
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let extra = caller.data().config().move_extra;
+            caller.data_mut().pay_action(extra)?;
+            caller.data_mut().result.take_action(PendingAction::Move);
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "dig",
+        |mut caller: Caller<'_, HostState>, d: i32| {
+            HostState::require_forward(d)?;
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let dir = caller.data().creature_ref().facing;
+            let extra = caller.data().config().dig_extra;
+            caller.data_mut().pay_action(extra)?;
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::Dig { dir });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "place",
+        |mut caller: Caller<'_, HostState>, d: i32| {
+            HostState::require_forward(d)?;
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let dir = caller.data().creature_ref().facing;
+            let extra = caller.data().config().place_extra;
+            caller.data_mut().pay_action(extra)?;
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::Place { dir });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "eat",
+        |mut caller: Caller<'_, HostState>, d: i32| {
+            HostState::require_forward(d)?;
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let dir = caller.data().creature_ref().facing;
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::Eat { dir });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "hit",
+        |mut caller: Caller<'_, HostState>, d: i32| {
+            HostState::require_forward(d)?;
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let dir = caller.data().creature_ref().facing;
+            let extra = caller.data().config().hit_extra;
+            caller.data_mut().pay_action(extra)?;
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::Hit { dir });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "rotate",
+        |mut caller: Caller<'_, HostState>, delta: i32| {
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let extra = caller.data().config().rotate_extra;
+            caller.data_mut().pay_action(extra)?;
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::Rotate { delta });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "spawn",
+        |mut caller: Caller<'_, HostState>, d: i32, energy: i32| {
+            HostState::require_forward(d)?;
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let dir = caller.data().creature_ref().facing;
+            let energy = energy as i64;
+            let floor = caller.data().config().corpse_energy;
+            if energy <= floor {
+                mark_dead(caller.data_mut().creature(), DeathReason::SpawnEnergyTooLow);
+                return Err(Error::msg("spawn energy"));
+            }
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::Spawn { dir, energy });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "suicide",
+        |mut caller: Caller<'_, HostState>| {
+            caller.data_mut().result.take_suicide();
+            Ok(())
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "signal_broadcast",
+        |mut caller: Caller<'_, HostState>, byte: i32| {
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let (x, y) = {
+                let c = caller.data().creature_ref();
+                (c.x, c.y)
+            };
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::SignalBroadcast {
+                    byte: byte as u8,
+                    from_x: x,
+                    from_y: y,
+                });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "signal_to",
+        |mut caller: Caller<'_, HostState>, ptr: i32, byte: i32| {
+            if caller.data().result.tick_busy() {
+                return Ok(0_i32);
+            }
+            let id_bytes = read_bytes(&mut caller, ptr, 16)?;
+            let to_id = uuid_from_bytes(&id_bytes).ok_or_else(|| Error::msg("bad uuid"))?;
+            let snapshot = caller.data().snapshot();
+            let Some(&(tx, ty)) = snapshot.positions.get(&to_id) else {
+                mark_dead(
+                    caller.data_mut().creature(),
+                    DeathReason::SignalUnknownTarget,
+                );
+                return Err(Error::msg("unknown target"));
+            };
+            let (sx, sy) = {
+                let c = caller.data().creature_ref();
+                (c.x, c.y)
+            };
+            if !in_sig_range(sx, sy, tx, ty, caller.data().config()) {
+                mark_dead(caller.data_mut().creature(), DeathReason::SignalOutOfRange);
+                return Err(Error::msg("out of signal range"));
+            }
+            caller
+                .data_mut()
+                .result
+                .take_action(PendingAction::SignalTo {
+                    to_id,
+                    byte: byte as u8,
+                    from_x: sx,
+                    from_y: sy,
+                });
+            Ok(0_i32)
+        },
+    )?;
+
+    linker.func_wrap(
+        "terrarium",
+        "recv",
+        |mut caller: Caller<'_, HostState>, ptr: i32| {
+            let sig = caller.data_mut().creature().inbox.first().cloned();
+            if let Some(sig) = sig {
+                write_recv_struct(&mut caller, ptr, &sig)?;
+                caller.data_mut().creature().inbox.remove(0);
+                Ok(1)
+            } else {
+                write_i32(&mut caller, ptr, 0)?;
+                Ok(0)
+            }
+        },
+    )?;
 
     Ok(())
 }
@@ -459,7 +561,11 @@ fn write_sense_struct(
     Ok(())
 }
 
-fn write_recv_struct(caller: &mut Caller<'_, HostState>, ptr: i32, sig: &Signal) -> Result<(), Error> {
+fn write_recv_struct(
+    caller: &mut Caller<'_, HostState>,
+    ptr: i32,
+    sig: &Signal,
+) -> Result<(), Error> {
     let memory = caller
         .get_export("memory")
         .and_then(|e| e.into_memory())
@@ -543,6 +649,7 @@ fn trap_death_reason(err: &Error) -> DeathReason {
     DeathReason::WasmTrap
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_creature_tick(
     engine: &Engine,
     module: &Module,

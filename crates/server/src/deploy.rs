@@ -1,8 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
-use terrarium_kernel::{
-    compile_wat, host, vm::Creature, CORPSE_ENERGY, WatError,
-};
+use terrarium_kernel::{compile_wat, host, vm::Creature, WatError, CORPSE_ENERGY};
 use uuid::Uuid;
 
 use crate::accounts::{account_credits, ensure_account};
@@ -54,9 +52,9 @@ pub async fn deploy_creature(
         if code.len() > 4096 {
             return Err(DeployError::InvalidProgram("program too long".into()));
         }
-        let bytes = STANDARD.decode(b64.trim()).map_err(|_| {
-            DeployError::InvalidProgram("invalid wasm encoding".into())
-        })?;
+        let bytes = STANDARD
+            .decode(b64.trim())
+            .map_err(|_| DeployError::InvalidProgram("invalid wasm encoding".into()))?;
         if bytes.is_empty() || bytes.len() > MAX_WASM_BYTES {
             return Err(DeployError::InvalidProgram("invalid wasm size".into()));
         }

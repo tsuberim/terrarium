@@ -1,11 +1,10 @@
 use axum::{
-    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{delete, get, post},
-    Extension,
+    Extension, Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use terrarium_kernel::SimConfig;
@@ -81,7 +80,10 @@ struct ApiKeyListResponse {
 
 pub fn build_app(state: AppState) -> Router {
     let dev = Router::new()
-        .route("/dev/sim-config", get(get_sim_config).patch(patch_sim_config))
+        .route(
+            "/dev/sim-config",
+            get(get_sim_config).patch(patch_sim_config),
+        )
         .route("/dev/clear-world", post(clear_world))
         .layer(middleware::from_fn(dev_only));
 
@@ -97,10 +99,7 @@ pub fn build_app(state: AppState) -> Router {
         .route("/me", get(me))
         .route("/faucet", post(faucet))
         .route("/deploy", post(deploy))
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            require_user,
-        ));
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_user));
 
     let v1 = Router::new()
         .route("/world", get(world))
@@ -275,7 +274,10 @@ async fn mint_api_key(
         Err(err) => {
             let msg = err.to_string();
             if msg.contains("max") {
-                return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg })))
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": msg })),
+                )
                     .into_response();
             }
             tracing::error!(error = %err, "mint api key failed");

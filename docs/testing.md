@@ -6,7 +6,7 @@
 ./scripts/test.sh
 ```
 
-Same as the reusable CI test job (minus Docker): `cargo test --workspace`, release build, frontend build.
+Same as the reusable CI test job (minus Docker): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, frontend `npm run lint`, release build.
 
 ## Layers
 
@@ -70,7 +70,7 @@ Plain `:memory:` gives **each pool connection its own empty database**, so deplo
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| `ci.yml` | PR | Rust tests, release build, frontend build, Docker build |
+| `ci.yml` | PR | fmt, clippy (-D warnings), Rust tests, ESLint, frontend build, Docker build |
 | `deploy.yml` | push to `main`, manual | Same test job, then Cloud Run + Firebase Hosting when `DEPLOY_ENABLED=true` |
 
 Both use `.github/workflows/reusable-test.yml` so PR and prod paths run identical checks. Push to `main` does not duplicate the test job across two workflows.

@@ -4,15 +4,18 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::abi::tile;
-use crate::hex;
 use crate::abi::corpse_yield_energy;
+use crate::abi::tile;
 use crate::energy_ledger::EnergyLedger;
-use crate::food::try_spawn_food;
 use crate::events::{DeathReason, TickResult, WorldEvent};
+use crate::food::try_spawn_food;
+use crate::hex;
 use crate::host::{self, PendingAction, ThinkResult};
 use crate::sim_config::SimConfig;
-use crate::world_tile::{mark_tile, place_corpse, sense_kind, set_cell, blocks_movement, TileDirty, WorldTile, WorldTiles};
+use crate::world_tile::{
+    blocks_movement, mark_tile, place_corpse, sense_kind, set_cell, TileDirty, WorldTile,
+    WorldTiles,
+};
 
 #[derive(Clone, Debug)]
 pub struct Signal {
@@ -283,7 +286,10 @@ pub fn run_tick(
         if tiles.get(&(x, y)).is_some() {
             continue;
         }
-        let Some(victim_idx) = creatures.iter().position(|v| v.alive && v.x == x && v.y == y) else {
+        let Some(victim_idx) = creatures
+            .iter()
+            .position(|v| v.alive && v.x == x && v.y == y)
+        else {
             continue;
         };
         if victim_idx == i {
@@ -484,9 +490,9 @@ pub fn run_tick(
             result.events.push(death_event(creature));
             continue;
         }
-        if !result.events.iter().any(|e| {
-            matches!(e, WorldEvent::Death { creature_id, .. } if creature_id == &creature.id)
-        }) {
+        if !result.events.iter().any(
+            |e| matches!(e, WorldEvent::Death { creature_id, .. } if creature_id == &creature.id),
+        ) {
             result.events.push(death_event(creature));
         }
     }
@@ -589,7 +595,9 @@ fn think_once(
         mark_dead(creature, DeathReason::InvalidProgram);
         return ThinkResult::default();
     };
-    host::run_creature_tick(engine, &module, creature, snapshot, tiles, config, ledger, tick)
+    host::run_creature_tick(
+        engine, &module, creature, snapshot, tiles, config, ledger, tick,
+    )
 }
 
 pub fn adjacent(q: i32, r: i32, dir: u8) -> Option<(i32, i32)> {
@@ -605,9 +613,8 @@ mod tests {
     #[test]
     fn all_examples_compile() {
         for example in crate::EXAMPLE_PROGRAMS {
-            compile_wat(example.code).unwrap_or_else(|err| {
-                panic!("example `{}` failed: {err}", example.id)
-            });
+            compile_wat(example.code)
+                .unwrap_or_else(|err| panic!("example `{}` failed: {err}", example.id));
         }
     }
 

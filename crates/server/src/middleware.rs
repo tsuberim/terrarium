@@ -1,10 +1,10 @@
+use crate::auth::AuthenticatedUser;
 use axum::{
     extract::{Request, State},
-    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use crate::auth::AuthenticatedUser;
 
 use crate::api_keys;
 use crate::auth;
@@ -22,11 +22,7 @@ pub async fn dev_only(req: Request, next: Next) -> Response {
     }
 }
 
-pub async fn require_user(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Response {
+pub async fn require_user(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let token = match bearer_token(req.headers()) {
         Some(token) => token,
         None => return StatusCode::UNAUTHORIZED.into_response(),

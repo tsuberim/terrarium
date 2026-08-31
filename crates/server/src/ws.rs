@@ -64,5 +64,8 @@ async fn send_json(
     msg: WorldMessage,
 ) -> Result<(), ()> {
     let text = serde_json::to_string(&msg).map_err(|_| ())?;
-    sender.send(Message::Text(text.into())).await.map_err(|_| ())
+    sender
+        .send(Message::Text(text.into()))
+        .await
+        .map_err(|_| ())
 }

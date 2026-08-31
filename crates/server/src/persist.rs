@@ -31,29 +31,41 @@ pub async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
 
     rows.into_iter()
         .map(
-            |(id, owner_uid, x, y, energy, health, max_health, wasm_blob, code, born_tick, facing)| {
-            let wasm = match wasm_blob.filter(|b| !b.is_empty()) {
-                Some(b) => b,
-                None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
-            };
-            Ok(Creature {
+            |(
                 id,
                 owner_uid,
-                x: x as i32,
-                y: y as i32,
+                x,
+                y,
                 energy,
-                health: health as i32,
-                max_health: max_health as i32,
-                parent_id: None,
-                wasm,
+                health,
+                max_health,
+                wasm_blob,
                 code,
-                alive: true,
-                inbox: vec![],
-                death_reason: None,
-                born_tick: born_tick.max(0) as u64,
-                facing: (facing as u8).min(5),
-            })
-        },
+                born_tick,
+                facing,
+            )| {
+                let wasm = match wasm_blob.filter(|b| !b.is_empty()) {
+                    Some(b) => b,
+                    None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
+                };
+                Ok(Creature {
+                    id,
+                    owner_uid,
+                    x: x as i32,
+                    y: y as i32,
+                    energy,
+                    health: health as i32,
+                    max_health: max_health as i32,
+                    parent_id: None,
+                    wasm,
+                    code,
+                    alive: true,
+                    inbox: vec![],
+                    death_reason: None,
+                    born_tick: born_tick.max(0) as u64,
+                    facing: (facing as u8).min(5),
+                })
+            },
         )
         .collect()
 }
@@ -155,7 +167,9 @@ pub async fn persist_world(
         .await?;
     }
 
-    sqlx::query("DELETE FROM world_tiles").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM world_tiles")
+        .execute(&mut *tx)
+        .await?;
     for ((x, y), tile) in tiles {
         match tile {
             WorldTile::Solid => {

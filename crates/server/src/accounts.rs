@@ -2,10 +2,11 @@ use sqlx::SqlitePool;
 
 pub async fn account_credits(db: &SqlitePool, uid: &str) -> anyhow::Result<i64> {
     ensure_account(db, uid).await?;
-    let credits = sqlx::query_scalar::<_, i64>("SELECT credits FROM accounts WHERE firebase_uid = ?")
-        .bind(uid)
-        .fetch_one(db)
-        .await?;
+    let credits =
+        sqlx::query_scalar::<_, i64>("SELECT credits FROM accounts WHERE firebase_uid = ?")
+            .bind(uid)
+            .fetch_one(db)
+            .await?;
     Ok(credits)
 }
 

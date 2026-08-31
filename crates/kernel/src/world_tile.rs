@@ -47,7 +47,12 @@ pub fn place_food(tiles: &mut WorldTiles, dirty: &mut TileDirty, x: i32, y: i32,
     match tiles.get(&(x, y)).copied() {
         Some(WorldTile::Solid) | Some(WorldTile::Corpse { .. }) => {}
         Some(WorldTile::Food { energy: existing }) => {
-            tiles.insert((x, y), WorldTile::Food { energy: existing + energy });
+            tiles.insert(
+                (x, y),
+                WorldTile::Food {
+                    energy: existing + energy,
+                },
+            );
             mark_tile(dirty, x, y);
         }
         None => {
@@ -70,7 +75,9 @@ pub fn place_corpse(
     }
     match tiles.get(&(x, y)).copied() {
         Some(WorldTile::Solid) => {}
-        Some(WorldTile::Corpse { energy: existing, .. }) => {
+        Some(WorldTile::Corpse {
+            energy: existing, ..
+        }) => {
             tiles.insert(
                 (x, y),
                 WorldTile::Corpse {
@@ -81,7 +88,13 @@ pub fn place_corpse(
             mark_tile(dirty, x, y);
         }
         None | Some(WorldTile::Food { .. }) => {
-            tiles.insert((x, y), WorldTile::Corpse { energy, death_reason });
+            tiles.insert(
+                (x, y),
+                WorldTile::Corpse {
+                    energy,
+                    death_reason,
+                },
+            );
             mark_tile(dirty, x, y);
         }
     }

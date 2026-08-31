@@ -18,16 +18,66 @@ struct SeedCreature {
 }
 
 const ECOSYSTEM_SEED: &[SeedCreature] = &[
-    SeedCreature { example_id: "predator", id: "seed-predator-0", x: 3, y: 0 },
-    SeedCreature { example_id: "predator", id: "seed-predator-1", x: -3, y: 0 },
-    SeedCreature { example_id: "prey", id: "seed-prey-0", x: 0, y: 3 },
-    SeedCreature { example_id: "prey", id: "seed-prey-1", x: 0, y: -3 },
-    SeedCreature { example_id: "prey", id: "seed-prey-2", x: 2, y: 2 },
-    SeedCreature { example_id: "prey", id: "seed-prey-3", x: -2, y: -2 },
-    SeedCreature { example_id: "scavenger", id: "seed-scavenger-0", x: 4, y: -2 },
-    SeedCreature { example_id: "scavenger", id: "seed-scavenger-1", x: -4, y: 2 },
-    SeedCreature { example_id: "hawk", id: "seed-hawk-0", x: 4, y: 2 },
-    SeedCreature { example_id: "hawk", id: "seed-hawk-1", x: -4, y: -2 },
+    SeedCreature {
+        example_id: "predator",
+        id: "seed-predator-0",
+        x: 3,
+        y: 0,
+    },
+    SeedCreature {
+        example_id: "predator",
+        id: "seed-predator-1",
+        x: -3,
+        y: 0,
+    },
+    SeedCreature {
+        example_id: "prey",
+        id: "seed-prey-0",
+        x: 0,
+        y: 3,
+    },
+    SeedCreature {
+        example_id: "prey",
+        id: "seed-prey-1",
+        x: 0,
+        y: -3,
+    },
+    SeedCreature {
+        example_id: "prey",
+        id: "seed-prey-2",
+        x: 2,
+        y: 2,
+    },
+    SeedCreature {
+        example_id: "prey",
+        id: "seed-prey-3",
+        x: -2,
+        y: -2,
+    },
+    SeedCreature {
+        example_id: "scavenger",
+        id: "seed-scavenger-0",
+        x: 4,
+        y: -2,
+    },
+    SeedCreature {
+        example_id: "scavenger",
+        id: "seed-scavenger-1",
+        x: -4,
+        y: 2,
+    },
+    SeedCreature {
+        example_id: "hawk",
+        id: "seed-hawk-0",
+        x: 4,
+        y: 2,
+    },
+    SeedCreature {
+        example_id: "hawk",
+        id: "seed-hawk-1",
+        x: -4,
+        y: -2,
+    },
 ];
 
 pub async fn seed_ecosystem(
@@ -101,7 +151,9 @@ pub async fn seed_ecosystem(
 
     let occupied: Vec<(i32, i32)> = creatures.iter().map(|c| (c.x, c.y)).collect();
     let mut tile_dirty = terrarium_kernel::world_tile::TileDirty::new();
-    for tick in (0..sim_config.food_spawn_interval * 4).step_by(sim_config.food_spawn_interval as usize) {
+    for tick in
+        (0..sim_config.food_spawn_interval * 4).step_by(sim_config.food_spawn_interval as usize)
+    {
         food::try_spawn_food(ledger, tiles, &mut tile_dirty, &occupied, tick, sim_config);
     }
 

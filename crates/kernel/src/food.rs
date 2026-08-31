@@ -9,12 +9,7 @@ fn hash_u64(seed: u64) -> u64 {
     h ^ (h >> 31)
 }
 
-fn pick_spawn_cell(
-    tick: u64,
-    attempt: u32,
-    occupied: &[(i32, i32)],
-    radius: i32,
-) -> (i32, i32) {
+fn pick_spawn_cell(tick: u64, attempt: u32, occupied: &[(i32, i32)], radius: i32) -> (i32, i32) {
     let (fq, fr) = if occupied.is_empty() {
         (0, 0)
     } else {
@@ -28,10 +23,13 @@ fn pick_spawn_cell(
         ((sq / n) as i32, (sr / n) as i32)
     };
 
-    let h = hash_u64(tick.wrapping_mul(1_000_003).wrapping_add(u64::from(attempt)));
-    let ring = (h % (radius as u64).max(1) as u64) as i32 + 1;
+    let h = hash_u64(
+        tick.wrapping_mul(1_000_003)
+            .wrapping_add(u64::from(attempt)),
+    );
+    let ring = (h % (radius as u64).max(1)) as i32 + 1;
     let face = (h >> 16) % 6;
-    let step = ((h >> 32) % (ring as u64).max(1) as u64) as i32;
+    let step = ((h >> 32) % (ring as u64).max(1)) as i32;
 
     let mut q = fq;
     let mut r = fr;
@@ -60,7 +58,7 @@ pub fn try_spawn_food(
     tick: u64,
     config: &SimConfig,
 ) -> u32 {
-    if tick % config.food_spawn_interval != 0 {
+    if !tick.is_multiple_of(config.food_spawn_interval) {
         return 0;
     }
     if ledger.free_budget() <= 0 {

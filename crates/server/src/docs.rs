@@ -31,9 +31,5 @@ pub async fn scalar_api() -> Html<String> {
 }
 
 pub async fn openapi_raw() -> Response {
-    (
-        [(header::CONTENT_TYPE, "application/json")],
-        OPENAPI,
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "application/json")], OPENAPI).into_response()
 }
