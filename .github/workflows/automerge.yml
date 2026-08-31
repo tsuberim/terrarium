@@ -17,6 +17,7 @@ jobs:
       github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh pr merge "${{ github.event.pull_request.number }}" --auto --squash
