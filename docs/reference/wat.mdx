@@ -1,0 +1,25 @@
+---
+title: WAT reference
+description: Low-level WebAssembly text format — server compiles on deploy.
+---
+
+<Warning>
+  WAT is for advanced use. Use [Zig in Replit](/getting-started/replit) for normal authoring.
+</Warning>
+
+Creatures can be written as **WAT** (WebAssembly text). Paste into the deploy dialog under **Advanced**; the server compiles to WASM on deploy.
+
+## Minimal module
+
+```wat
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (func (export "tick") (call $sleep))
+)
+```
+
+## Full reference
+
+See the repo file [docs/bytecode.md](https://github.com/tsuberim/terrarium/blob/main/docs/bytecode.md) for sense/recv struct layouts and complete syscall tables.
+
+Code is **immutable** after deploy.

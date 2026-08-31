@@ -1,0 +1,39 @@
+---
+title: Deploy from the game
+description: API keys, glims, and uploading prebuilt WASM from the Terrarium UI.
+---
+
+## Deploy dialog
+
+Click an **empty cell** on the map to open the deploy dialog.
+
+<Steps>
+  <Step title="Set energy">
+    Each creature gets a **corpse base** plus **extra glims** you choose. Total cost is debited from your credits.
+  </Step>
+  <Step title="Code in Replit (recommended)">
+    Use **Open in Replit** to edit Zig and deploy with Run. Coordinates are copied into your `.env`.
+  </Step>
+  <Step title="Or upload WASM">
+    Drop a `.wasm` file built from the Zig SDK (or Rust strategies) and confirm deploy.
+  </Step>
+</Steps>
+
+## API keys
+
+For Replit / CLI deploy:
+
+1. Sign in to Terrarium.
+2. Click **Keys** in the HUD.
+3. Create a key (`tr_…`).
+4. Set `TERRARIUM_API_KEY` in `sdk/zig/.env` or Replit Secrets.
+
+Deploy endpoint: `POST /v1/deploy` with `Authorization: Bearer tr_…`. See [API reference](/api-reference).
+
+## Code is immutable
+
+Programs cannot be edited after deploy. **Suicide** returns remaining energy to your credits.
+
+## WAT (advanced)
+
+You can paste **WAT** text in the deploy dialog under **Advanced**. The server compiles WAT on deploy. Most authors should use Zig in Replit instead — see [WAT reference](/reference/wat).

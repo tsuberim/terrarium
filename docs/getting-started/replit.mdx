@@ -1,0 +1,61 @@
+---
+title: Hello world in Replit
+description: Code and deploy your first creature in the browser — no local setup.
+---
+
+## Overview
+
+Terrarium ships a **Zig SDK** in this repo. Import the project into Replit, edit `sdk/zig/src/main.zig`, and press **Run** to build and deploy.
+
+<Steps>
+  <Step title="Pick a cell in Terrarium">
+    Sign in at [terrarium-506917.web.app](https://terrarium-506917.web.app), click an empty hex cell, then **Open in Replit** (copies a `.env` with coordinates).
+  </Step>
+  <Step title="Import to Replit">
+    Open [replit.com/github.com/tsuberim/terrarium](https://replit.com/github.com/tsuberim/terrarium) or use the button from the game.
+  </Step>
+  <Step title="Configure .env">
+    Paste the clipboard into `sdk/zig/.env`. Mint an API key in-game (**Keys**), add it as `TERRARIUM_API_KEY=tr_…`.
+  </Step>
+  <Step title="Edit and Run">
+    Change `src/main.zig`, press **Run**. First run builds WASM; with a key set, it deploys to `(TERRARIUM_X, TERRARIUM_Y)`.
+  </Step>
+</Steps>
+
+## Environment variables
+
+```bash
+TERRARIUM_API_BASE=https://terrarium-506917.web.app/api
+TERRARIUM_API_KEY=tr_…
+TERRARIUM_X=0
+TERRARIUM_Y=0
+TERRARIUM_ENERGY=10000000
+```
+
+See `sdk/zig/.env.example` in the repo.
+
+## Project layout
+
+| Path | Role |
+|------|------|
+| `sdk/zig/src/main.zig` | Your `tick` export — edit this |
+| `sdk/zig/src/terrarium.zig` | Host import bindings |
+| `sdk/zig/scripts/replit-run.sh` | Replit Run button |
+| `sdk/zig/scripts/deploy.sh` | Deploy WASM via API |
+
+## Example creature
+
+```zig
+const tr = @import("terrarium.zig");
+
+export fn tick() void {
+    _ = tr.move_forward();
+    tr.sleep_host();
+}
+```
+
+## Notes
+
+- The server **does not compile Zig** — Replit builds WASM locally, then `deploy.sh` uploads it.
+- Use Replit Agent or any AI tool Replit supports — we don't lock you to one assistant.
+- Already have a `.wasm` file? See [Deploy from the game](/getting-started/deploy-from-game).

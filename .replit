@@ -1,0 +1,19 @@
+entrypoint = "sdk/zig/src/main.zig"
+language = "zig"
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix"]
+
+[nix]
+channel = "stable-24_05"
+
+onBoot = "cd sdk/zig && zig build -Doptimize=ReleaseSmall"
+
+[run]
+args = ["bash", "sdk/zig/scripts/replit-run.sh"]
+
+[languages.zig]
+pattern = "**/*.zig"
+
+[languages.zig.languageServer]
+start = "zls"

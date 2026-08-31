@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { EXAMPLE_PROGRAMS } from "../lib/examples";
 import { formatWasmLimit, MAX_WASM_BYTES } from "../lib/deployLimits";
 import { formatGlimString, GLIM_SCALE } from "../lib/glim";
+import { apiRoot } from "../lib/config";
+import { authorLinks, openReplitWithEnv, resolveApiBase } from "../lib/authoringLinks";
 import { GlimAmount } from "./GlimAmount";
 
 type Props = {
@@ -33,22 +35,15 @@ async function readWasmFile(file: File): Promise<{ b64: string; name: string }> 
   return { b64: btoa(binary), name: file.name };
 }
 
-export function DeployDialog({
-  cell,
-  minExtra,
-  corpseEnergy,
-  credits,
-  busy,
-  onDeploy,
-  onClose,
-}: Props) {
+export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDeploy, onClose }: Props) {
   const [code, setCode] = useState("");
   const [wasmB64, setWasmB64] = useState<string | undefined>();
   const [wasmLabel, setWasmLabel] = useState<string | null>(null);
   const [extra, setExtra] = useState(minExtra);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [replitCopied, setReplitCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -58,7 +53,8 @@ export function DeployDialog({
     setWasmLabel(null);
     setExtra(minExtra);
     setError(null);
-    requestAnimationFrame(() => textareaRef.current?.focus());
+    setAdvancedOpen(false);
+    setReplitCopied(false);
   }, [cell, minExtra]);
 
   useEffect(() => {
@@ -75,6 +71,7 @@ export function DeployDialog({
   const maxExtra = Math.max(minExtra, (credits ?? minExtra) - corpseEnergy);
   const totalEnergy = corpseEnergy + extra;
   const totalCost = totalEnergy;
+  const apiBase = resolveApiBase(apiRoot());
 
   const applyWasm = async (file: File) => {
     try {
@@ -98,9 +95,14 @@ export function DeployDialog({
     if (file) void applyWasm(file);
   };
 
+  const launchReplit = async () => {
+    await openReplitWithEnv({ apiBase, x: cell.x, y: cell.y, energy: totalEnergy });
+    setReplitCopied(true);
+  };
+
   const submit = () => {
     if (!code.trim()) {
-      setError("Enter a program or drop a .wasm file");
+      setError("Drop a .wasm file or paste WAT under Advanced");
       return;
     }
     if (extra < minExtra) {
@@ -114,6 +116,8 @@ export function DeployDialog({
     setError(null);
     onDeploy(code, extra, wasmB64);
   };
+
+  const canSubmit = !!wasmB64 || (advancedOpen && code.trim());
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-20 flex items-end justify-center p-3 sm:items-center sm:p-4">
@@ -130,6 +134,33 @@ export function DeployDialog({
           <span className="font-mono text-[10px] text-white/35">
             ({cell.x}, {cell.y})
           </span>
+        </div>
+
+        <div className="mb-3 rounded-lg border border-biolume/15 bg-biolume/[0.04] p-3">
+          <p className="mb-2 text-[11px] leading-relaxed text-white/50">
+            Code in Replit — edit Zig, press Run to build and deploy here.
+          </p>
+          <button
+            type="button"
+            className="deploy-btn deploy-btn-primary w-full"
+            disabled={busy}
+            onClick={() => void launchReplit()}
+          >
+            Open in Replit
+          </button>
+          {replitCopied && (
+            <p className="mt-1.5 font-mono text-[9px] text-biolume/70">
+              .env copied — paste at sdk/zig/.env, add API key from Keys
+            </p>
+          )}
+          <a
+            href={authorLinks.docs}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 block text-center text-[10px] text-white/30 hover:text-white/50"
+          >
+            Docs → hello world
+          </a>
         </div>
 
         <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2">
@@ -154,37 +185,6 @@ export function DeployDialog({
             <span className="text-[10px] text-white/30">=</span>
             <GlimAmount amount={totalEnergy} className="text-[10px] text-white/45" />
           </div>
-        </div>
-
-        <p className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-white/28">
-          <span>{wasmB64 ? "WASM bundle" : "WAT module"} ·</span>
-          <GlimAmount amount={corpseEnergy} className="text-[10px] text-white/40" compact />
-          <span>base +</span>
-          <GlimAmount amount={extra} className="text-[10px] text-white/40" compact />
-          <span>extra =</span>
-          <GlimAmount amount={totalCost} className="text-[10px] text-white/40" compact />
-          <span>credits</span>
-        </p>
-
-        <div className="mb-2 flex flex-wrap gap-1">
-          {EXAMPLE_PROGRAMS.map((example) => (
-            <button
-              key={example.id}
-              type="button"
-              className="deploy-btn"
-              title={example.description}
-              disabled={busy}
-              onClick={() => {
-                setCode(example.code);
-                setWasmB64(example.wasmB64);
-                setWasmLabel(example.wasmB64 ? `${example.name}.wasm` : null);
-                if (error) setError(null);
-                textareaRef.current?.focus();
-              }}
-            >
-              {example.name}
-            </button>
-          ))}
         </div>
 
         <input
@@ -223,40 +223,68 @@ export function DeployDialog({
                 <span className="text-white/30"> · drop another to replace</span>
               </>
             ) : (
-              <>Drop a .wasm file here or click to browse</>
+              <>Or drop a prebuilt .wasm file</>
             )}
           </p>
           <p className="mt-0.5 font-mono text-[9px] text-white/25">Max {formatWasmLimit()}</p>
         </button>
 
-        <textarea
-          ref={textareaRef}
-          value={code}
-          onChange={(e) => {
-            setCode(e.target.value);
-            setWasmB64(undefined);
-            setWasmLabel(null);
-            if (error) setError(null);
-          }}
-          placeholder={"(module\n  (import \"terrarium\" \"sleep\" (func $sleep))\n  (func (export \"tick\") (call $sleep))\n)"}
-          spellCheck={false}
-          rows={10}
-          className="deploy-input"
-        />
+        <button
+          type="button"
+          className="mb-2 w-full text-left text-[10px] text-white/35 hover:text-white/55"
+          onClick={() => setAdvancedOpen((v) => !v)}
+        >
+          {advancedOpen ? "▾" : "▸"} Advanced — paste WAT
+        </button>
+
+        {advancedOpen && (
+          <div className="mb-2 space-y-2">
+            <div className="flex flex-wrap gap-1">
+              {EXAMPLE_PROGRAMS.map((example) => (
+                <button
+                  key={example.id}
+                  type="button"
+                  className="deploy-btn"
+                  title={example.description}
+                  disabled={busy}
+                  onClick={() => {
+                    setCode(example.code);
+                    setWasmB64(example.wasmB64);
+                    setWasmLabel(example.wasmB64 ? `${example.name}.wasm` : null);
+                    if (error) setError(null);
+                  }}
+                >
+                  {example.name}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                setWasmB64(undefined);
+                setWasmLabel(null);
+                if (error) setError(null);
+              }}
+              placeholder={'(module\n  (import "terrarium" "sleep" (func $sleep))\n  (func (export "tick") (call $sleep))\n)'}
+              spellCheck={false}
+              rows={8}
+              className="deploy-input"
+            />
+          </div>
+        )}
 
         {error && <p className="mt-1.5 font-mono text-[10px] text-red-400/80">{error}</p>}
-
-        <p className="mt-2 font-mono text-[9px] leading-relaxed text-white/25">
-          Code is immutable after deploy. Suicide returns energy to your credits.
-        </p>
 
         <div className="mt-3 flex justify-end gap-1.5">
           <button type="button" className="deploy-btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className="deploy-btn deploy-btn-primary" onClick={submit} disabled={busy}>
-            Deploy · <GlimAmount amount={totalCost} className="text-[10px]" compact />
-          </button>
+          {canSubmit && (
+            <button type="button" className="deploy-btn deploy-btn-primary" onClick={submit} disabled={busy}>
+              Deploy · <GlimAmount amount={totalCost} className="text-[10px]" compact />
+            </button>
+          )}
         </div>
       </div>
     </div>

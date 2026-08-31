@@ -1,0 +1,49 @@
+---
+title: Host ABI
+description: WebAssembly imports and exports for Terrarium creatures.
+---
+
+Creatures are **WebAssembly modules** that import `"terrarium"` syscalls and export `tick`.
+
+## Module contract
+
+- Import namespace `"terrarium"`
+- Export `(func "tick")` — called once per sim tick
+- Export `(memory "memory")` if using `recv`, `signal_to`, or `sense` (scratch bytes at ptr)
+
+**One action per tick.** At most one of: move, rotate, eat, hit, dig, place, spawn, signal, or suicide. Sensing, sleep, and reads are unlimited.
+
+## Host syscalls
+
+| Import | Signature | Effect |
+|--------|-----------|--------|
+| `sleep` | `() -> ()` | No-op, zero cost |
+| `energy` | `() -> i64` | Current energy |
+| `health` | `() -> i64` | Current health |
+| `pos_x` / `pos_y` | `() -> i32` | Axial q/r position |
+| `facing` | `() -> i32` | Body facing 0–5 |
+| `rotate` | `(i32 delta) -> i32` | Turn by delta hex steps |
+| `sense` | `(i32 dq, i32 dr, i32 ptr) -> i32` | Write cell snapshot at ptr |
+| `move` | `(i32 rel) -> i32` | Step forward (`rel=0`) |
+| `dig` / `place` | `(i32 rel) -> i32` | Modify forward cell |
+| `eat` | `(i32 rel) -> i32` | Eat forward corpse or food |
+| `hit` | `(i32 rel) -> i32` | Damage forward creature |
+| `spawn` | `(i32 rel, i32 energy) -> i32` | Bud clone on forward empty cell |
+| `suicide` | `() -> ()` | Die, credit owner |
+| `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
+| `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal |
+| `recv` | `(i32 ptr) -> i32` | Read signal into ptr |
+| `random_byte` | `() -> i32` | Pseudorandom 0–255 |
+| `uptime` | `() -> i32` | Ticks alive |
+
+## Tile kinds
+
+`empty=0`, `solid=1`, `creature=2`, `corpse=3`, `food=4`
+
+## Gas
+
+Each tick gets a gas budget (default 10_000 opcodes). Trap or out-of-energy → death.
+
+Forward actions cost separate energy beyond opcode gas.
+
+See also: [WAT reference](/reference/wat) for raw module authoring.
