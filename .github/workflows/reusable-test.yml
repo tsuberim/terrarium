@@ -36,29 +36,37 @@ jobs:
 
   rust:
     needs: changes
-    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
-      - run: cargo build --release -p terrarium-server
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        uses: dtolnay/rust-toolchain@stable
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        uses: Swatinem/rust-cache@v2
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        run: cargo fmt --all -- --check
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        run: cargo test --workspace
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        run: cargo build --release -p terrarium-server
+      - if: needs.changes.outputs.rust != 'true' && needs.changes.outputs.workflows != 'true'
+        run: echo "No rust changes — skipped"
 
   frontend:
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/skin/package-lock.json
-      - run: npm ci && npm run lint && npm run build
+      - if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.workflows == 'true'
+        run: npm ci && npm run lint && npm run build
         working-directory: apps/skin
         env:
           VITE_API_BASE: ""
@@ -66,24 +74,29 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: ci.firebaseapp.com
           VITE_FIREBASE_PROJECT_ID: ci-project
           VITE_FIREBASE_APP_ID: ci-app
+      - if: needs.changes.outputs.frontend != 'true' && needs.changes.outputs.workflows != 'true'
+        run: echo "No frontend changes — skipped"
 
   docker:
     needs: changes
-    if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: write
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
+        uses: docker/setup-buildx-action@v3
+      - if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: false
           tags: terrarium-server
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - if: needs.changes.outputs.docker != 'true' && needs.changes.outputs.workflows != 'true'
+        run: echo "Dockerfile unchanged — skipped"
 
   gate:
     needs: [changes, rust, frontend, docker]
