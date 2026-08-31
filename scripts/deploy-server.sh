@@ -23,8 +23,20 @@ IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPO}/server:${
 
 gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
-docker build --platform linux/amd64 -t "$IMAGE" .
-docker push "$IMAGE"
+export DOCKER_BUILDKIT=1
+
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+  docker buildx create --use --name terrarium-builder 2>/dev/null || docker buildx use terrarium-builder
+  docker buildx build --platform linux/amd64 \
+    --cache-from type=gha \
+    --cache-to type=gha,mode=max \
+    -t "$IMAGE" \
+    --push \
+    .
+else
+  docker build --platform linux/amd64 -t "$IMAGE" .
+  docker push "$IMAGE"
+fi
 
 ENV_VARS="FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FAUCET_ENABLED=true,DATABASE_URL=sqlite:///app/data/terrarium.db?mode=rwc"
 
