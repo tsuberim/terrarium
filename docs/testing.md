@@ -8,6 +8,16 @@
 
 Same as the reusable CI test job (minus Docker): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, frontend `npm run lint`, release build.
 
+### Pre-commit
+
+```bash
+pip install pre-commit   # or: brew install pre-commit
+pre-commit install       # also run from ./scripts/setup-dev.sh when pre-commit is on PATH
+pre-commit run --all-files
+```
+
+Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
+
 ## Layers
 
 | Layer | What it catches | Command |
@@ -70,7 +80,7 @@ Plain `:memory:` gives **each pool connection its own empty database**, so deplo
 
 | Workflow | Trigger | Checks |
 |----------|---------|--------|
-| `ci.yml` | PR | fmt, clippy (-D warnings), Rust tests, ESLint, frontend build, Docker build |
-| `deploy.yml` | push to `main`, manual | Same test job, then Cloud Run + Firebase Hosting when `DEPLOY_ENABLED=true` |
+| `ci.yml` | PR | Parallel: Rust (fmt, clippy, test, build), frontend (lint, build), Docker build |
+| `deploy.yml` | push to `main`, manual | Same test jobs → parallel Cloud Run + Hosting deploy → post-deploy smoke |
 
 Both use `.github/workflows/reusable-test.yml` so PR and prod paths run identical checks. Push to `main` does not duplicate the test job across two workflows.

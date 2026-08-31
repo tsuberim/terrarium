@@ -111,10 +111,12 @@ GitHub Actions (`.github/workflows/`):
 
 | Workflow | Trigger | Jobs |
 |----------|---------|------|
-| `ci.yml` | PR | Reusable test (Rust, frontend, Docker) |
-| `deploy.yml` | push to `main`, manual | Reusable test → Cloud Run + Firebase Hosting (parallel after test) |
+| `ci.yml` | PR | Parallel Rust / frontend / Docker test jobs |
+| `deploy.yml` | push to `main`, manual | Parallel test → parallel Cloud Run + Hosting → smoke |
 
 Deploy uses Workload Identity Federation (no long-lived GCP keys in CI). Secrets are listed in [secrets.md](secrets.md).
+
+Post-deploy smoke (`scripts/smoke-prod.sh`): `/api/health` on Cloud Run and Hosting, plus `/api/v1/world` — retries through cold start.
 
 Deploy concurrency group `deploy-prod` cancels in-progress deploys when new commits land on `main`.
 
@@ -128,6 +130,7 @@ Deploy concurrency group `deploy-prod` cancels in-progress deploys when new comm
 | `dev.sh` / `dev-stop.sh` | Start / stop local dev |
 | `deploy-server.sh` | Cloud Run deploy (local or CI) |
 | `generate-config.sh` | Write `apps/skin/.env.production` for CI builds |
+| `smoke-prod.sh` | Post-deploy health + world HTTP checks |
 
 ---
 
