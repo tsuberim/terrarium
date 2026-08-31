@@ -25,6 +25,9 @@ concurrency:
 jobs:
   test:
     uses: ./.github/workflows/reusable-test.yml
+    permissions:
+      contents: read
+      actions: write
 
   server:
     needs: test
