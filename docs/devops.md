@@ -120,6 +120,21 @@ Post-deploy smoke (`scripts/smoke-prod.sh`): `/api/health` on Cloud Run and Host
 
 Deploy concurrency group `deploy-prod` cancels in-progress deploys when new commits land on `main`.
 
+### Branch policy (`main`)
+
+| Rule | Setting |
+|------|---------|
+| Direct push | Blocked — changes land via PR only |
+| Required checks | `test / rust`, `test / frontend`, `test / docker` |
+| Reviews | PR required; 0 approvals (solo maintainer) |
+| Admin bypass | Disabled (`enforce_admins`) |
+| Merge method | Squash only |
+| Head branches | Auto-deleted after merge |
+
+Pre-commit (local): `pip install pre-commit && pre-commit install` — see [testing.md](testing.md).
+
+Dependabot opens weekly PRs for Cargo, npm, Docker, and GitHub Actions. Security advisories and automated security updates are enabled on the repo.
+
 ---
 
 ## Scripts reference
