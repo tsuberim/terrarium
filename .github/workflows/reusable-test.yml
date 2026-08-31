@@ -84,3 +84,17 @@ jobs:
           tags: terrarium-server
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  gate:
+    needs: [changes, rust, frontend, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.rust.result }}" = "failure" ] || \
+             [ "${{ needs.frontend.result }}" = "failure" ] || \
+             [ "${{ needs.docker.result }}" = "failure" ]; then
+            echo "A required test job failed"
+            exit 1
+          fi
+          echo "CI gate passed (skipped jobs OK)"
