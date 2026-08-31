@@ -56,11 +56,6 @@ export function creaturePalette(creature: Creature, mode: SpriteMode): CreatureP
   return palette;
 }
 
-/** @deprecated use creaturePalette */
-export function creatureSprite(creature: Creature, mode: SpriteMode) {
-  return creaturePalette(creature, mode);
-}
-
 export type CreatureAnim = {
   squash: number;
   blink: number;

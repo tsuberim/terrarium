@@ -32,6 +32,7 @@ Kernel semantic tests live in `crates/kernel/src/logic_tests.rs`. They cover:
 - Example program behavior (wall north)
 - `sense` sees creatures
 - Energy zero → death
+- One action per tick; rotate-then-eat ordering; frontal vision cone
 
 Run: `cargo test -p terrarium-kernel logic_tests`
 
@@ -48,9 +49,9 @@ fn my_program_does_x() {
 
 ## Server sim tests
 
-`crates/server/src/sim.rs` uses in-memory SQLite with **one connection** (required for `:memory:`).
+`crates/server/src/engine.rs` uses in-memory SQLite.
 
-Tests call `tick_once` directly — same path as the live 10 Hz loop.
+Tests call `WorldEngine::tick_step()` directly — same kernel path as the live 2 Hz loop.
 
 ## Local dev gotcha (fixed)
 

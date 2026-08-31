@@ -34,6 +34,7 @@ pub const ALL: &[ExampleProgram] = &[
     },
 ];
 
+#[allow(dead_code)]
 pub(crate) const IDLE: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
@@ -41,6 +42,7 @@ pub(crate) const IDLE: &str = r#"
 )
 "#;
 
+#[allow(dead_code)]
 pub(crate) const RUNNER: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
@@ -53,6 +55,7 @@ pub(crate) const RUNNER: &str = r#"
 )
 "#;
 
+#[allow(dead_code)]
 pub(crate) const BEACON: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
@@ -69,6 +72,7 @@ pub(crate) const BEACON: &str = r#"
 )
 "#;
 
+#[allow(dead_code)]
 pub(crate) const KAMIKAZE: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
@@ -90,6 +94,7 @@ pub(crate) const KAMIKAZE: &str = r#"
 )
 "#;
 
+#[allow(dead_code)]
 const COLONIST: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))

@@ -130,14 +130,6 @@ impl HostState {
         Ok(())
     }
 
-    fn valid_dir(d: i32) -> Result<u8, Error> {
-        if (0..crate::abi::dir::COUNT).contains(&d) {
-            Ok(d as u8)
-        } else {
-            Err(Error::msg("bad direction"))
-        }
-    }
-
     fn can_sense(&self, dq: i32, dr: i32) -> bool {
         let config = self.config();
         if !config.in_hex_range(dq, dr, config.r_vis) {

@@ -154,8 +154,8 @@
     "/v1/world": {
       "get": {
         "tags": ["world", "public"],
-        "summary": "World snapshot",
-        "description": "Current creatures, tiles, and deploy costs.",
+        "summary": "World state",
+        "description": "Current creatures, tiles, and deploy costs (REST). Live updates use WebSocket deltas.",
         "responses": {
           "200": {
             "content": {

@@ -4,7 +4,7 @@ Terrarium is a single authoritative world server with many read-only spectators.
 
 ## Core invariant
 
-> **The world clock advances at exactly `TICK_HZ` (10 Hz) for every client**, regardless of how many spectators are connected or how heavy a single tick's computation is.
+> **The world clock advances at exactly `TICK_HZ` (2 Hz) for every client**, regardless of how many spectators are connected or how heavy a single tick's computation is.
 
 Clients never drive the sim. The sim never waits on clients or SQLite.
 
@@ -94,20 +94,28 @@ Connect: `GET /api/v1/world/ws`
 }
 ```
 
-**Delta** (every sim tick — `tick` always present):
+**Tick delta** (every sim tick — `tick` always present):
 
 ```json
 {
   "type": "delta",
   "tick": 1205,
-  "creatures_upsert": [],
+  "creatures_upsert": [{ "id": "a", "x": 1, "y": 0, "facing": 0, "energy": 12000000, ... }],
   "creatures_remove": [],
   "tiles_upsert": [],
-  "tiles_remove": []
+  "tiles_remove": [[2, 0]],
+  "actions": [
+    { "kind": "move", "creature_id": "a", "from_x": 0, "from_y": 0, "to_x": 1, "to_y": 0 }
+  ],
+  "events": [
+    { "type": "eat", "actor_id": "b", "x": 2, "y": 0, "energy": 8000000, "tile_kind": 3 }
+  ]
 }
 ```
 
-Empty arrays = heartbeat; client still advances interpolation clock.
+- **`actions`** — explicit per-creature motion (`move`, `rotate`, `eat`, `hit`); client animates these.
+- **`events`** — FX and narrative (`death`, `spawn`, `eat`, `hit`, `signal`); include render fields (death stats, `tile_kind` on eat, spawn parent position).
+- Empty upsert/remove arrays = heartbeat; client still advances interpolation clock.
 
 ## When sim complexity grows
 
@@ -118,7 +126,7 @@ Today all creatures tick every frame. Path to **tons of entities** without break
 - Spatial hash for creature collision (O(1) not O(n²))
 
 ### Phase B — Time budgets
-- `TICK_BUDGET_US` (default 100ms @ 10Hz)
+- `TICK_BUDGET_US` (default 500ms @ 2Hz)
 - If overrun: process remaining creatures next tick (fair round-robin cursor)
 - Idle/sleeping creatures cost ~0 — skip VM when at `sleep`/`halt`
 
@@ -142,8 +150,17 @@ Today all creatures tick every frame. Path to **tons of entities** without break
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `PERSIST_EVERY_TICKS` | `10` | Checkpoint interval |
-| `TICK_HZ` | `10` (kernel const) | World clock rate |
+| `TICK_HZ` | `2` (kernel const) | World clock rate |
 | `DATABASE_URL` | file sqlite | Persistence |
+
+## Client rendering
+
+Spectators apply server deltas in two layers:
+
+1. **Sim state** (`useWorldStream`) — merge `creatures_*` / `tiles_*` upserts and removes immediately (authoritative for HUD, deploy checks).
+2. **Display** (`WorldRuntime`) — schedule wall-clock animation from `actions` + `events`; hold removed tiles until eat FX finishes; death ghosts from rich `death` events.
+
+The canvas reads **display tiles** and **interpolated poses**, not raw sim positions for motion.
 
 ## Files
 
@@ -151,6 +168,7 @@ Today all creatures tick every frame. Path to **tons of entities** without break
 |------|------|
 | `crates/server/src/engine.rs` | RAM world, sim thread, broadcast |
 | `crates/server/src/ws.rs` | Per-client fan-out |
-| `crates/kernel/` | VM, energy ledger (planned), no I/O |
+| `crates/kernel/` | VM, tick loop, energy ledger, no I/O |
 | `docs/energy-budget.md` | Free-mint budget (2:1 destroy ratio) |
-| `apps/skin/src/hooks/useWorldStream.ts` | Client delta apply + maps |
+| `apps/skin/src/hooks/useWorldStream.ts` | WS connect, sim state maps |
+| `apps/skin/src/lib/worldRuntime.ts` | Action/event animation + display tiles |

@@ -12,7 +12,7 @@ use crate::food::try_spawn_food;
 use crate::events::{DeathReason, TickResult, WorldEvent};
 use crate::host::{self, PendingAction, ThinkResult};
 use crate::sim_config::SimConfig;
-use crate::world_tile::{place_corpse, sense_kind, set_cell, blocks_movement, WorldTile, WorldTiles};
+use crate::world_tile::{mark_tile, place_corpse, sense_kind, set_cell, blocks_movement, TileDirty, WorldTile, WorldTiles};
 
 #[derive(Clone, Debug)]
 pub struct Signal {
@@ -85,6 +85,7 @@ pub fn run_tick(
     let destroyed_before = ledger.destroyed;
     let free_before = ledger.free_minted;
     let mut result = TickResult::default();
+    let mut tile_dirty = TileDirty::new();
     let snapshot = build_snapshot(creatures);
     let engine = host::wasm_engine();
 
@@ -130,24 +131,12 @@ pub fn run_tick(
 
     let mut move_targets: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (i, think) in &pending {
+        if !matches!(think.action, Some(PendingAction::Move)) {
+            continue;
+        }
         let c = &creatures[*i];
-        let mut x = c.x;
-        let mut y = c.y;
-        let mut facing = c.facing;
-        if let Some(action) = &think.action {
-            match action {
-                PendingAction::Rotate { delta } => {
-                    facing = (facing as i32 + *delta).rem_euclid(6) as u8;
-                }
-                PendingAction::Move => {
-                    if let Some((nx, ny)) = hex::neighbor(x, y, facing) {
-                        move_targets.entry((nx, ny)).or_default().push(*i);
-                        x = nx;
-                        y = ny;
-                    }
-                }
-                _ => {}
-            }
+        if let Some(cell) = hex::neighbor(c.x, c.y, c.facing) {
+            move_targets.entry(cell).or_default().push(*i);
         }
     }
 
@@ -216,7 +205,7 @@ pub fn run_tick(
                 }
                 PendingAction::Dig { dir } => {
                     if let Some((x, y)) = hex::neighbor(c.x, c.y, dir) {
-                        set_cell(tiles, x, y, tile::EMPTY);
+                        set_cell(tiles, &mut tile_dirty, x, y, tile::EMPTY);
                     }
                 }
                 PendingAction::Place { dir } => {
@@ -224,7 +213,7 @@ pub fn run_tick(
                         if sense_kind(tiles, x, y, false) == tile::EMPTY
                             && !snapshot.id_at.contains_key(&(x, y))
                         {
-                            set_cell(tiles, x, y, tile::SOLID);
+                            set_cell(tiles, &mut tile_dirty, x, y, tile::SOLID);
                         }
                     }
                 }
@@ -247,6 +236,7 @@ pub fn run_tick(
         };
         match tiles.get(&(x, y)).copied() {
             Some(WorldTile::Corpse { energy, .. }) => {
+                mark_tile(&mut tile_dirty, x, y);
                 tiles.remove(&(x, y));
                 creatures[i].energy += energy;
                 result.actions.push(crate::events::CreatureAction::Eat {
@@ -263,6 +253,7 @@ pub fn run_tick(
                 });
             }
             Some(WorldTile::Food { energy }) if energy > 0 => {
+                mark_tile(&mut tile_dirty, x, y);
                 tiles.remove(&(x, y));
                 creatures[i].energy += energy;
                 result.actions.push(crate::events::CreatureAction::Eat {
@@ -519,12 +510,13 @@ pub fn run_tick(
     creatures.retain(|c| c.alive);
 
     for (x, y, energy, _orig, reason) in dead {
-        place_corpse(tiles, x, y, energy, reason);
+        place_corpse(tiles, &mut tile_dirty, x, y, energy, reason);
     }
 
     try_spawn_food(
         ledger,
         tiles,
+        &mut tile_dirty,
         &creatures.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>(),
         tick,
         config,
@@ -532,6 +524,7 @@ pub fn run_tick(
 
     result.destroyed = ledger.destroyed - destroyed_before;
     result.free_minted = ledger.free_minted - free_before;
+    result.tiles_dirty = tile_dirty;
     result
 }
 

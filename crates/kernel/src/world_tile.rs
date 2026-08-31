@@ -1,9 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::abi::tile;
 use crate::events::DeathReason;
 
 pub type WorldTiles = HashMap<(i32, i32), WorldTile>;
+pub type TileDirty = HashSet<(i32, i32)>;
+
+#[inline]
+pub fn mark_tile(dirty: &mut TileDirty, x: i32, y: i32) {
+    dirty.insert((x, y));
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldTile {
@@ -34,7 +40,7 @@ pub fn count_food(tiles: &WorldTiles) -> u32 {
         .count() as u32
 }
 
-pub fn place_food(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64) {
+pub fn place_food(tiles: &mut WorldTiles, dirty: &mut TileDirty, x: i32, y: i32, energy: i64) {
     if energy <= 0 {
         return;
     }
@@ -42,14 +48,23 @@ pub fn place_food(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64) {
         Some(WorldTile::Solid) | Some(WorldTile::Corpse { .. }) => {}
         Some(WorldTile::Food { energy: existing }) => {
             tiles.insert((x, y), WorldTile::Food { energy: existing + energy });
+            mark_tile(dirty, x, y);
         }
         None => {
             tiles.insert((x, y), WorldTile::Food { energy });
+            mark_tile(dirty, x, y);
         }
     }
 }
 
-pub fn place_corpse(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64, death_reason: DeathReason) {
+pub fn place_corpse(
+    tiles: &mut WorldTiles,
+    dirty: &mut TileDirty,
+    x: i32,
+    y: i32,
+    energy: i64,
+    death_reason: DeathReason,
+) {
     if energy < 0 {
         return;
     }
@@ -63,18 +78,23 @@ pub fn place_corpse(tiles: &mut WorldTiles, x: i32, y: i32, energy: i64, death_r
                     death_reason,
                 },
             );
+            mark_tile(dirty, x, y);
         }
         None | Some(WorldTile::Food { .. }) => {
             tiles.insert((x, y), WorldTile::Corpse { energy, death_reason });
+            mark_tile(dirty, x, y);
         }
     }
 }
 
-pub fn set_cell(tiles: &mut WorldTiles, x: i32, y: i32, kind: i32) {
+pub fn set_cell(tiles: &mut WorldTiles, dirty: &mut TileDirty, x: i32, y: i32, kind: i32) {
     if kind == tile::EMPTY {
-        tiles.remove(&(x, y));
+        if tiles.remove(&(x, y)).is_some() {
+            mark_tile(dirty, x, y);
+        }
     } else if kind == tile::SOLID {
         tiles.insert((x, y), WorldTile::Solid);
+        mark_tile(dirty, x, y);
     }
 }
 

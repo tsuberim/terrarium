@@ -64,7 +64,7 @@ pub fn direction_toward(dq: i32, dr: i32) -> Option<u8> {
     let sf = sf / scale;
     let mut rq = qf.round() as i32;
     let mut rr = rf.round() as i32;
-    let mut rs = sf.round() as i32;
+    let rs = sf.round() as i32;
     let q_diff = (rq as f64 - qf).abs();
     let r_diff = (rr as f64 - rf).abs();
     let s_diff = (rs as f64 - sf).abs();
@@ -73,7 +73,7 @@ pub fn direction_toward(dq: i32, dr: i32) -> Option<u8> {
     } else if r_diff > s_diff {
         rr = -rq - rs;
     } else {
-        rs = -rq - rr;
+        let _ = -rq - rr;
     }
     dir_of_offset(rq, rr)
 }

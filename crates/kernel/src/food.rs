@@ -55,6 +55,7 @@ fn cell_open(tiles: &WorldTiles, occupied: &[(i32, i32)], q: i32, r: i32) -> boo
 pub fn try_spawn_food(
     ledger: &mut EnergyLedger,
     tiles: &mut WorldTiles,
+    dirty: &mut crate::world_tile::TileDirty,
     occupied: &[(i32, i32)],
     tick: u64,
     config: &SimConfig,
@@ -84,7 +85,7 @@ pub fn try_spawn_food(
         }
         let grant = ledger.try_mint_free(config.food_nominal_energy);
         if grant > 0 {
-            place_food(tiles, q, r, grant);
+            place_food(tiles, dirty, q, r, grant);
             spawned += 1;
         }
     }

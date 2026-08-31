@@ -10,9 +10,6 @@ pub struct AuthenticatedUser {
     pub uid: String,
 }
 
-/// Back-compat alias used by handlers.
-pub type FirebaseUser = AuthenticatedUser;
-
 #[derive(Debug, Deserialize)]
 struct FirebaseClaims {
     sub: String,

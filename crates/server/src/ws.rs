@@ -8,7 +8,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::{engine::WorldMessage, AppState};
+use crate::{wire::WorldMessage, AppState};
 
 pub async fn world_ws(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))

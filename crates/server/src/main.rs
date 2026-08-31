@@ -20,11 +20,13 @@ mod auth;
 mod config;
 mod docs;
 mod engine;
+mod wire;
 mod ws;
 
 use auth::AuthenticatedUser;
 use config::Config;
 use engine::{spawn_tick_loop, WorldEngine};
+use wire::{CreaturePublic, TilePublic};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use terrarium_kernel::{
     compile_wat, host, vm::Creature, SimConfig, CORPSE_ENERGY, WatError,
@@ -63,8 +65,8 @@ struct FaucetResponse {
 struct WorldResponse {
     deploy_cost: i64,
     corpse_energy: i64,
-    creatures: Vec<engine::CreaturePublic>,
-    tiles: Vec<engine::TilePublic>,
+    creatures: Vec<CreaturePublic>,
+    tiles: Vec<TilePublic>,
 }
 
 #[derive(Deserialize)]

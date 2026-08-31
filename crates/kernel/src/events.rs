@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,4 +153,6 @@ pub struct TickResult {
     pub free_minted: i64,
     /// Suicide energy returned to human accounts (uid → glims).
     pub credit_payouts: Vec<(String, i64)>,
+    /// Hex cells touched this tick (upsert or remove in delta).
+    pub tiles_dirty: HashSet<(i32, i32)>,
 }

@@ -168,7 +168,7 @@ Never silently grant over budget. Partial grants are fine for terrain; API paths
 
 ## Observability
 
-Expose on snapshot (dev or always):
+Expose on **full delta** (`full: true`, connect + lag recovery) and REST `/v1/world` where applicable:
 
 ```json
 {
@@ -188,7 +188,7 @@ Dev panel: sparkline of destroy rate vs free-mint rate; budget remaining.
 
 | Phase | Work |
 |-------|------|
-| **1 — Ledger** | `EnergyLedger` in kernel; `record_destroy` on existing sinks; persist columns; WS field |
+| **1 — Ledger** | `EnergyLedger` in kernel; `record_destroy` on existing sinks; persist columns; WS `energy_ledger` on full delta |
 | **2 — Tick accounting** | `TickEnergyAccounting` in `TickResult`; tests for 2:1 cap |
 | **3 — Food** | Terrain kind `food`; procedural sites; eat transfers; mint at fill |
 | **4 — Balance pass** | Tune food density, nominal value, regen vs typical destroy rate |

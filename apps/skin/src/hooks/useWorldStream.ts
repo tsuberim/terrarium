@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { Creature, CreatureAction, SimConfig, WorldEvent, WorldTile } from "../lib/api";
+import type { Creature, SimConfig, WorldTile } from "../lib/api";
+import { getHealth } from "../lib/api";
+import type { FxEvent } from "../lib/worldTypes";
 import { wsRoot } from "../lib/config";
 import { WorldRuntime } from "../lib/worldRuntime";
 
@@ -14,14 +16,11 @@ type DeltaMsg = {
   creatures_remove: string[];
   tiles_upsert: WorldTile[];
   tiles_remove: [number, number][];
-  actions?: CreatureAction[];
-  events?: WorldEvent[];
+  actions?: import("../lib/api").CreatureAction[];
+  events?: import("../lib/api").WorldEvent[];
 };
 
-export type FxEvent = WorldEvent & {
-  at: number;
-  simTick?: number;
-};
+export type { FxEvent } from "../lib/worldTypes";
 
 function tileKey(x: number, y: number) {
   return `${x},${y}`;
@@ -35,6 +34,14 @@ function mergeCreature(prev: Creature | undefined, next: Creature): Creature {
   };
 }
 
+function snapshotCreatures(map: Map<string, Creature>) {
+  return [...map.values()];
+}
+
+function snapshotTiles(map: Map<string, WorldTile>) {
+  return [...map.values()];
+}
+
 export function useWorldStream() {
   const [creatures, setCreatures] = useState<Creature[]>([]);
   const [tiles, setTiles] = useState<WorldTile[]>([]);
@@ -42,19 +49,46 @@ export function useWorldStream() {
   const [corpseEnergy, setCorpseEnergy] = useState(1_000_000);
   const [simConfig, setSimConfig] = useState<SimConfig | null>(null);
   const [tick, setTick] = useState(0);
+  const [tickHz, setTickHz] = useState(2);
   const [connected, setConnected] = useState(false);
   const [fxEvents, setFxEvents] = useState<FxEvent[]>([]);
 
   const creaturesMap = useRef(new Map<string, Creature>());
   const tilesMap = useRef(new Map<string, WorldTile>());
   const runtimeRef = useRef(new WorldRuntime());
+  const creaturesLiveRef = useRef<Creature[]>([]);
+  const tilesLiveRef = useRef<WorldTile[]>([]);
+  const flushTimer = useRef<number | undefined>(undefined);
+
+  const scheduleFlush = useRef(() => {
+    if (flushTimer.current !== undefined) return;
+    flushTimer.current = window.setTimeout(() => {
+      flushTimer.current = undefined;
+      setCreatures(snapshotCreatures(creaturesMap.current));
+      setTiles(snapshotTiles(tilesMap.current));
+    }, 250);
+  });
 
   const mergeCreatureMeta = useRef((updates: Creature[]) => {
     for (const c of updates) {
       creaturesMap.current.set(c.id, mergeCreature(creaturesMap.current.get(c.id), c));
     }
-    setCreatures([...creaturesMap.current.values()]);
+    creaturesLiveRef.current = snapshotCreatures(creaturesMap.current);
+    setCreatures(creaturesLiveRef.current);
   });
+
+  useEffect(() => {
+    getHealth()
+      .then((h) => {
+        setTickHz(h.tick_hz);
+        runtimeRef.current.setTickHz(h.tick_hz);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    runtimeRef.current.setTickHz(tickHz);
+  }, [tickHz]);
 
   useEffect(() => {
     const prune = window.setInterval(() => {
@@ -74,11 +108,13 @@ export function useWorldStream() {
         creaturesMap.current = new Map(msg.creatures_upsert.map((c) => [c.id, c]));
         tilesMap.current = new Map(msg.tiles_upsert.map((t) => [tileKey(t.x, t.y), t]));
         runtimeRef.current.reset(msg.tick, msg.creatures_upsert);
+        creaturesLiveRef.current = snapshotCreatures(creaturesMap.current);
+        tilesLiveRef.current = snapshotTiles(tilesMap.current);
         if (msg.deploy_cost !== undefined) setDeployCost(msg.deploy_cost);
         if (msg.corpse_energy !== undefined) setCorpseEnergy(msg.corpse_energy);
         if (msg.sim_config) setSimConfig(msg.sim_config);
-        setCreatures([...creaturesMap.current.values()]);
-        setTiles([...tilesMap.current.values()]);
+        setCreatures(creaturesLiveRef.current);
+        setTiles(tilesLiveRef.current);
         setTick(msg.tick);
         return;
       }
@@ -92,6 +128,8 @@ export function useWorldStream() {
         if (tile) removedTiles.push({ x, y, tile });
       }
 
+      const hadNewCreature = msg.creatures_upsert.some((c) => !creaturesMap.current.has(c.id));
+
       for (const id of msg.creatures_remove) creaturesMap.current.delete(id);
       for (const c of msg.creatures_upsert) {
         creaturesMap.current.set(c.id, mergeCreature(creaturesMap.current.get(c.id), c));
@@ -101,6 +139,9 @@ export function useWorldStream() {
         const prev = tilesMap.current.get(tileKey(t.x, t.y));
         tilesMap.current.set(tileKey(t.x, t.y), { ...prev, ...t, death_reason: t.death_reason ?? prev?.death_reason });
       }
+
+      creaturesLiveRef.current = snapshotCreatures(creaturesMap.current);
+      tilesLiveRef.current = snapshotTiles(tilesMap.current);
 
       const upserted = msg.creatures_upsert.map((c) => creaturesMap.current.get(c.id)!);
       runtimeRef.current.upsertCreatures(upserted);
@@ -115,9 +156,14 @@ export function useWorldStream() {
         fxNow,
       );
 
-      setCreatures([...creaturesMap.current.values()]);
-      setTiles([...tilesMap.current.values()]);
       setTick(msg.tick);
+      const rosterChanged = msg.creatures_remove.length > 0 || hadNewCreature;
+      if (rosterChanged) {
+        setCreatures(creaturesLiveRef.current);
+        setTiles(tilesLiveRef.current);
+      } else {
+        scheduleFlush.current();
+      }
       if (events.length) {
         setFxEvents((prev) => [...prev, ...events].slice(-96));
       }
@@ -151,6 +197,7 @@ export function useWorldStream() {
     return () => {
       closed = true;
       if (retry) window.clearTimeout(retry);
+      if (flushTimer.current) window.clearTimeout(flushTimer.current);
       const socket = ws;
       if (!socket) return;
       socket.onopen = null;
@@ -168,10 +215,13 @@ export function useWorldStream() {
   return {
     creatures,
     tiles,
+    creaturesLiveRef,
+    tilesLiveRef,
     deployCost,
     corpseEnergy,
     simConfig,
     tick,
+    tickHz,
     connected,
     fxEvents,
     runtimeRef,
