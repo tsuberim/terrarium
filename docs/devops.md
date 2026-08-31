@@ -114,6 +114,8 @@ GitHub Actions (`.github/workflows/`):
 | `ci.yml` | PR | Parallel Rust / frontend / Docker test jobs |
 | `deploy.yml` | push to `main`, manual | Parallel test → parallel Cloud Run + Hosting → smoke |
 
+CI caches: `Swatinem/rust-cache` (Cargo target + registry), npm cache via `setup-node`, and Docker BuildKit GHA cache for the image build. First run on a branch is cold; subsequent runs reuse layers when lockfiles and Docker context are unchanged.
+
 Deploy uses Workload Identity Federation (no long-lived GCP keys in CI). Secrets are listed in [secrets.md](secrets.md).
 
 Post-deploy smoke (`scripts/smoke-prod.sh`): `/api/health` on Cloud Run and Hosting, plus `/api/v1/world` — retries through cold start.
