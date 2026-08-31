@@ -9,9 +9,7 @@ use tokio::sync::broadcast;
 use crate::config::Config;
 use crate::persist::{load_creatures, load_ledger, load_tiles, PersistSnapshot};
 use crate::seed::seed_ecosystem;
-use crate::wire::{
-    build_creature_delta, build_tile_delta, creature_public, tiles_public,
-};
+use crate::wire::{build_creature_delta, build_tile_delta, creature_public, tiles_public};
 pub use crate::wire::{CreaturePublic, TilePublic, WorldMessage};
 
 const DEFAULT_PERSIST_EVERY: u64 = 10;
