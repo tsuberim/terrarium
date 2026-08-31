@@ -32,12 +32,7 @@ pub fn neighbor(q: i32, r: i32, dir: u8) -> Option<Coord> {
 
 /// Direction 0–5 that steps from `(q,r)` toward offset `(dq,dr)` (must be a neighbor).
 pub fn dir_of_offset(dq: i32, dr: i32) -> Option<u8> {
-    for d in 0..6u8 {
-        if neighbor(0, 0, d) == Some((dq, dr)) {
-            return Some(d);
-        }
-    }
-    None
+    (0..6u8).find(|&d| neighbor(0, 0, d) == Some((dq, dr)))
 }
 
 /// Opposite hex direction (0–5).
@@ -64,7 +59,7 @@ pub fn direction_toward(dq: i32, dr: i32) -> Option<u8> {
     let sf = sf / scale;
     let mut rq = qf.round() as i32;
     let mut rr = rf.round() as i32;
-    let mut rs = sf.round() as i32;
+    let rs = sf.round() as i32;
     let q_diff = (rq as f64 - qf).abs();
     let r_diff = (rr as f64 - rf).abs();
     let s_diff = (rs as f64 - sf).abs();
@@ -73,7 +68,7 @@ pub fn direction_toward(dq: i32, dr: i32) -> Option<u8> {
     } else if r_diff > s_diff {
         rr = -rq - rs;
     } else {
-        rs = -rq - rr;
+        let _ = -rq - rr;
     }
     dir_of_offset(rq, rr)
 }

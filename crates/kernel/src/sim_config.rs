@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::abi::{ACTION_ENERGY, ENERGY_SCALE, ENERGY_PER_OPCODE, OPCODES_PER_TICK, CORPSE_ENERGY};
+use crate::abi::{ACTION_ENERGY, CORPSE_ENERGY, ENERGY_PER_OPCODE, ENERGY_SCALE, OPCODES_PER_TICK};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimConfig {

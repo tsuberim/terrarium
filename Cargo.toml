@@ -6,3 +6,11 @@ members = ["crates/kernel", "crates/server"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[workspace.lints.rust]
+warnings = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "allow", priority = -1 }
+nursery = { level = "allow", priority = -1 }

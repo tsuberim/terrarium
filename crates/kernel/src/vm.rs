@@ -4,15 +4,18 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::abi::tile;
-use crate::hex;
 use crate::abi::corpse_yield_energy;
+use crate::abi::tile;
 use crate::energy_ledger::EnergyLedger;
-use crate::food::try_spawn_food;
 use crate::events::{DeathReason, TickResult, WorldEvent};
+use crate::food::try_spawn_food;
+use crate::hex;
 use crate::host::{self, PendingAction, ThinkResult};
 use crate::sim_config::SimConfig;
-use crate::world_tile::{place_corpse, sense_kind, set_cell, blocks_movement, WorldTile, WorldTiles};
+use crate::world_tile::{
+    blocks_movement, mark_tile, place_corpse, sense_kind, set_cell, TileDirty, WorldTile,
+    WorldTiles,
+};
 
 #[derive(Clone, Debug)]
 pub struct Signal {
@@ -85,6 +88,7 @@ pub fn run_tick(
     let destroyed_before = ledger.destroyed;
     let free_before = ledger.free_minted;
     let mut result = TickResult::default();
+    let mut tile_dirty = TileDirty::new();
     let snapshot = build_snapshot(creatures);
     let engine = host::wasm_engine();
 
@@ -130,24 +134,12 @@ pub fn run_tick(
 
     let mut move_targets: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (i, think) in &pending {
+        if !matches!(think.action, Some(PendingAction::Move)) {
+            continue;
+        }
         let c = &creatures[*i];
-        let mut x = c.x;
-        let mut y = c.y;
-        let mut facing = c.facing;
-        if let Some(action) = &think.action {
-            match action {
-                PendingAction::Rotate { delta } => {
-                    facing = (facing as i32 + *delta).rem_euclid(6) as u8;
-                }
-                PendingAction::Move => {
-                    if let Some((nx, ny)) = hex::neighbor(x, y, facing) {
-                        move_targets.entry((nx, ny)).or_default().push(*i);
-                        x = nx;
-                        y = ny;
-                    }
-                }
-                _ => {}
-            }
+        if let Some(cell) = hex::neighbor(c.x, c.y, c.facing) {
+            move_targets.entry(cell).or_default().push(*i);
         }
     }
 
@@ -216,7 +208,7 @@ pub fn run_tick(
                 }
                 PendingAction::Dig { dir } => {
                     if let Some((x, y)) = hex::neighbor(c.x, c.y, dir) {
-                        set_cell(tiles, x, y, tile::EMPTY);
+                        set_cell(tiles, &mut tile_dirty, x, y, tile::EMPTY);
                     }
                 }
                 PendingAction::Place { dir } => {
@@ -224,7 +216,7 @@ pub fn run_tick(
                         if sense_kind(tiles, x, y, false) == tile::EMPTY
                             && !snapshot.id_at.contains_key(&(x, y))
                         {
-                            set_cell(tiles, x, y, tile::SOLID);
+                            set_cell(tiles, &mut tile_dirty, x, y, tile::SOLID);
                         }
                     }
                 }
@@ -247,6 +239,7 @@ pub fn run_tick(
         };
         match tiles.get(&(x, y)).copied() {
             Some(WorldTile::Corpse { energy, .. }) => {
+                mark_tile(&mut tile_dirty, x, y);
                 tiles.remove(&(x, y));
                 creatures[i].energy += energy;
                 result.actions.push(crate::events::CreatureAction::Eat {
@@ -263,6 +256,7 @@ pub fn run_tick(
                 });
             }
             Some(WorldTile::Food { energy }) if energy > 0 => {
+                mark_tile(&mut tile_dirty, x, y);
                 tiles.remove(&(x, y));
                 creatures[i].energy += energy;
                 result.actions.push(crate::events::CreatureAction::Eat {
@@ -292,7 +286,10 @@ pub fn run_tick(
         if tiles.get(&(x, y)).is_some() {
             continue;
         }
-        let Some(victim_idx) = creatures.iter().position(|v| v.alive && v.x == x && v.y == y) else {
+        let Some(victim_idx) = creatures
+            .iter()
+            .position(|v| v.alive && v.x == x && v.y == y)
+        else {
             continue;
         };
         if victim_idx == i {
@@ -493,9 +490,9 @@ pub fn run_tick(
             result.events.push(death_event(creature));
             continue;
         }
-        if !result.events.iter().any(|e| {
-            matches!(e, WorldEvent::Death { creature_id, .. } if creature_id == &creature.id)
-        }) {
+        if !result.events.iter().any(
+            |e| matches!(e, WorldEvent::Death { creature_id, .. } if creature_id == &creature.id),
+        ) {
             result.events.push(death_event(creature));
         }
     }
@@ -519,12 +516,13 @@ pub fn run_tick(
     creatures.retain(|c| c.alive);
 
     for (x, y, energy, _orig, reason) in dead {
-        place_corpse(tiles, x, y, energy, reason);
+        place_corpse(tiles, &mut tile_dirty, x, y, energy, reason);
     }
 
     try_spawn_food(
         ledger,
         tiles,
+        &mut tile_dirty,
         &creatures.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>(),
         tick,
         config,
@@ -532,6 +530,7 @@ pub fn run_tick(
 
     result.destroyed = ledger.destroyed - destroyed_before;
     result.free_minted = ledger.free_minted - free_before;
+    result.tiles_dirty = tile_dirty;
     result
 }
 
@@ -596,7 +595,9 @@ fn think_once(
         mark_dead(creature, DeathReason::InvalidProgram);
         return ThinkResult::default();
     };
-    host::run_creature_tick(engine, &module, creature, snapshot, tiles, config, ledger, tick)
+    host::run_creature_tick(
+        engine, &module, creature, snapshot, tiles, config, ledger, tick,
+    )
 }
 
 pub fn adjacent(q: i32, r: i32, dir: u8) -> Option<(i32, i32)> {
@@ -612,9 +613,8 @@ mod tests {
     #[test]
     fn all_examples_compile() {
         for example in crate::EXAMPLE_PROGRAMS {
-            compile_wat(example.code).unwrap_or_else(|err| {
-                panic!("example `{}` failed: {err}", example.id)
-            });
+            compile_wat(example.code)
+                .unwrap_or_else(|err| panic!("example `{}` failed: {err}", example.id));
         }
     }
 

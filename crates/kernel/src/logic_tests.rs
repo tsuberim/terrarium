@@ -93,7 +93,10 @@ fn opcode_gas_charges_energy() {
     }];
     tick_world(&mut creatures, &mut WorldTiles::new(), &config, 1);
     let spent = before - creatures[0].energy;
-    assert!(spent > 0 && spent < 20, "idle should cost a few opcodes, spent={spent}");
+    assert!(
+        spent > 0 && spent < 20,
+        "idle should cost a few opcodes, spent={spent}"
+    );
 }
 
 #[test]
@@ -148,8 +151,15 @@ fn out_of_gas_records_reason() {
 fn predator_survives_scan_on_empty_world() {
     let mut creatures = vec![creature_at(0, 0, PREDATOR)];
     let result = tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
-    assert_eq!(creatures.len(), 1, "predator should survive full vision scan + wander");
-    assert!(!result.events.iter().any(|e| matches!(e, crate::WorldEvent::Death { .. })));
+    assert_eq!(
+        creatures.len(),
+        1,
+        "predator should survive full vision scan + wander"
+    );
+    assert!(!result
+        .events
+        .iter()
+        .any(|e| matches!(e, crate::WorldEvent::Death { .. })));
 }
 
 #[test]
@@ -479,7 +489,12 @@ fn uptime_reports_age_in_ticks() {
         code: CODE.into(),
         ..creature_at(0, 0, IDLE)
     }];
-    tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 10);
+    tick_world(
+        &mut creatures,
+        &mut WorldTiles::new(),
+        &default_config(),
+        10,
+    );
     assert_eq!(creatures[0].x, 1);
 }
 
@@ -588,6 +603,9 @@ fn one_action_per_tick_rotate_blocks_eat() {
     tick_world(&mut creatures, &mut tiles, &default_config(), 1);
     assert!(creatures[0].energy < before, "rotate costs energy");
     assert!(creatures[0].energy <= before - 25_000 + 10);
-    assert!(tiles.contains_key(&(1, 0)), "eat blocked after rotate same tick");
+    assert!(
+        tiles.contains_key(&(1, 0)),
+        "eat blocked after rotate same tick"
+    );
     assert_eq!(creatures[0].facing, 0);
 }

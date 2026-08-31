@@ -6,19 +6,13 @@
  */
 
 import type { Creature, CreatureAction, WorldTile } from "./api";
-import type { FxEvent } from "../hooks/useWorldStream";
+import type { FxEvent, TickFrame } from "./worldTypes";
 import { mouthEnvelope, EAT_LIFE_MS } from "./eatFx";
 import { hitFireIntensity, HIT_LIFE_MS } from "./hitFx";
 import { SPAWN_LIFE_MS, DEATH_LIFE_MS } from "./creatureSprite";
 import { facingAngle, lerpAngle, axialToPixel } from "./hex";
 
-export type TickFrame = {
-  tick: number;
-  actions: CreatureAction[];
-  events: FxEvent[];
-  removed: string[];
-  removedTiles: { x: number; y: number; tile: WorldTile }[];
-};
+export type { TickFrame, FxEvent } from "./worldTypes";
 
 export type Pose = {
   q: number;
@@ -399,6 +393,11 @@ export class WorldRuntime {
   hitFire(id: string, fxNow: number): number {
     const t = this.hitAt.get(id);
     return t !== undefined ? hitFireIntensity(t, fxNow) : 0;
+  }
+
+  /** FX log for canvas (single source; React EventFeed uses separate HUD copy). */
+  fxForRender(): readonly FxEvent[] {
+    return this.fxLog;
   }
 
   /** Sim tiles merged with held tiles; hides cells mid-eat/death FX. */

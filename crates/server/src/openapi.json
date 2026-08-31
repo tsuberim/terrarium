@@ -52,7 +52,7 @@
           "health": { "type": "integer" },
           "max_health": { "type": "integer" },
           "owner_uid": { "type": "string" },
-          "program_hash": { "type": "string" }
+          "facing": { "type": "integer" }
         }
       },
       "Tile": {
@@ -81,7 +81,7 @@
           "x": { "type": "integer" },
           "y": { "type": "integer" },
           "code": { "type": "string", "description": "WAT source or label when using wasm_b64" },
-          "energy": { "type": "integer", "format": "int64", "description": "Extra glims beyond corpse floor" },
+          "energy": { "type": "integer", "format": "int64", "description": "Extra glims beyond corpse floor; credits charged = corpse_energy + energy (1:1 import)" },
           "wasm_b64": { "type": "string", "description": "Precompiled WASM (base64, max 64 KB)" }
         }
       },
@@ -154,8 +154,8 @@
     "/v1/world": {
       "get": {
         "tags": ["world", "public"],
-        "summary": "World snapshot",
-        "description": "Current creatures, tiles, and deploy costs.",
+        "summary": "World state",
+        "description": "Current creatures, tiles, and deploy costs (REST). Live updates use WebSocket deltas.",
         "responses": {
           "200": {
             "content": {

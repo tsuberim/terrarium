@@ -1,6 +1,6 @@
 use std::env;
 
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -25,7 +25,8 @@ impl Config {
         Ok(Self {
             listen_addr,
             database_url: normalize_sqlite_url(
-                &env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://data/terrarium.db?mode=rwc".into()),
+                &env::var("DATABASE_URL")
+                    .unwrap_or_else(|_| "sqlite://data/terrarium.db?mode=rwc".into()),
             ),
             firebase_project_id,
             faucet_enabled: env_bool("FAUCET_ENABLED", true),

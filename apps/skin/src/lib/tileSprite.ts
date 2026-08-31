@@ -79,7 +79,7 @@ function drawFood(ctx: CanvasRenderingContext2D, cx: number, cy: number, seed: n
 
 const BODY_R = HEX_RADIUS * 0.44;
 
-function drawCorpse(ctx: CanvasRenderingContext2D, cx: number, cy: number, _seed: number) {
+function drawCorpse(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   const r = BODY_R;
   const x = cx;
   const y = cy;
@@ -127,7 +127,7 @@ export function drawTileSprite(ctx: CanvasRenderingContext2D, tile: WorldTile, t
     return;
   }
   if (tile.kind === 3) {
-    drawCorpse(ctx, cx, cy, seed);
+    drawCorpse(ctx, cx, cy);
     return;
   }
   if (tile.kind === 4) {

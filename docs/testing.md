@@ -6,7 +6,17 @@
 ./scripts/test.sh
 ```
 
-Same as CI: `cargo test --workspace`, release build, frontend build.
+Same as the reusable CI test job (minus Docker): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, frontend `npm run lint`, release build.
+
+### Pre-commit
+
+```bash
+pip install pre-commit   # or: brew install pre-commit
+pre-commit install       # also run from ./scripts/setup-dev.sh when pre-commit is on PATH
+pre-commit run --all-files
+```
+
+Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 
 ## Layers
 
@@ -32,6 +42,7 @@ Kernel semantic tests live in `crates/kernel/src/logic_tests.rs`. They cover:
 - Example program behavior (wall north)
 - `sense` sees creatures
 - Energy zero → death
+- One action per tick; rotate-then-eat ordering; frontal vision cone
 
 Run: `cargo test -p terrarium-kernel logic_tests`
 
@@ -48,9 +59,9 @@ fn my_program_does_x() {
 
 ## Server sim tests
 
-`crates/server/src/sim.rs` uses in-memory SQLite with **one connection** (required for `:memory:`).
+`crates/server/src/engine.rs` uses in-memory SQLite.
 
-Tests call `tick_once` directly — same path as the live 10 Hz loop.
+Tests call `WorldEngine::tick_step()` directly — same kernel path as the live 2 Hz loop.
 
 ## Local dev gotcha (fixed)
 
@@ -67,4 +78,9 @@ Plain `:memory:` gives **each pool connection its own empty database**, so deplo
 
 ## CI
 
-`.github/workflows/ci.yml` runs `cargo test --workspace` on every push/PR.
+| Workflow | Trigger | Checks |
+|----------|---------|--------|
+| `ci.yml` | PR | Parallel: Rust (fmt, clippy, test, build), frontend (lint, build), Docker build |
+| `deploy.yml` | push to `main`, manual | Same test jobs → parallel Cloud Run + Hosting deploy → post-deploy smoke |
+
+Both use `.github/workflows/reusable-test.yml` so PR and prod paths run identical checks. Push to `main` does not duplicate the test job across two workflows.

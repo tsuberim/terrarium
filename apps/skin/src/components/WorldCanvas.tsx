@@ -1,9 +1,8 @@
 import { useEffect, useRef, type RefObject } from "react";
-import type { FxEvent } from "../hooks/useWorldStream";
 import type { Creature, WorldTile } from "../lib/api";
 import { drawEatFx, EAT_LIFE_MS } from "../lib/eatFx";
 import { drawHitFx, HIT_LIFE_MS } from "../lib/hitFx";
-import { creatureAnim, drawCreatureSprite, lifeModifiers, SPAWN_LIFE_MS, DEATH_LIFE_MS, BODY_R, type LifeFx, type SpriteMode } from "../lib/creatureSprite";
+import { creatureAnim, drawCreatureSprite, lifeModifiers, SPAWN_LIFE_MS, DEATH_LIFE_MS, BODY_R, type LifeFx } from "../lib/creatureSprite";
 import { drawTileSprite } from "../lib/tileSprite";
 import { drawWorldBackground } from "../lib/worldBackground";
 import type { WorldRuntime } from "../lib/worldRuntime";
@@ -28,8 +27,8 @@ const DEFAULT_TICK_HZ = 2;
 type Camera = { panX: number; panY: number; zoom: number };
 
 type Props = {
-  creatures: Creature[];
-  tiles?: WorldTile[];
+  creaturesLiveRef: RefObject<Creature[]>;
+  tilesLiveRef: RefObject<WorldTile[]>;
   canDeploy: boolean;
   userUid?: string;
   senseRange?: number;
@@ -38,14 +37,12 @@ type Props = {
   corpseEnergy?: number;
   view: "god" | "follow";
   followId?: string | null;
-  spriteMode?: SpriteMode;
   focus?: { x: number; y: number; seq: number } | null;
   initialZoom?: number;
   onCellSelect: (x: number, y: number) => void;
   onHover?: (hover: { x: number; y: number } | null) => void;
   onManualCamera?: () => void;
   onZoomChange?: (zoom: number) => void;
-  fxEvents?: FxEvent[];
   runtimeRef: RefObject<WorldRuntime>;
   worldTick?: number;
   tickHz?: number;
@@ -72,8 +69,8 @@ function cellToPan(q: number, r: number, w: number, h: number, zoom: number) {
 
 
 export function WorldCanvas({
-  creatures,
-  tiles = [],
+  creaturesLiveRef,
+  tilesLiveRef,
   canDeploy,
   userUid,
   senseRange = 5,
@@ -82,14 +79,12 @@ export function WorldCanvas({
   corpseEnergy = 1_000_000,
   view,
   followId = null,
-  spriteMode = "id",
   focus = null,
   initialZoom = 1,
   onCellSelect,
   onHover,
   onManualCamera,
   onZoomChange,
-  fxEvents = [],
   runtimeRef,
   worldTick = 0,
   tickHz = DEFAULT_TICK_HZ,
@@ -99,8 +94,6 @@ export function WorldCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<Camera>({ panX: 0, panY: 0, zoom: clampZoom(initialZoom) });
   const draggingRef = useRef({ active: false, lastX: 0, lastY: 0, moved: false, startX: 0, startY: 0 });
-  const creaturesRef = useRef(creatures);
-  const tilesRef = useRef(tiles);
   const canDeployRef = useRef(canDeploy);
   const userUidRef = useRef(userUid);
   const senseRangeRef = useRef(senseRange);
@@ -113,7 +106,6 @@ export function WorldCanvas({
   const onZoomChangeRef = useRef(onZoomChange);
   const viewRef = useRef(view);
   const followIdRef = useRef(followId);
-  const spriteModeRef = useRef(spriteMode);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const worldTickRef = useRef(worldTick);
   const tickMsRef = useRef(tickMs);
@@ -122,15 +114,6 @@ export function WorldCanvas({
   tickMsRef.current = tickMs;
   if (runtimeRef.current) runtimeRef.current.setTickHz(tickHz);
 
-  const fxRef = useRef(fxEvents);
-  const creaturesFxRef = useRef(creatures);
-  const userUidFxRef = useRef(userUid);
-
-  fxRef.current = fxEvents;
-  creaturesFxRef.current = creatures;
-  userUidFxRef.current = userUid;
-  creaturesRef.current = creatures;
-  tilesRef.current = tiles;
   canDeployRef.current = canDeploy;
   userUidRef.current = userUid;
   senseRangeRef.current = senseRange;
@@ -143,7 +126,6 @@ export function WorldCanvas({
   onZoomChangeRef.current = onZoomChange;
   viewRef.current = view;
   followIdRef.current = followId;
-  spriteModeRef.current = spriteMode;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -310,7 +292,8 @@ export function WorldCanvas({
         }
       }
 
-      const displayTiles = runtime?.displayTiles(tilesRef.current ?? [], now, fxNow) ?? tilesRef.current ?? [];
+      const displayTiles =
+        runtime?.displayTiles(tilesLiveRef.current ?? [], now, fxNow) ?? tilesLiveRef.current ?? [];
 
       for (const t of displayTiles) {
         const { x: cx, y: cy } = cellCenter(t.x, t.y);
@@ -322,7 +305,8 @@ export function WorldCanvas({
 
       const senseR = senseRangeRef.current;
       const halfArc = visHalfArcRef.current;
-      for (const c of creaturesRef.current ?? []) {
+      const creatures = creaturesLiveRef.current ?? [];
+      for (const c of creatures) {
         if (c.owner_uid !== userUidRef.current) continue;
         const pose = frame?.poses.get(c.id) ?? runtime?.pose(c.id, c);
         if (!pose) continue;
@@ -333,14 +317,14 @@ export function WorldCanvas({
       const floor = corpseEnergyRef.current;
       let energyRefMax = floor + 10_000_000;
       if (uid) {
-        for (const c of creaturesRef.current ?? []) {
+        for (const c of creatures) {
           if (c.owner_uid === uid) {
             energyRefMax = Math.max(energyRefMax, c.energy);
           }
         }
       }
 
-      for (const c of creaturesRef.current ?? []) {
+      for (const c of creatures) {
         const pose = frame?.poses.get(c.id) ?? runtime?.pose(c.id, c);
         if (!pose) continue;
 
@@ -399,7 +383,7 @@ export function WorldCanvas({
 
       ctx.restore();
 
-      for (const fx of fxRef.current) {
+      for (const fx of runtime?.fxForRender() ?? []) {
         const fxMs =
           fx.type === "hit"
             ? HIT_LIFE_MS
@@ -434,8 +418,8 @@ export function WorldCanvas({
             ctx.arc(fxFrom, fyFrom, maxR * age, 0, Math.PI * 2);
             ctx.stroke();
           } else if (fx.to_id) {
-            const target = creaturesFxRef.current.find((c) => c.id === fx.to_id);
-            const mine = target?.owner_uid === userUidFxRef.current;
+            const target = creatures.find((c) => c.id === fx.to_id);
+            const mine = target?.owner_uid === userUidRef.current;
             if (mine && target) {
               const pose = frame?.poses.get(target.id) ?? runtime?.pose(target.id, target);
               const to = pose ? { x: pose.px, y: pose.py } : cellCenter(target.x, target.y);
@@ -467,7 +451,7 @@ export function WorldCanvas({
           ctx.fill();
         } else if (fx.type === "hit") {
           const target = cellCenter(fx.x, fx.y);
-          const actor = creaturesFxRef.current.find((c) => c.id === fx.actor_id);
+          const actor = creatures.find((c) => c.id === fx.actor_id);
           if (actor && runtime) {
             const pose = frame?.poses.get(actor.id) ?? runtime.pose(actor.id, actor);
             drawHitFx(ctx, {
@@ -482,7 +466,7 @@ export function WorldCanvas({
             });
           }
         } else if (fx.type === "eat") {
-          const actor = creaturesFxRef.current.find((c) => c.id === fx.actor_id);
+          const actor = creatures.find((c) => c.id === fx.actor_id);
           if (actor && runtime) {
             const pose = frame?.poses.get(actor.id) ?? runtime.pose(actor.id, actor);
             if (pose.moving || pose.rotating) continue;
@@ -615,6 +599,8 @@ export function WorldCanvas({
       container.removeEventListener("pointercancel", onPointerUp);
       container.removeEventListener("pointerleave", clearHover);
     };
+  // Mount-only: canvas loop reads live refs each frame; stable ref identities by design.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -625,7 +611,7 @@ export function WorldCanvas({
     const { panX, panY } = cellToPan(focus.x, focus.y, w, h, cameraRef.current.zoom);
     cameraRef.current.panX = panX;
     cameraRef.current.panY = panY;
-  }, [focus?.seq]);
+  }, [focus]);
 
   useEffect(() => {
     const container = containerRef.current;

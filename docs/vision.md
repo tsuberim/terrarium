@@ -9,7 +9,7 @@ Energy is the sole resource. It enters the system when people pay money for cred
 ## Principles
 
 - **Bare bones.** Resist adding primitives until multiple emergent behaviors cannot happen without them.
-- **Deflationary sim.** Action costs and death leaks destroy energy. Free in-world sources (terrain nodes, etc.) are budgeted: at most **1 unit minted per 2 units destroyed** — see [energy-budget.md](energy-budget.md).
+- **Deflationary sim.** Action costs and death leaks destroy energy. Free in-world sources (food, etc.) are budgeted: at most **1 unit minted per 2 units destroyed** — see [energy-budget.md](energy-budget.md).
 - **Real stakes.** The world is persistent. Death matters. Code is immutable after deploy.
 - **Emergence over mechanics.** No territories, factions, leaderboards, or combat stats. Basic physics and primitives only.
 - **Open spectating.** Everyone can watch the world in real time. Source code is private to the owner.
@@ -18,26 +18,28 @@ Energy is the sole resource. It enters the system when people pay money for cred
 
 ## World
 
-- **Topology:** Huge bounded 2D grid with torus wrapping (no hard edges).
-- **Persistence:** Always on. Full world state persists across restarts.
+- **Topology:** Sparse hex grid (axial q/r). No torus wrapping today — open coordinates, sparse tile map.
+- **Persistence:** Always on. Full world state persists across restarts when using a file-backed SQLite DB. Production Cloud Run currently uses ephemeral in-memory SQLite (resets on redeploy) — acceptable for now.
 - **Authority:** Single global world server (no shards for now).
-- **Representation:** Tile grid is the spatial model. Creatures may render at sub-cell positions, but block operations snap to cells.
+- **Representation:** Creatures occupy one hex cell; client interpolates motion between ticks.
 
-### Cell types (v1)
+### Cell types (implemented)
 
-| Type   | Description |
-|--------|-------------|
-| `empty` | Passable. Default. |
-| `solid` | Impassable. Placed and removed by creatures. |
-
-No additional block types, overlays, or terrain features at launch.
+| Kind | `sense` value | Description |
+|------|---------------|-------------|
+| `empty` | 0 | Passable default |
+| `solid` | 1 | Impassable; placed/dug by creatures |
+| `creature` | 2 | Live creature (via sense only) |
+| `corpse` | 3 | Death remains; must be eaten for energy |
+| `food` | 4 | Budgeted free energy; eaten like corpses |
 
 ### Entities
 
-| Type      | Description |
-|-----------|-------------|
-| Creature  | Programmable agent with energy, owner, and immutable code. |
-| Corpse    | Remains when a creature dies. Holds remaining energy. Must be explicitly eaten. |
+| Type | Description |
+|------|-------------|
+| Creature | Programmable agent with energy, health, owner, **facing**, immutable WASM code |
+| Corpse | Tile left on death; holds ~80% of energy; explicit `eat` required |
+| Food | Procedural edible tiles; mint gated by energy ledger |
 
 ---
 
@@ -47,19 +49,38 @@ No additional block types, overlays, or terrain features at launch.
 
 - Code is **immutable** after deploy or spawn.
 - Code is **private** — only the owner can read it.
-- Creatures choose when to **think** (run code); they can **sleep** indefinitely at zero cost.
-- Sleep may be interruptible (mechanism TBD).
+- **One action per tick** — at most one of move, rotate, eat, hit, dig, place, spawn, signal, suicide.
+- Creatures choose when to **think** (run WASM); `sleep` is free.
+
+See [bytecode.md](bytecode.md) for the host ABI.
+
+### Body & orientation
+
+- Each creature has **facing** 0–5 (E, NE, NW, W, SW, SE).
+- **`rotate(delta)`** turns in place (costs energy); applied end of tick.
+- **Forward actions** — `move`, `eat`, `hit`, `dig`, `place`, `spawn` act on the **forward** adjacent cell only (`rel=0`). Use `rotate` to aim first.
 
 ### Actions (v1 surface)
 
-| Action       | Notes |
-|--------------|-------|
-| Move         | Costs energy. |
-| Place        | Set adjacent cell to `solid`. Costs energy. |
-| Dig          | Set adjacent cell to `empty`. Costs energy. |
-| Eat | Consume corpse or other edible on an adjacent cell. |
-| Hit | Damage an adjacent live creature. At 0 health the victim dies and leaves a corpse. |
-| Eat | Consume an adjacent corpse for energy. |
+| Action | Notes |
+|--------|-------|
+| Move | Step forward onto empty cell only |
+| Rotate | Turn body; no translation |
+| Eat | Consume forward corpse or food |
+| Hit | Damage forward live creature |
+| Dig / Place | Modify forward cell |
+| Spawn | Bud clone on forward empty cell |
+| Signal | Broadcast or directed byte in `r_sig` |
+| Sleep / Suicide | Sleep free; suicide credits owner |
+
+### Sensing (implemented)
+
+- **`sense(dq, dr)`** — cell contents within hex range **`r_vis`** (default 5) **and** frontal cone **`vis_half_arc`** (default 1 → ±60°, 120° total arc centered on facing).
+- Out of range or outside cone → returns 0 (no trap).
+- Sense struct includes kind, facing (for creatures), energy, health.
+- Incoming signals via `recv`.
+
+---
 
 ## Signal ecosystem (showcase)
 
@@ -69,17 +90,6 @@ No additional block types, overlays, or terrain features at launch.
 | `0x02` | Predator | Hunt ping while chasing prey in vision |
 
 Deploy a mix to see competition: prey alarms pull hawks and scavengers toward the fight; predators mark active hunts.
-| Spawn        | Parent submits new code; transfers energy to child (≥ spawn minimum). |
-| Signal       | Communicate with nearby creatures (exact mechanism TBD). |
-| Sleep / Wake | Sleep costs nothing. Wake to think/act. |
-| Suicide      | Transfer all carried energy to owner. |
-
-Relative action costs and the minimal sense model are TBD. The action set itself may shrink or grow only when a primitive is provably necessary.
-
-### Sensing (v1)
-
-- Contents of nearby cells (terrain, creatures, corpses) within hex vision radius.
-- Incoming signals from other creatures.
 
 ---
 
@@ -87,39 +97,31 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 
 | Rule | Detail |
 |------|--------|
-| Exchange rate | Fixed credits ↔ energy conversion. |
-| Entry | Paid deploy imports energy from credits. Free sources (nodes, etc.) are budgeted — see [energy-budget.md](energy-budget.md). |
-| Action cost | Every action spends energy (movement, thinking, sensing, etc.). Spent energy feeds the free-mint budget at a 2:1 ratio. |
-| Spawn minimum | Minimum energy to deploy or spawn; also the death threshold. |
-| Death | Creature dies → corpse holds **80%** of remaining energy; **20%** is destroyed. |
-| Eat | Explicit action required to consume a corpse or food. |
-| Suicide | All carried energy goes to owner (transfer, not mint). |
+| Exchange rate | Fixed credits ↔ energy conversion |
+| Entry | Paid deploy imports energy from credits **1:1** (`corpse_energy` floor + extra) |
+| Free sources | Food mint gated 2:1 — [energy-budget.md](energy-budget.md) |
+| Action cost | Gas + per-action extras (`move_extra`, `rotate_extra`, …) |
+| Spawn minimum | `corpse_energy` floor; at/below → death |
+| Death | ~80% to corpse tile; ~20% destroyed |
+| Eat | Explicit; transfers tile energy to eater |
+| Suicide | Energy to owner (credits if human, in-world if creature parent) |
 
 ### Deploy vs spawn
 
 | Path | Paid by | Code source |
 |------|---------|-------------|
-| **Deploy** (human) | Account credits at spawn location of owner's choice | Human submits code |
-| **Spawn** (creature) | Parent's in-world energy (transferred to child) | Parent creature submits code |
-
----
-
-## Ownership
-
-- A human **account** can deploy as many creatures as it can afford.
-- When creature A spawns B, **A owns B** (A sees B's code).
-- Unlimited lineage: B can spawn C, and so on.
-- When a creature dies, **ownership of its children walks up the chain** to the parent, then the grandparent, up to the top-level human account if needed.
-- Suicide payout to a **creature** owner is received as **in-world energy** (spendable on spawn and actions).
-- Suicide payout to a **human** owner is received as **credits**.
+| **Deploy** (human) | Account credits (`corpse_energy + extra`, 1:1 import) | Human submits WAT/WASM |
+| **Spawn** (creature) | Parent's energy | Parent's code copied to child |
 
 ---
 
 ## Clients
 
-- **Spectator:** Real-time view for everyone. God view or follow-a-creature camera.
-- **Deploy / manage:** API and game UI (details TBD).
-- No public read access to creature source code.
+- **Spectator:** Real-time view. God view or follow-a-creature camera. Animation driven by WS `actions` + `events` — see [architecture.md](architecture.md).
+- **Deploy / manage:** API + game UI.
+- No public read access to creature source code or WASM fingerprints on the wire.
+
+Wire: delta-only WebSocket; `full: true` on connect/resync.
 
 ---
 
@@ -128,16 +130,16 @@ Relative action costs and the minimal sense model are TBD. The action set itself
 - Shards or multi-region worlds
 - Factions, territories, or opt-in PvP rules
 - Scoreboards or leaderboards
-- Block types beyond `empty` / `solid` / food (budgeted)
-- Ambient energy without budget gate
+- Torus / wrap-around edges
 - Public code inspection
 
 ---
 
-## Open questions
+## Open questions (future design — not bugs)
 
-- Exact signal / communication primitive
-- Relative energy costs per action (move, think, sense, place, dig, spawn)
+These are intentionally undecided product/sim rules. Implement only when we choose a direction:
+
 - Sleep interrupt conditions
 - Payment provider and cash-out mechanics
-- MVP scope (after initial devops)
+- Corpse decay (destroy remainder on tile after N ticks)
+- Relative energy cost tuning at scale

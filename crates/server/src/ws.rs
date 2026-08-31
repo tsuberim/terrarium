@@ -8,7 +8,8 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::{engine::WorldMessage, AppState};
+use crate::state::AppState;
+use crate::wire::WorldMessage;
 
 pub async fn world_ws(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, state))
@@ -63,5 +64,8 @@ async fn send_json(
     msg: WorldMessage,
 ) -> Result<(), ()> {
     let text = serde_json::to_string(&msg).map_err(|_| ())?;
-    sender.send(Message::Text(text.into())).await.map_err(|_| ())
+    sender
+        .send(Message::Text(text.into()))
+        .await
+        .map_err(|_| ())
 }

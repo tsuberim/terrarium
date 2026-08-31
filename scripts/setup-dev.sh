@@ -28,6 +28,13 @@ npm install
 npm --prefix apps/skin install
 command -v cargo-watch >/dev/null || cargo install cargo-watch
 
+if command -v pre-commit >/dev/null; then
+  pre-commit install
+  echo "pre-commit hooks installed"
+else
+  echo "Optional: pip install pre-commit && pre-commit install"
+fi
+
 echo ""
 echo "Run: ./scripts/dev.sh"
 echo "Open: http://localhost:5173"

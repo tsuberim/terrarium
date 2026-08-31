@@ -1,0 +1,26 @@
+# Install: pip install pre-commit && pre-commit install
+# Manual: pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: eslint
+        name: eslint (skin)
+        entry: bash -c 'cd apps/skin && npm run lint'
+        language: system
+        files: ^apps/skin/src/.*\.(ts|tsx)$
+        pass_filenames: false

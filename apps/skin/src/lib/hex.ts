@@ -243,13 +243,13 @@ function directionToward(dq: number, dr: number): number | null {
   const sf = -qf - rf;
   let rq = Math.round(qf);
   let rr = Math.round(rf);
-  let rs = Math.round(sf);
+  const rs = Math.round(sf);
   const qDiff = Math.abs(rq - qf);
   const rDiff = Math.abs(rr - rf);
   const sDiff = Math.abs(rs - sf);
   if (qDiff > rDiff && qDiff > sDiff) rq = -rr - rs;
   else if (rDiff > sDiff) rr = -rq - rs;
-  else rs = -rq - rr;
+  else void (-rq - rr);
   return dirOfOffset(rq, rr);
 }
 

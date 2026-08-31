@@ -24,8 +24,6 @@ export type Creature = {
   owner_uid: string;
   /** Body facing 0–5 (E, NE, NW, W, SW, SE). */
   facing: number;
-  /** WASM digest — used when sprite mode is hash. */
-  program_hash?: string;
 };
 export type SimConfig = {
   r_vis: number;

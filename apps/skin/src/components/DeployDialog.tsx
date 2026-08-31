@@ -72,8 +72,9 @@ export function DeployDialog({
 
   if (!cell) return null;
 
-  const maxExtra = credits ?? minExtra;
+  const maxExtra = Math.max(minExtra, (credits ?? minExtra) - corpseEnergy);
   const totalEnergy = corpseEnergy + extra;
+  const totalCost = totalEnergy;
 
   const applyWasm = async (file: File) => {
     try {
@@ -106,7 +107,7 @@ export function DeployDialog({
       setError(`Minimum extra is ${formatGlimString(minExtra)}`);
       return;
     }
-    if (credits !== null && extra > credits) {
+    if (credits !== null && totalCost > credits) {
       setError("Not enough glims");
       return;
     }
@@ -156,13 +157,13 @@ export function DeployDialog({
         </div>
 
         <p className="mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-white/28">
-          <span>{wasmB64 ? "WASM bundle" : "WAT module"} · costs</span>
-          <GlimAmount amount={extra} className="text-[10px] text-white/40" />
-          <span>·</span>
+          <span>{wasmB64 ? "WASM bundle" : "WAT module"} ·</span>
           <GlimAmount amount={corpseEnergy} className="text-[10px] text-white/40" compact />
           <span>base +</span>
           <GlimAmount amount={extra} className="text-[10px] text-white/40" compact />
-          <span>spendable</span>
+          <span>extra =</span>
+          <GlimAmount amount={totalCost} className="text-[10px] text-white/40" compact />
+          <span>credits</span>
         </p>
 
         <div className="mb-2 flex flex-wrap gap-1">
@@ -254,7 +255,7 @@ export function DeployDialog({
             Cancel
           </button>
           <button type="button" className="deploy-btn deploy-btn-primary" onClick={submit} disabled={busy}>
-            Deploy · <GlimAmount amount={extra} className="text-[10px]" compact />
+            Deploy · <GlimAmount amount={totalCost} className="text-[10px]" compact />
           </button>
         </div>
       </div>
