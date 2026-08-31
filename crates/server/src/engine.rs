@@ -1,16 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use parking_lot::RwLock;
 use sqlx::SqlitePool;
 use terrarium_kernel::{
-    compile_wat, food, run_tick, vm::Creature, DeathReason, EnergyLedger, SimConfig, WorldTile,
-    WorldTiles, EXAMPLE_PROGRAMS, TICK_HZ,
+    run_tick, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles,
 };
 use tokio::sync::broadcast;
 
 use crate::config::Config;
+use crate::persist::{load_creatures, load_ledger, load_tiles, PersistSnapshot};
+use crate::seed::seed_ecosystem;
 use crate::wire::{
     build_creature_delta, build_tile_delta, creature_public, ledger_public, tiles_public,
 };
@@ -18,41 +18,13 @@ pub use crate::wire::{CreaturePublic, TilePublic, WorldMessage};
 
 const DEFAULT_PERSIST_EVERY: u64 = 10;
 const BROADCAST_CAPACITY: usize = 4096;
-const SEED_OWNER: &str = "__terrarium__";
-/// Starting energy for bootstrap creatures (~120 glims); above clone threshold.
-const SEED_ENERGY: i64 = 12_000_000;
 
-struct SeedCreature {
-    example_id: &'static str,
-    id: &'static str,
-    x: i32,
-    y: i32,
+pub(crate) struct TickStep {
+    pub message: WorldMessage,
+    pub persist: Option<PersistSnapshot>,
+    pub credit_payouts: Vec<(String, i64)>,
 }
 
-const ECOSYSTEM_SEED: &[SeedCreature] = &[
-    SeedCreature { example_id: "predator", id: "seed-predator-0", x: 3, y: 0 },
-    SeedCreature { example_id: "predator", id: "seed-predator-1", x: -3, y: 0 },
-    SeedCreature { example_id: "prey", id: "seed-prey-0", x: 0, y: 3 },
-    SeedCreature { example_id: "prey", id: "seed-prey-1", x: 0, y: -3 },
-    SeedCreature { example_id: "prey", id: "seed-prey-2", x: 2, y: 2 },
-    SeedCreature { example_id: "prey", id: "seed-prey-3", x: -2, y: -2 },
-    SeedCreature { example_id: "scavenger", id: "seed-scavenger-0", x: 4, y: -2 },
-    SeedCreature { example_id: "scavenger", id: "seed-scavenger-1", x: -4, y: 2 },
-    SeedCreature { example_id: "hawk", id: "seed-hawk-0", x: 4, y: 2 },
-    SeedCreature { example_id: "hawk", id: "seed-hawk-1", x: -4, y: -2 },
-];
-
-struct PersistSnapshot {
-    creatures: Vec<Creature>,
-    tiles: WorldTiles,
-    ledger: EnergyLedger,
-}
-
-struct TickStep {
-    message: WorldMessage,
-    persist: Option<PersistSnapshot>,
-    credit_payouts: Vec<(String, i64)>,
-}
 struct SimState {
     tick: u64,
     creatures: Vec<Creature>,
@@ -117,6 +89,10 @@ impl WorldEngine {
 
     pub fn subscribe(&self) -> broadcast::Receiver<WorldMessage> {
         self.events.subscribe()
+    }
+
+    pub(crate) fn try_broadcast(&self, msg: WorldMessage) -> bool {
+        self.events.send(msg).is_ok()
     }
 
     pub fn current_tick(&self) -> u64 {
@@ -259,372 +235,6 @@ impl WorldEngine {
     }
 }
 
-const IDLE_WAT: &str = r#"
-(module
-  (import "terrarium" "sleep" (func $sleep))
-  (func (export "tick") (call $sleep))
-)
-"#;
-
-async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
-    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, i64, i64, Option<Vec<u8>>, String, i64, i64)>(
-        "SELECT id, owner_uid, x, y, energy, health, max_health, bytecode, code, born_tick, facing FROM creatures ORDER BY id",
-    )
-    .fetch_all(db)
-    .await?;
-
-    let idle = compile_wat(IDLE_WAT)?;
-
-    rows.into_iter()
-        .map(
-            |(id, owner_uid, x, y, energy, health, max_health, wasm_blob, code, born_tick, facing)| {
-            let wasm = match wasm_blob.filter(|b| !b.is_empty()) {
-                Some(b) => b,
-                None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
-            };
-            Ok(Creature {
-                id,
-                owner_uid,
-                x: x as i32,
-                y: y as i32,
-                energy,
-                health: health as i32,
-                max_health: max_health as i32,
-                parent_id: None,
-                wasm,
-                code,
-                alive: true,
-                inbox: vec![],
-                death_reason: None,
-                born_tick: born_tick.max(0) as u64,
-                facing: (facing as u8).min(5),
-            })
-        },
-        )
-        .collect()
-}
-
-async fn load_ledger(db: &SqlitePool) -> anyhow::Result<EnergyLedger> {
-    let row = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT destroyed, free_minted FROM energy_ledger WHERE id = 1",
-    )
-    .fetch_optional(db)
-    .await?;
-
-    Ok(match row {
-        Some((destroyed, free_minted)) => EnergyLedger {
-            destroyed,
-            free_minted,
-        },
-        None => EnergyLedger::default(),
-    })
-}
-
-async fn seed_ecosystem(
-    db: &SqlitePool,
-    sim_config: &SimConfig,
-    creatures: &mut Vec<Creature>,
-    tiles: &mut WorldTiles,
-    ledger: &mut EnergyLedger,
-) -> anyhow::Result<()> {
-    if ledger.destroyed == 0 && ledger.free_minted == 0 {
-        ledger.destroyed = EnergyLedger::BOOTSTRAP_DESTROYED;
-        sqlx::query(
-            "INSERT INTO energy_ledger (id, destroyed, free_minted) VALUES (1, ?, 0)
-             ON CONFLICT(id) DO UPDATE SET destroyed = excluded.destroyed",
-        )
-        .bind(ledger.destroyed)
-        .execute(db)
-        .await?;
-    }
-
-    sqlx::query(
-        "INSERT INTO accounts (firebase_uid, credits) VALUES (?, 0) ON CONFLICT DO NOTHING",
-    )
-    .bind(SEED_OWNER)
-    .execute(db)
-    .await?;
-
-    let max_health = sim_config.max_health;
-    for spec in ECOSYSTEM_SEED {
-        let example = EXAMPLE_PROGRAMS
-            .iter()
-            .find(|e| e.id == spec.example_id)
-            .ok_or_else(|| anyhow::anyhow!("missing example {}", spec.example_id))?;
-        let wasm = compile_wat(example.code)?;
-        let code = example.code.to_string();
-
-        sqlx::query(
-            "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, born_tick, facing, pc, stack)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, x'')",
-        )
-        .bind(spec.id)
-        .bind(SEED_OWNER)
-        .bind(spec.x as i64)
-        .bind(spec.y as i64)
-        .bind(SEED_ENERGY)
-        .bind(max_health as i64)
-        .bind(max_health as i64)
-        .bind(&code)
-        .bind(&wasm)
-        .execute(db)
-        .await?;
-
-        creatures.push(Creature {
-            id: spec.id.into(),
-            owner_uid: SEED_OWNER.into(),
-            x: spec.x,
-            y: spec.y,
-            energy: SEED_ENERGY,
-            health: max_health,
-            max_health,
-            parent_id: None,
-            wasm,
-            code,
-            alive: true,
-            inbox: vec![],
-            death_reason: None,
-            born_tick: 0,
-            facing: 0,
-        });
-    }
-
-    let occupied: Vec<(i32, i32)> = creatures.iter().map(|c| (c.x, c.y)).collect();
-    let mut tile_dirty = terrarium_kernel::world_tile::TileDirty::new();
-    for tick in (0..sim_config.food_spawn_interval * 4).step_by(sim_config.food_spawn_interval as usize) {
-        food::try_spawn_food(ledger, tiles, &mut tile_dirty, &occupied, tick, sim_config);
-    }
-
-    for ((x, y), tile) in tiles.iter() {
-        if let WorldTile::Food { energy } = tile {
-            sqlx::query(
-                "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)
-                 ON CONFLICT(x, y) DO UPDATE SET kind = excluded.kind, energy = excluded.energy, death_reason = excluded.death_reason",
-            )
-            .bind(*x as i64)
-            .bind(*y as i64)
-            .bind(*energy)
-            .execute(db)
-            .await?;
-        }
-    }
-
-    sqlx::query(
-        "INSERT INTO energy_ledger (id, destroyed, free_minted) VALUES (1, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET destroyed = excluded.destroyed, free_minted = excluded.free_minted",
-    )
-    .bind(ledger.destroyed)
-    .bind(ledger.free_minted)
-    .execute(db)
-    .await?;
-
-    Ok(())
-}
-
-async fn load_tiles(db: &SqlitePool) -> anyhow::Result<WorldTiles> {
-    let rows = sqlx::query_as::<_, (i64, i64, i64, Option<i64>, Option<String>)>(
-        "SELECT x, y, kind, energy, death_reason FROM world_tiles",
-    )
-    .fetch_all(db)
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .filter_map(|(x, y, kind, energy, death_reason)| {
-            let pos = (x as i32, y as i32);
-            Some((
-                pos,
-                match kind {
-                    1 => WorldTile::Solid,
-                    3 => WorldTile::Corpse {
-                        energy: energy.unwrap_or(0),
-                        death_reason: death_reason
-                            .as_deref()
-                            .and_then(DeathReason::parse)
-                            .unwrap_or(DeathReason::WasmTrap),
-                    },
-                    4 => WorldTile::Food {
-                        energy: energy.unwrap_or(0),
-                    },
-                    _ => return None,
-                },
-            ))
-        })
-        .collect())
-}
-
-pub async fn persist_world(
-    db: &SqlitePool,
-    creatures: &[Creature],
-    tiles: &WorldTiles,
-    ledger: &EnergyLedger,
-) -> anyhow::Result<()> {
-    let mut tx = db.begin().await?;
-
-    let alive_ids: HashSet<String> = creatures.iter().map(|c| c.id.clone()).collect();
-    let db_ids = sqlx::query_scalar::<_, String>("SELECT id FROM creatures")
-        .fetch_all(&mut *tx)
-        .await?;
-
-    for id in db_ids {
-        if !alive_ids.contains(&id) {
-            sqlx::query("DELETE FROM creatures WHERE id = ?")
-                .bind(&id)
-                .execute(&mut *tx)
-                .await?;
-        }
-    }
-
-    for (i, creature) in creatures.iter().enumerate() {
-        let slot = -(i as i64 + 1);
-        sqlx::query("UPDATE creatures SET x = ?, y = ? WHERE id = ?")
-            .bind(slot)
-            .bind(slot)
-            .bind(&creature.id)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    for creature in creatures {
-        sqlx::query(
-            "UPDATE creatures SET x = ?, y = ?, energy = ?, health = ?, max_health = ?, facing = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
-        )
-        .bind(creature.x as i64)
-        .bind(creature.y as i64)
-        .bind(creature.energy)
-        .bind(creature.health as i64)
-        .bind(creature.max_health as i64)
-        .bind(creature.facing as i64)
-        .bind(&creature.wasm)
-        .bind(creature.born_tick as i64)
-        .bind(&creature.id)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    sqlx::query("DELETE FROM world_tiles").execute(&mut *tx).await?;
-    for ((x, y), tile) in tiles {
-        match tile {
-            WorldTile::Solid => {
-                sqlx::query("INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 1, NULL, NULL)")
-                    .bind(*x as i64)
-                    .bind(*y as i64)
-                    .execute(&mut *tx)
-                    .await?;
-            }
-            WorldTile::Corpse {
-                energy,
-                death_reason,
-            } => {
-                sqlx::query(
-                    "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 3, ?, ?)",
-                )
-                .bind(*x as i64)
-                .bind(*y as i64)
-                .bind(*energy)
-                .bind(death_reason.as_str())
-                .execute(&mut *tx)
-                .await?;
-            }
-            WorldTile::Food { energy } => {
-                sqlx::query(
-                    "INSERT INTO world_tiles (x, y, kind, energy, death_reason) VALUES (?, ?, 4, ?, NULL)",
-                )
-                .bind(*x as i64)
-                .bind(*y as i64)
-                .bind(*energy)
-                .execute(&mut *tx)
-                .await?;
-            }
-        }
-    }
-
-    sqlx::query(
-        "INSERT INTO energy_ledger (id, destroyed, free_minted) VALUES (1, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET destroyed = excluded.destroyed, free_minted = excluded.free_minted",
-    )
-    .bind(ledger.destroyed)
-    .bind(ledger.free_minted)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(())
-}
-
-async fn credit_payout(db: &SqlitePool, uid: &str, amount: i64) -> anyhow::Result<()> {
-    sqlx::query(
-        "INSERT INTO accounts (firebase_uid, credits) VALUES (?, 0) ON CONFLICT DO NOTHING",
-    )
-    .bind(uid)
-    .execute(db)
-    .await?;
-    sqlx::query("UPDATE accounts SET credits = credits + ? WHERE firebase_uid = ?")
-        .bind(amount)
-        .bind(uid)
-        .execute(db)
-        .await?;
-    Ok(())
-}
-
-pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
-    let (persist_tx, mut persist_rx) = tokio::sync::mpsc::channel::<PersistSnapshot>(2);
-    let (credit_tx, mut credit_rx) = tokio::sync::mpsc::channel::<(String, i64)>(32);
-    let db = engine.db.clone();
-    let db_persist = db.clone();
-
-    tokio::spawn(async move {
-        while let Some(snapshot) = persist_rx.recv().await {
-            if let Err(err) = persist_world(&db_persist, &snapshot.creatures, &snapshot.tiles, &snapshot.ledger).await {
-                tracing::error!(error = %err, "checkpoint failed");
-            }
-        }
-    });
-
-    tokio::spawn(async move {
-        while let Some((uid, amount)) = credit_rx.recv().await {
-            if let Err(err) = credit_payout(&db, &uid, amount).await {
-                tracing::error!(error = %err, uid = %uid, amount, "credit payout failed");
-            }
-        }
-    });
-
-    std::thread::Builder::new()
-        .name("terrarium-sim".into())
-        .spawn(move || {
-            let period = Duration::from_micros(1_000_000 / TICK_HZ as u64);
-            loop {
-                let start = Instant::now();
-
-                let step = engine.tick_step();
-                if engine.events.send(step.message).is_err() {
-                    tracing::debug!("no world subscribers");
-                }
-                for (uid, amount) in step.credit_payouts {
-                    if credit_tx.blocking_send((uid, amount)).is_err() {
-                        tracing::error!("credit payout queue closed");
-                    }
-                }
-                if let Some(snapshot) = step.persist {
-                    if persist_tx.blocking_send(snapshot).is_err() {
-                        tracing::error!("persist queue closed");
-                    }
-                }
-
-                let elapsed = start.elapsed();
-                if elapsed > period {
-                    tracing::warn!(
-                        overrun_us = elapsed.as_micros(),
-                        budget_us = period.as_micros(),
-                        "sim tick exceeded budget"
-                    );
-                }
-                std::thread::sleep(period.saturating_sub(elapsed));
-            }
-        })
-        .expect("spawn sim thread");
-}
-
 #[cfg(test)]
 mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
@@ -632,6 +242,7 @@ mod tests {
 
     use super::*;
     use crate::config::Config;
+    use crate::persist::persist_world;
 
     async fn test_engine() -> Arc<WorldEngine> {
         let pool = SqlitePoolOptions::new()
