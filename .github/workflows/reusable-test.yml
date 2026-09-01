@@ -86,7 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - if: needs.changes.outputs.docker == 'true' || needs.changes.outputs.workflows == 'true'
         uses: docker/build-push-action@v7
         with:
