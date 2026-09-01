@@ -175,6 +175,7 @@
         "tags": ["world", "public"],
         "summary": "World WebSocket",
         "description": "Real-time deltas. Upgrade to WebSocket; messages are JSON deltas (`full: true` on connect/resync).",
+        "x-hidden": true,
         "responses": {
           "101": { "description": "Switching Protocols" }
         }

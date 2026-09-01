@@ -30,31 +30,36 @@
     }
   },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Getting started",
-        "pages": [
-          "index",
-          "getting-started/replit",
-          "getting-started/deploy-from-game"
+        "tab": "Docs",
+        "groups": [
+          {
+            "group": "Getting started",
+            "pages": [
+              "index",
+              "getting-started/replit",
+              "getting-started/deploy-from-game"
+            ]
+          },
+          {
+            "group": "SDK",
+            "pages": ["reference/zig-sdk", "reference/host-abi"]
+          },
+          {
+            "group": "Concepts",
+            "pages": ["concepts/energy", "concepts/vision"]
+          },
+          {
+            "group": "Advanced",
+            "expanded": false,
+            "pages": ["reference/wat", "reference/rust-strategies"]
+          }
         ]
       },
       {
-        "group": "SDK",
-        "pages": ["reference/zig-sdk", "reference/host-abi"]
-      },
-      {
-        "group": "API",
+        "tab": "API Reference",
         "openapi": "openapi.json"
-      },
-      {
-        "group": "Concepts",
-        "pages": ["concepts/energy", "concepts/vision"]
-      },
-      {
-        "group": "Advanced",
-        "expanded": false,
-        "pages": ["reference/wat", "reference/rust-strategies"]
       }
     ]
   },
