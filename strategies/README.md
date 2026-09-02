@@ -7,7 +7,7 @@ Not a runtime feature — players still deploy WAT; this is just how we author t
 
 - `hunter/` — shared hunt logic (scan vision, step toward, eat adjacent)
 - `predator/` / `scavenger/` — thin WASM exports (`tick`)
-- `tools/` — sync compiled WASM → WAT in kernel + skin examples
+- `tools/` — sync compiled WASM → WAT in sim + skin examples
 
 ## Build
 
@@ -19,7 +19,7 @@ Requires `wasm32-unknown-unknown` (script runs `rustup target add` if needed).
 
 Updates:
 
-- `crates/kernel/src/examples.rs`
+- `crates/sim/src/examples.rs`
 - `apps/skin/src/lib/examples.ts`
 
 Commit the synced WAT after changing strategy logic. CI does **not** build strategies.

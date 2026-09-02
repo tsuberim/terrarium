@@ -12,6 +12,8 @@ pub struct Config {
     pub deploy_cost: i64,
     /// Seed predators/prey/hawks when the world DB has no creatures (default on).
     pub seed_ecosystem: bool,
+    /// Cloud Run URL for the isolated Rust compile worker (optional).
+    pub compile_worker_url: Option<String>,
 }
 
 impl Config {
@@ -33,12 +35,15 @@ impl Config {
             faucet_max: env::var("FAUCET_MAX")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(100 * terrarium_kernel::ENERGY_SCALE),
+                .unwrap_or(100 * terrarium_sim::ENERGY_SCALE),
             deploy_cost: env::var("DEPLOY_COST")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .unwrap_or(100 * terrarium_kernel::ENERGY_SCALE),
+                .unwrap_or(100 * terrarium_sim::ENERGY_SCALE),
             seed_ecosystem: env_bool("SEED_ECOSYSTEM", true),
+            compile_worker_url: env::var("COMPILE_WORKER_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
         })
     }
 }

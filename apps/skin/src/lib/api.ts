@@ -95,7 +95,7 @@ export type WorldEvent =
     }
   | { type: "eat"; actor_id: string; x: number; y: number; energy: number; tile_kind: number };
 
-/** Explicit per-tick creature action from the sim (matches kernel wire format). */
+/** Explicit per-tick creature action from the sim (matches sim wire format). */
 export type CreatureAction =
   | { kind: "move"; creature_id: string; from_x: number; from_y: number; to_x: number; to_y: number }
   | { kind: "rotate"; creature_id: string; from_facing: number; to_facing: number }
@@ -183,6 +183,22 @@ export const postDeploy = (
   api<{ id: string; x: number; y: number; energy: number; credits: number }>("/v1/deploy", {
     method: "POST",
     body: JSON.stringify({ x, y, code, energy, wasm_b64: wasmB64 }),
+  });
+
+export const postCompile = (language: string, source: string) =>
+  api<{
+    ok: boolean;
+    wasm_b64?: string;
+    diagnostics: { level: string; message: string; line?: number; column?: number }[];
+  }>("/v1/compile", {
+    method: "POST",
+    body: JSON.stringify({ language, source }),
+  });
+
+export const postSandboxRun = (wasmB64: string, scenario: string, ticks: number) =>
+  api<import("./creatureEditor").SandboxResult>("/v1/sandbox/run", {
+    method: "POST",
+    body: JSON.stringify({ wasm_b64: wasmB64, scenario, ticks }),
   });
 
 export const postClearWorld = () =>

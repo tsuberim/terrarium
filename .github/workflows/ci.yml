@@ -11,6 +11,8 @@ on:
       - "Cargo.lock"
       - "Dockerfile"
       - "strategies/**"
+      - "services/**"
+      - "sdk/**"
       - "scripts/**"
       - "firebase.json"
       - ".github/workflows/**"

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use sqlx::SqlitePool;
-use terrarium_kernel::{run_tick, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles};
+use terrarium_sim::{run_tick, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles};
 use tokio::sync::broadcast;
 
 use crate::config::Config;
@@ -231,7 +231,7 @@ impl WorldEngine {
 #[cfg(test)]
 mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
-    use terrarium_kernel::{compile_wat, vm::Creature};
+    use terrarium_sim::{compile_wat, vm::Creature};
 
     use super::*;
     use crate::config::Config;
@@ -251,9 +251,10 @@ mod tests {
                 database_url: "sqlite::memory:".into(),
                 firebase_project_id: "test".into(),
                 faucet_enabled: true,
-                faucet_max: 100 * terrarium_kernel::ENERGY_SCALE,
-                deploy_cost: 100 * terrarium_kernel::ENERGY_SCALE,
+                faucet_max: 100 * terrarium_sim::ENERGY_SCALE,
+                deploy_cost: 100 * terrarium_sim::ENERGY_SCALE,
                 seed_ecosystem: false,
+                compile_worker_url: None,
             },
         )
         .await

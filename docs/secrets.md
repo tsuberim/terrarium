@@ -15,6 +15,8 @@ See [devops.md](devops.md) for where these are used.
 | `GCP_REGION` | e.g. `us-central1` |
 | `ARTIFACT_REPO` | Artifact Registry repo, default `terrarium` |
 | `CLOUD_RUN_SERVICE` | Service name, default `terrarium-server` |
+| `COMPILE_RUN_SERVICE` | Compile worker Cloud Run name, default `terrarium-compile` |
+| `COMPILE_WORKER_URL` | Set on API server after deploy (from `.deploy/compile-worker-url`) |
 
 Frontend local config is written to `apps/skin/.env.local` by `setup-dev.sh` (gitignored).
 

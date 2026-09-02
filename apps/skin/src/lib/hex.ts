@@ -137,7 +137,7 @@ function rotateAround(
 }
 
 /**
- * FOV outline matching kernel `sense`: hex-range disk clipped to frontal arc.
+ * FOV outline matching sim `sense`: hex-range disk clipped to frontal arc.
  * Optional `lookAngle` rotates the shape for smooth facing animation.
  */
 export function fovOutlinePoints(
@@ -260,7 +260,7 @@ function relativeBearing(facing: number, dq: number, dr: number): number | null 
   return diff > 3 ? diff - 6 : diff;
 }
 
-/** True when target is within sense range and frontal arc (matches kernel sense). */
+/** True when target is within sense range and frontal arc (matches sim sense). */
 export function hexInSense(
   cq: number,
   cr: number,

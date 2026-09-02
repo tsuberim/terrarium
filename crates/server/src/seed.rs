@@ -1,7 +1,7 @@
 //! Bootstrap ecosystem seed data.
 
 use sqlx::SqlitePool;
-use terrarium_kernel::{
+use terrarium_sim::{
     compile_wat, food, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles,
     EXAMPLE_PROGRAMS,
 };
@@ -150,7 +150,7 @@ pub async fn seed_ecosystem(
     }
 
     let occupied: Vec<(i32, i32)> = creatures.iter().map(|c| (c.x, c.y)).collect();
-    let mut tile_dirty = terrarium_kernel::world_tile::TileDirty::new();
+    let mut tile_dirty = terrarium_sim::world_tile::TileDirty::new();
     for tick in
         (0..sim_config.food_spawn_interval * 4).step_by(sim_config.food_spawn_interval as usize)
     {

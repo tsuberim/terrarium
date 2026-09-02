@@ -22,19 +22,19 @@ Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 
 | Layer | What it catches | Command |
 |-------|-----------------|---------|
-| **Kernel unit** | Assembler bugs, VM semantics, example programs | `cargo test -p terrarium-kernel` |
+| **Sim unit** | Assembler bugs, VM semantics, example programs | `cargo test -p terrarium-sim` |
 | **Server sim** | DB persistence, tick loop, UNIQUE position updates | `cargo test -p terrarium-server` |
 | **Manual dev** | Auth, UI, deploy flow | `./scripts/dev.sh` → http://localhost:5173 |
 
-## Kernel tests
+## Sim tests
 
-- Every example program in `crates/kernel/src/examples.rs` must compile as WAT (mirrors `apps/skin/src/lib/examples.ts`).
+- Every example program in `crates/sim/src/examples.rs` must compile as WAT (mirrors `apps/skin/src/lib/examples.ts`).
 - Predator/scavenger examples are authored in Rust under `strategies/` and synced via `./scripts/build-strategies.sh` (dev-only; output is committed WAT).
 - VM tests run creatures for N ticks in memory — no DB, fast.
 
 ## Logic tests
 
-Kernel semantic tests live in `crates/kernel/src/logic_tests.rs`. They cover:
+Sim semantic tests live in `crates/sim/src/logic_tests.rs`. They cover:
 
 - Stack underflow stalls (does not kill)
 - `eq` / `sub` pop order
@@ -44,7 +44,7 @@ Kernel semantic tests live in `crates/kernel/src/logic_tests.rs`. They cover:
 - Energy zero → death
 - One action per tick; rotate-then-eat ordering; frontal vision cone
 
-Run: `cargo test -p terrarium-kernel logic_tests`
+Run: `cargo test -p terrarium-sim logic_tests`
 
 When fixing a logic bug, add a test there first.
 
@@ -61,7 +61,7 @@ fn my_program_does_x() {
 
 `crates/server/src/engine.rs` uses in-memory SQLite.
 
-Tests call `WorldEngine::tick_step()` directly — same kernel path as the live 2 Hz loop.
+Tests call `WorldEngine::tick_step()` directly — same sim path as the live 2 Hz loop.
 
 ## Local dev gotcha (fixed)
 

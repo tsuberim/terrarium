@@ -183,7 +183,7 @@ export default function App() {
 
   const message =
     deployCell
-      ? "Code in Replit or upload WASM"
+      ? "Edit Rust, test, then deploy"
       : jumpOpen
         ? "Search by coordinates or creature id"
         : user && canDeploy

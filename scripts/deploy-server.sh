@@ -40,6 +40,11 @@ fi
 
 ENV_VARS="FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID},FAUCET_ENABLED=true,DATABASE_URL=sqlite:///app/data/terrarium.db?mode=rwc"
 
+if [[ -f .deploy/compile-worker-url ]]; then
+  COMPILE_URL="$(tr -d '\n' < .deploy/compile-worker-url)"
+  ENV_VARS="${ENV_VARS},COMPILE_WORKER_URL=${COMPILE_URL}"
+fi
+
 gcloud run deploy "$CLOUD_RUN_SERVICE" \
   --project="$GCP_PROJECT_ID" \
   --image="$IMAGE" \

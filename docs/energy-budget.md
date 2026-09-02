@@ -67,7 +67,7 @@ Monotonic counter `energy_free_minted`. Increment when energy appears from nothi
 
 ## Ledger
 
-Single authoritative struct, owned by the sim (kernel or server engine — kernel preferred so ticks stay pure):
+Single authoritative struct, owned by the sim crate (preferred over server engine so ticks stay pure):
 
 ```rust
 pub struct EnergyLedger {
@@ -178,7 +178,7 @@ Public wire (`full: true` delta, REST `/v1/world`) includes `deploy_cost`, `corp
 
 | Phase | Work |
 |-------|------|
-| **1 — Ledger** | `EnergyLedger` in kernel; `record_destroy` on existing sinks; persist columns; **internal only** (not on public wire) |
+| **1 — Ledger** | `EnergyLedger` in sim; `record_destroy` on existing sinks; persist columns; **internal only** (not on public wire) |
 | **2 — Tick accounting** | `TickEnergyAccounting` in `TickResult`; tests for 2:1 cap |
 | **3 — Food** | Simple periodic food spawn (no terrain noise yet); eat transfers; mint at fill |
 | **4 — Balance pass** | Tune food density, nominal value, regen vs typical destroy rate |

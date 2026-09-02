@@ -1,4 +1,4 @@
-//! Dev-only: embed compiled strategy WASM in kernel + skin examples.
+//! Dev-only: embed compiled strategy WASM in sim + skin examples.
 
 use std::env;
 use std::fs;
@@ -64,7 +64,7 @@ fn sync_one(
     let wat = wasmprinter::print_bytes(&wasm)?;
     let wasm_b64 = STANDARD.encode(&wasm);
 
-    let rust_path = repo.join("crates/kernel/src/examples.rs");
+    let rust_path = repo.join("crates/sim/src/examples.rs");
     let mut rust = fs::read_to_string(&rust_path)?;
     let rust_start = format!("pub(crate) const {const_name}: &str = r#\"");
     let (pre, rest) = rust

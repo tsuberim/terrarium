@@ -31,7 +31,7 @@ Clients never drive the sim. The sim never waits on clients or SQLite.
 └──────────────────────────────────────────────────────────────┘
           │
 ┌─────────▼────────────────────────────────────────────────────┐
-│  terrarium-kernel — pure CPU, no I/O                         │
+│  terrarium-sim — pure CPU, no I/O                            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -48,7 +48,7 @@ Clients never drive the sim. The sim never waits on clients or SQLite.
 The sim thread uses wall-clock scheduling:
 
 1. Record `start = Instant::now()`
-2. Run `tick_step()` (kernel only)
+2. Run `tick_step()` (sim only)
 3. Push delta to broadcast (**every tick**, even if empty — clients use `tick` as clock)
 4. Queue checkpoint snapshot if due
 5. `sleep(max(0, period - elapsed))`
@@ -122,7 +122,7 @@ Connect: `GET /api/v1/world/ws`
 Today all creatures tick every frame. Path to **tons of entities** without breaking Hz:
 
 ### Phase A — Dirty tracking (done)
-- Per-tick creature/tile dirty sets in kernel; delta builders on server (`wire.rs`)
+- Per-tick creature/tile dirty sets in sim; delta builders on server (`wire.rs`)
 - Spatial hash for creature collision remains future work
 
 ### Phase B — Time budgets
@@ -150,7 +150,7 @@ Today all creatures tick every frame. Path to **tons of entities** without break
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `PERSIST_EVERY_TICKS` | `10` | Checkpoint interval |
-| `TICK_HZ` | `2` (kernel const) | World clock rate |
+| `TICK_HZ` | `2` (sim const) | World clock rate |
 | `DATABASE_URL` | file sqlite | Persistence |
 
 ## Client rendering
@@ -171,7 +171,7 @@ The canvas reads **display tiles** and **interpolated poses**, not raw sim posit
 | `crates/server/src/persist.rs` | SQLite checkpoint worker |
 | `crates/server/src/deploy.rs` | Deploy + credit debit |
 | `crates/server/src/ws.rs` | Per-client fan-out |
-| `crates/kernel/` | VM, tick loop, energy ledger (internal), no I/O |
+| `crates/sim/` | VM, tick loop, energy ledger (internal), no I/O |
 | `docs/energy-budget.md` | Free-mint budget (2:1 destroy ratio) |
 | `apps/skin/src/hooks/useWorldStream.ts` | WS connect, sim state maps |
 | `apps/skin/src/lib/worldRuntime.ts` | Action/event animation + display tiles |

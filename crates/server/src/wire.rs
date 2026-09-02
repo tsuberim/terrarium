@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
-use terrarium_kernel::{
+use terrarium_sim::{
     vm::Creature, CreatureAction, DeathReason, SimConfig, WorldEvent, WorldTile, WorldTiles,
 };
 

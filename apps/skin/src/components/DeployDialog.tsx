@@ -1,10 +1,19 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EXAMPLE_PROGRAMS } from "../lib/examples";
 import { formatWasmLimit, MAX_WASM_BYTES } from "../lib/deployLimits";
+import {
+  DEFAULT_RUST_SOURCE,
+  SANDBOX_SCENARIOS,
+  type CompileDiagnostic,
+  type SandboxResult,
+  type SandboxScenario,
+} from "../lib/creatureEditor";
 import { formatGlimString, GLIM_SCALE } from "../lib/glim";
-import { apiRoot } from "../lib/config";
-import { authorLinks, openReplitWithEnv, resolveApiBase } from "../lib/authoringLinks";
+import { postCompile, postSandboxRun } from "../lib/api";
+import { authorLinks } from "../lib/authoringLinks";
 import { GlimAmount } from "./GlimAmount";
+import { RustEditor } from "./RustEditor";
+import { SandboxPreview } from "./SandboxPreview";
 
 type Props = {
   cell: { x: number; y: number } | null;
@@ -21,40 +30,41 @@ async function readWasmFile(file: File): Promise<{ b64: string; name: string }> 
     throw new Error("Only .wasm files");
   }
   const buf = await file.arrayBuffer();
-  if (buf.byteLength === 0) {
-    throw new Error("Empty file");
-  }
-  if (buf.byteLength > MAX_WASM_BYTES) {
-    throw new Error(`WASM must be ≤ ${formatWasmLimit()}`);
-  }
+  if (buf.byteLength === 0) throw new Error("Empty file");
+  if (buf.byteLength > MAX_WASM_BYTES) throw new Error(`WASM must be ≤ ${formatWasmLimit()}`);
   const bytes = new Uint8Array(buf);
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!);
-  }
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
   return { b64: btoa(binary), name: file.name };
 }
 
 export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDeploy, onClose }: Props) {
-  const [code, setCode] = useState("");
+  const [source, setSource] = useState(DEFAULT_RUST_SOURCE);
   const [wasmB64, setWasmB64] = useState<string | undefined>();
   const [wasmLabel, setWasmLabel] = useState<string | null>(null);
   const [extra, setExtra] = useState(minExtra);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [replitCopied, setReplitCopied] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
+  const [testing, setTesting] = useState(false);
+  const [sandbox, setSandbox] = useState<SandboxResult | null>(null);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [scenario, setScenario] = useState<SandboxScenario>("open");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!cell) return;
-    setCode("");
+    setSource(DEFAULT_RUST_SOURCE);
     setWasmB64(undefined);
     setWasmLabel(null);
     setExtra(minExtra);
     setError(null);
     setAdvancedOpen(false);
-    setReplitCopied(false);
+    setDiagnostics([]);
+    setSandbox(null);
+    setFrameIndex(0);
+    setScenario("open");
   }, [cell, minExtra]);
 
   useEffect(() => {
@@ -71,14 +81,13 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
   const maxExtra = Math.max(minExtra, (credits ?? minExtra) - corpseEnergy);
   const totalEnergy = corpseEnergy + extra;
   const totalCost = totalEnergy;
-  const apiBase = resolveApiBase(apiRoot());
 
   const applyWasm = async (file: File) => {
     try {
       const { b64, name } = await readWasmFile(file);
       setWasmB64(b64);
       setWasmLabel(name);
-      setCode(`(module ; ${name})`);
+      setSandbox(null);
       setError(null);
     } catch (err) {
       setWasmB64(undefined);
@@ -87,22 +96,40 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
     }
   };
 
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (busy) return;
-    const file = e.dataTransfer.files[0];
-    if (file) void applyWasm(file);
-  };
-
-  const launchReplit = async () => {
-    await openReplitWithEnv({ apiBase, x: cell.x, y: cell.y, energy: totalEnergy });
-    setReplitCopied(true);
+  const runTest = async () => {
+    setTesting(true);
+    setError(null);
+    setSandbox(null);
+    setDiagnostics([]);
+    try {
+      let b64 = wasmB64;
+      if (!b64) {
+        const compiled = await postCompile("rust", source);
+        setDiagnostics(compiled.diagnostics);
+        if (!compiled.ok || !compiled.wasm_b64) {
+          setError(compiled.diagnostics[0]?.message ?? "Compile failed");
+          return;
+        }
+        b64 = compiled.wasm_b64;
+        setWasmB64(b64);
+        setWasmLabel("creature.wasm");
+      }
+      const result = await postSandboxRun(b64, scenario, 100);
+      setSandbox(result);
+      setFrameIndex(Math.max(0, result.frames.length - 1));
+      if (!result.alive && result.death_reason) {
+        setError(`Died at tick ${result.ticks_run}: ${result.death_reason.replace(/_/g, " ")}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Test failed");
+    } finally {
+      setTesting(false);
+    }
   };
 
   const submit = () => {
-    if (!code.trim()) {
-      setError("Drop a .wasm file or paste WAT under Advanced");
+    if (!wasmB64 && !source.trim()) {
+      setError("Write code and Test, or drop a .wasm file");
       return;
     }
     if (extra < minExtra) {
@@ -114,13 +141,27 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
       return;
     }
     setError(null);
-    onDeploy(code, extra, wasmB64);
+    const deploy = async () => {
+      let b64 = wasmB64;
+      if (!b64) {
+        const compiled = await postCompile("rust", source);
+        if (!compiled.ok || !compiled.wasm_b64) {
+          setDiagnostics(compiled.diagnostics);
+          setError(compiled.diagnostics[0]?.message ?? "Compile failed");
+          return;
+        }
+        b64 = compiled.wasm_b64;
+      }
+      onDeploy("// creature.rs", extra, b64);
+    };
+    void deploy();
   };
 
-  const canSubmit = !!wasmB64 || (advancedOpen && code.trim());
+  const canDeploy = !!wasmB64 || source.trim().length > 0;
+  const locked = busy || testing;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-20 flex items-end justify-center p-3 sm:items-center sm:p-4">
+    <div className="pointer-events-auto absolute inset-0 z-20 flex items-end justify-center p-2 sm:items-center sm:p-4">
       <button
         type="button"
         className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
@@ -128,42 +169,83 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
         onClick={onClose}
       />
 
-      <div className="deploy-panel relative w-full max-w-lg">
-        <div className="mb-2 flex items-baseline justify-between gap-3">
+      <div className="deploy-panel relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden">
+        <div className="mb-2 flex shrink-0 items-baseline justify-between gap-3">
           <h2 className="text-sm font-medium text-white/85">Deploy creature</h2>
           <span className="font-mono text-[10px] text-white/35">
             ({cell.x}, {cell.y})
           </span>
         </div>
 
-        <div className="mb-3 rounded-lg border border-biolume/15 bg-biolume/[0.04] p-3">
-          <p className="mb-2 text-[11px] leading-relaxed text-white/50">
-            Code in Replit — edit Zig, press Run to build and deploy here.
-          </p>
-          <button
-            type="button"
-            className="deploy-btn deploy-btn-primary w-full"
-            disabled={busy}
-            onClick={() => void launchReplit()}
-          >
-            Open in Replit
-          </button>
-          {replitCopied && (
-            <p className="mt-1.5 font-mono text-[9px] text-biolume/70">
-              .env copied — paste at sdk/zig/.env, add API key from Keys
-            </p>
-          )}
-          <a
-            href={authorLinks.docs}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 block text-center text-[10px] text-white/30 hover:text-white/50"
-          >
-            Docs → hello world
-          </a>
+        <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto sm:grid-cols-2">
+          <div className="min-w-0 space-y-2">
+            <div className="overflow-hidden rounded-lg border border-white/[0.08]">
+              <RustEditor
+                value={source}
+                onChange={(v) => {
+                  setSource(v);
+                  setWasmB64(undefined);
+                  setWasmLabel(null);
+                  setSandbox(null);
+                  if (error) setError(null);
+                }}
+                diagnostics={diagnostics}
+                readOnly={locked}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={scenario}
+                disabled={locked}
+                onChange={(e) => setScenario(e.target.value as SandboxScenario)}
+                className="rounded-md border border-white/[0.08] bg-black/30 px-2 py-1 text-[10px] text-white/70"
+              >
+                {SANDBOX_SCENARIOS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="deploy-btn" disabled={locked} onClick={() => void runTest()}>
+                {testing ? "Testing…" : "Test"}
+              </button>
+              <a
+                href={authorLinks.docs}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] text-white/30 hover:text-white/50"
+              >
+                SDK docs
+              </a>
+            </div>
+          </div>
+
+          <div className="min-w-0 space-y-2">
+            <SandboxPreview result={sandbox} frameIndex={frameIndex} />
+            {sandbox && (
+              <>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, sandbox.frames.length - 1)}
+                  value={frameIndex}
+                  onChange={(e) => setFrameIndex(Number(e.target.value))}
+                  className="w-full accent-biolume"
+                />
+                <div className="grid grid-cols-2 gap-2 font-mono text-[9px] text-white/45">
+                  <span>Tick {sandbox.frames[frameIndex]?.tick ?? 0}</span>
+                  <span>
+                    Energy <GlimAmount amount={sandbox.frames[frameIndex]?.energy ?? 0} compact className="inline text-[9px]" />
+                  </span>
+                  <span>Spent (run) <GlimAmount amount={sandbox.bench.total_spent} compact className="inline text-[9px]" /></span>
+                  <span>Per tick <GlimAmount amount={sandbox.bench.per_tick_avg} compact className="inline text-[9px]" /></span>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2">
+        <div className="mt-2 flex shrink-0 items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2">
           <label className="text-[11px] text-white/45" htmlFor="deploy-extra">
             Extra glims
           </label>
@@ -175,14 +257,10 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
               max={maxExtra}
               step={GLIM_SCALE}
               value={extra}
-              disabled={busy}
-              onChange={(e) => {
-                setExtra(Number.parseInt(e.target.value, 10) || minExtra);
-                if (error) setError(null);
-              }}
+              disabled={locked}
+              onChange={(e) => setExtra(Number.parseInt(e.target.value, 10) || minExtra)}
               className="w-20 rounded-md border border-white/[0.08] bg-black/30 px-2 py-1 text-right font-mono text-[11px] text-white/75 outline-none focus:border-biolume/25"
             />
-            <span className="text-[10px] text-white/30">=</span>
             <GlimAmount amount={totalEnergy} className="text-[10px] text-white/45" />
           </div>
         </div>
@@ -192,7 +270,7 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
           type="file"
           accept=".wasm,application/wasm"
           className="hidden"
-          disabled={busy}
+          disabled={locked}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void applyWasm(file);
@@ -202,86 +280,69 @@ export function DeployDialog({ cell, minExtra, corpseEnergy, credits, busy, onDe
 
         <button
           type="button"
-          disabled={busy}
+          disabled={locked}
           onClick={() => fileRef.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
-            if (!busy) setDragOver(true);
+            if (!locked) setDragOver(true);
           }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          className={`mb-2 w-full rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors ${
-            dragOver
-              ? "border-biolume/40 bg-biolume/5"
-              : "border-white/[0.1] bg-black/15 hover:border-white/20"
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            if (locked) return;
+            const file = e.dataTransfer.files[0];
+            if (file) void applyWasm(file);
+          }}
+          className={`mt-2 shrink-0 rounded-lg border border-dashed px-3 py-2 text-left text-[10px] ${
+            dragOver ? "border-biolume/40 bg-biolume/5" : "border-white/[0.1] bg-black/15"
           }`}
         >
-          <p className="text-[11px] text-white/55">
-            {wasmLabel ? (
-              <>
-                <span className="font-mono text-biolume/80">{wasmLabel}</span>
-                <span className="text-white/30"> · drop another to replace</span>
-              </>
-            ) : (
-              <>Or drop a prebuilt .wasm file</>
-            )}
-          </p>
-          <p className="mt-0.5 font-mono text-[9px] text-white/25">Max {formatWasmLimit()}</p>
+          {wasmLabel ? (
+            <span className="font-mono text-biolume/80">{wasmLabel}</span>
+          ) : (
+            <span className="text-white/45">Or drop prebuilt .wasm</span>
+          )}
         </button>
 
         <button
           type="button"
-          className="mb-2 w-full text-left text-[10px] text-white/35 hover:text-white/55"
+          className="mt-1 text-left text-[10px] text-white/35 hover:text-white/55"
           onClick={() => setAdvancedOpen((v) => !v)}
         >
-          {advancedOpen ? "▾" : "▸"} Advanced — paste WAT
+          {advancedOpen ? "▾" : "▸"} Advanced — WAT examples
         </button>
 
         {advancedOpen && (
-          <div className="mb-2 space-y-2">
-            <div className="flex flex-wrap gap-1">
-              {EXAMPLE_PROGRAMS.map((example) => (
-                <button
-                  key={example.id}
-                  type="button"
-                  className="deploy-btn"
-                  title={example.description}
-                  disabled={busy}
-                  onClick={() => {
-                    setCode(example.code);
-                    setWasmB64(example.wasmB64);
-                    setWasmLabel(example.wasmB64 ? `${example.name}.wasm` : null);
-                    if (error) setError(null);
-                  }}
-                >
-                  {example.name}
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={code}
-              onChange={(e) => {
-                setCode(e.target.value);
-                setWasmB64(undefined);
-                setWasmLabel(null);
-                if (error) setError(null);
-              }}
-              placeholder={'(module\n  (import "terrarium" "sleep" (func $sleep))\n  (func (export "tick") (call $sleep))\n)'}
-              spellCheck={false}
-              rows={8}
-              className="deploy-input"
-            />
+          <div className="flex flex-wrap gap-1">
+            {EXAMPLE_PROGRAMS.map((example) => (
+              <button
+                key={example.id}
+                type="button"
+                className="deploy-btn"
+                title={example.description}
+                disabled={locked}
+                onClick={() => {
+                  setWasmB64(example.wasmB64);
+                  setWasmLabel(example.wasmB64 ? `${example.name}.wasm` : null);
+                  setSandbox(null);
+                  if (error) setError(null);
+                }}
+              >
+                {example.name}
+              </button>
+            ))}
           </div>
         )}
 
-        {error && <p className="mt-1.5 font-mono text-[10px] text-red-400/80">{error}</p>}
+        {error && <p className="mt-1 font-mono text-[10px] text-red-400/80">{error}</p>}
 
-        <div className="mt-3 flex justify-end gap-1.5">
-          <button type="button" className="deploy-btn" onClick={onClose} disabled={busy}>
+        <div className="mt-2 flex shrink-0 justify-end gap-1.5 pb-1">
+          <button type="button" className="deploy-btn" onClick={onClose} disabled={locked}>
             Cancel
           </button>
-          {canSubmit && (
-            <button type="button" className="deploy-btn deploy-btn-primary" onClick={submit} disabled={busy}>
+          {canDeploy && (
+            <button type="button" className="deploy-btn deploy-btn-primary" onClick={submit} disabled={locked}>
               Deploy · <GlimAmount amount={totalCost} className="text-[10px]" compact />
             </button>
           )}

@@ -1,4 +1,4 @@
-//! Simulation kernel — WAT/WASM creatures, tick loop.
+//! Simulation engine — WAT/WASM creatures, tick loop.
 
 pub mod abi;
 pub mod energy_ledger;
@@ -7,6 +7,7 @@ pub mod examples;
 pub mod food;
 pub mod hex;
 pub mod host;
+pub mod sandbox;
 pub mod sim_config;
 pub mod vm;
 pub mod wat;
@@ -19,6 +20,10 @@ pub use abi::{ACTION_ENERGY, CORPSE_ENERGY, ENERGY_PER_OPCODE, ENERGY_SCALE, OPC
 pub use energy_ledger::EnergyLedger;
 pub use events::{CreatureAction, DeathReason, TickResult, WorldEvent};
 pub use examples::{ExampleProgram, ALL as EXAMPLE_PROGRAMS};
+pub use sandbox::{
+    run_sandbox, SandboxBench, SandboxFrame, SandboxRequest, SandboxResult, SandboxScenario,
+    SandboxTile,
+};
 pub use sim_config::SimConfig;
 pub use vm::{run_tick, Creature, Signal};
 pub use wat::{compile_wat, WatError};
