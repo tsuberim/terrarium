@@ -6,6 +6,7 @@ on:
     paths:
       - "crates/**"
       - "apps/**"
+      - "docs/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "Dockerfile"
