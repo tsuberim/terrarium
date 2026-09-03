@@ -2,7 +2,7 @@
 
 **Scope:** GitHub Actions and local CI parity. Not local dev setup or prod deploy steps.
 
-Local fast check: `./scripts/test.sh`. Full stack QA: `./scripts/ci-qa.sh`.
+Local fast check: `./scripts/test.sh`. Full stack e2e: `./scripts/ci-e2e.sh`.
 
 ---
 
@@ -22,14 +22,14 @@ Local fast check: `./scripts/test.sh`. Full stack QA: `./scripts/ci-qa.sh`.
 | **rust** | fmt, clippy, test, release build |
 | **frontend** | lint, build |
 | **docker** | image build (no push) |
-| **qa** | `./scripts/ci-qa.sh` |
+| **e2e** | `./scripts/ci-e2e.sh` |
 | **gate** | fail if any job failed |
 
 Path filters skip irrelevant jobs.
 
 ---
 
-## `ci-qa.sh`
+## `ci-e2e.sh`
 
 1. Build server + compile-worker (release)
 2. QA `.env.local` (fake Firebase + emulator flags)
@@ -80,6 +80,6 @@ Post-deploy: `scripts/smoke-prod.sh`. Detail: [../ops/deploy.md](../ops/deploy.m
 | `qa-preflight.sh` | Health-check services |
 | `qa-smoke.sh` | API smoke (curl) |
 | `qa-e2e.sh` | Preflight + Playwright |
-| `ci-qa.sh` | Full stack for GitHub Actions |
+| `ci-e2e.sh` | Full stack for GitHub Actions |
 
 Smoke options: `QA_DEPLOY=0 npm run qa`

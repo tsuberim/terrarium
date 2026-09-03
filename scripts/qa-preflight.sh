@@ -23,7 +23,13 @@ assert d.get('status') == 'ok' and d.get('body_wrap') is True, d
 " || fail "compile worker down or missing body_wrap"
 
 echo "==> Auth emulator ${AUTH_HOST}"
-curl -sf "http://${AUTH_HOST}/" >/dev/null 2>&1 || fail "auth emulator down at ${AUTH_HOST}"
+auth_code="$(
+  curl -s -o /dev/null -w '%{http_code}' -X POST \
+    "http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"preflight@terrarium.dev","password":"preflight","returnSecureToken":true}'
+)"
+[[ "$auth_code" != "000" ]] || fail "auth emulator identity API down at ${AUTH_HOST}"
 
 echo "==> UI ${UI}"
 curl -sf "${UI}" >/dev/null || fail "Vite UI down at ${UI}"

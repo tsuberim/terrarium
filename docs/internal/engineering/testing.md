@@ -28,7 +28,7 @@ Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 | **Server sim** | DB persistence, tick loop, UNIQUE position updates | `cargo test -p terrarium-server` |
 | **Manual dev** | Auth, Studio, deploy flow | `./scripts/dev.sh` → http://localhost:5173 |
 | **QA (local)** | API smoke + Playwright e2e | `npm run qa:all` (requires dev stack) |
-| **QA (CI)** | Full stack in GitHub Actions | `./scripts/ci-qa.sh` via `reusable-test.yml` `qa` job |
+| **E2E (CI)** | Full stack in GitHub Actions | `./scripts/ci-e2e.sh` via `reusable-test.yml` `e2e` job |
 
 ## Sim tests
 
