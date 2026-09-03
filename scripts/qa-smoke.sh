@@ -16,6 +16,26 @@ json_get() {
   python3 -c "import json,sys; print(json.load(sys.stdin)$1)" 2>/dev/null
 }
 
+auth_emulator_token() {
+  local email="$1" password="$2"
+  local base="http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/accounts"
+  local token
+  token="$(
+    curl -sf -X POST "${base}:signInWithPassword?key=fake-api-key" \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"${email}\",\"password\":\"${password}\",\"returnSecureToken\":true}" \
+    | json_get "['idToken']" || true
+  )"
+  if [[ -n "$token" ]]; then
+    echo "$token"
+    return 0
+  fi
+  curl -sf -X POST "${base}:signUp?key=fake-api-key" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"${email}\",\"password\":\"${password}\",\"returnSecureToken\":true}" \
+  | json_get "['idToken']"
+}
+
 echo "==> Server health"
 curl -sf "${API}/health" | json_get "['status']" | grep -qx ok
 
@@ -28,12 +48,7 @@ print('body_wrap ok')
 "
 
 echo "==> Auth emulator sign-in"
-TOKEN="$(
-  curl -sf -X POST "http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key" \
-    -H 'Content-Type: application/json' \
-    -d "{\"email\":\"${QA_EMAIL}\",\"password\":\"${QA_PASSWORD}\",\"returnSecureToken\":true}" \
-  | json_get "['idToken']"
-)"
+TOKEN="$(auth_emulator_token "${QA_EMAIL}" "${QA_PASSWORD}")"
 AUTH=(-H "Authorization: Bearer ${TOKEN}")
 
 echo "==> GET /v1/me"

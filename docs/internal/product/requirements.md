@@ -323,7 +323,7 @@ Dev-only automation; not exposed in prod. Detail: [../qa/README.md](../qa/README
 | QA-2 | `npm run qa:e2e` — Playwright runs every `docs/internal/qa/scenarios/*.yaml` | **shipped** |
 | QA-3 | `VITE_QA_MODE` exposes `window.__TERRARIUM_QA__` + `data-testid="qa-*"` | **shipped** dev-only |
 | QA-4 | `npm run qa:preflight` verifies dev stack before browser/e2e | **shipped** |
-| QA-5 | CI `qa` job runs `./scripts/ci-qa.sh` (same smoke + e2e) | **shipped** |
+| QA-5 | CI `e2e` job runs `./scripts/ci-e2e.sh` (same smoke + Playwright) | **shipped** |
 | QA-6 | API smoke deploy uses pinned cell (`QA_DEPLOY_X` / `QA_DEPLOY_Y`, default 32,32) with scan fallback | **shipped** |
 | QA-7 | API smoke tops up credits in faucet-sized chunks when deploy cost exceeds one request | **shipped** |
 

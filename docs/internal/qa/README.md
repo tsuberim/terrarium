@@ -217,7 +217,7 @@ npm run qa:e2e    # preflight + playwright test
 - Helpers: `e2e/helpers/qa-bridge.ts`, `e2e/helpers/run-scenario.ts`
 - Specs: `e2e/scenarios.spec.ts` — runs all `docs/internal/qa/scenarios/*.yaml`
 
-**CI:** PRs run `./scripts/ci-qa.sh` in the `qa` job (`.github/workflows/reusable-test.yml`) — starts auth emulator, API, compile worker, Vite, then `npm run qa` + Playwright.
+**CI:** PRs run `./scripts/ci-e2e.sh` in the `e2e` job (`.github/workflows/reusable-test.yml`) — starts auth emulator, API, compile worker, Vite, then `npm run qa` + Playwright.
 
 ---
 
