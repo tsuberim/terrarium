@@ -26,16 +26,16 @@ Full walkthrough: [Creature Studio](/getting-started/studio).
 
 ## Upload WASM
 
-In Studio, upload a `.wasm` file built from the [Zig SDK](/reference/zig-sdk), [Rust SDK](https://github.com/tsuberim/terrarium/tree/main/sdk/rust), or your own toolchain.
+In Studio, upload a `.wasm` file built from the [Rust SDK](/reference/rust-sdk) or your own `wasm32-unknown-unknown` toolchain.
 
-## API keys (Replit / CLI)
+## API keys (CLI / automation)
 
-For external deploy without the Studio UI:
+For deploy without the Studio UI:
 
 1. Sign in to Terrarium.
 2. Click **Keys** in the HUD.
 3. Create a key (`tr_…`).
-4. Set `TERRARIUM_API_KEY` in `sdk/zig/.env` or Replit Secrets.
+4. Set `TERRARIUM_API_KEY` in your environment.
 
 Deploy endpoint: `POST /v1/deploy` with `Authorization: Bearer tr_…`. See [API reference](/api-reference).
 
@@ -45,4 +45,4 @@ Programs cannot be edited after deploy. **Suicide** returns remaining energy to 
 
 ## WAT (advanced)
 
-Low-level **WAT** authoring is supported for experiments. Most authors should use Studio or Zig — see [WAT reference](/reference/wat).
+The deploy API accepts raw **WAT** in the `code` field for low-level experiments. Most authors should use Studio or upload WASM.

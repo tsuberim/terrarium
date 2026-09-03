@@ -26,6 +26,7 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'strategies/**'
+              - 'docs/public/openapi.json'
             frontend:
               - 'apps/**'
               - 'docs/internal/qa/**'
@@ -49,6 +50,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
         uses: Swatinem/rust-cache@v2
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        run: chmod +x scripts/*.sh && ./scripts/check-openapi-sync.sh
+      - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
+        run: ./scripts/check-strategies-sync.sh
       - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'
         run: cargo fmt --all -- --check
       - if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.workflows == 'true'

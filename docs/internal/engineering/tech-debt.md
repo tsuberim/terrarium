@@ -86,9 +86,9 @@ Known gaps, shortcuts, and cleanup work. **Not** product decisions — those liv
 
 | ID | Priority | Debt | Impact | Direction |
 |----|----------|------|--------|-----------|
-| TD-CODE-1 | **P2** | `strategies/` → WAT sync is manual (`build-strategies.sh`); CI doesn't build | Drift if someone edits Rust without sync | CI check or remove WAT mirror |
+| TD-CODE-1 | **P2** | `strategies/` → WAT sync is manual (`build-strategies.sh`) | Drift if someone edits Rust without sync | CI compiles strategies; run `build-strategies.sh` locally when editing |
 | TD-CODE-2 | **P2** | OpenAPI deploy `code` field clarified | Secondary path unclear | **Done** |
-| TD-CODE-3 | **P2** | Two SDKs (Rust in-game, Zig external) | Story split | PRD §9 + sdk READMEs + public Mintlify |
+| TD-CODE-3 | **P2** | Two SDKs (Rust in-game, Zig external) | Story split | **Done** — Rust SDK + Studio primary; WASM upload + API keys for external |
 | TD-CODE-4 | **P2** | Uncommitted large feature branch (Studio, QA, auth emulator) | Main may lag docs | Land PR; docs already ahead of main |
 
 ---

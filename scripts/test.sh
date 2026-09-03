@@ -2,6 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+echo "==> OpenAPI sync"
+./scripts/check-openapi-sync.sh
+
 echo "==> Rust fmt + clippy + tests"
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings

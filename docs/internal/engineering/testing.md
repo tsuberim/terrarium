@@ -8,7 +8,9 @@ Full dev/QA loop: [../workflow/README.md](../workflow/README.md). Doc map: [../.
 ./scripts/test.sh
 ```
 
-Same as the reusable CI test job (minus Docker): `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, frontend `npm run lint`, release build.
+Same as the reusable CI test job (minus Docker): openapi sync check, `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace`, frontend `npm run lint`, release build.
+
+OpenAPI: edit `crates/server/src/openapi.json`, then `./scripts/sync-openapi.sh` for Mintlify.
 
 ### Pre-commit
 
@@ -33,7 +35,7 @@ Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 ## Sim tests
 
 - Example WAT programs live in `crates/sim/src/examples.rs` (used by sim unit tests).
-- Predator/scavenger examples are authored in Rust under `strategies/` and synced via `./scripts/build-strategies.sh` → committed WAT in `examples.rs`. CI does **not** rebuild strategies.
+- Predator/scavenger examples are authored in Rust under `strategies/` and synced via `./scripts/build-strategies.sh` → committed WAT in `examples.rs`. CI runs `./scripts/check-strategies-sync.sh` (compile-only; WAT sync is manual).
 - Default Studio source is `apps/skin/src/lib/creatureEditor.ts` (`DEFAULT_RUST_SOURCE`) — compile path tested by `npm run smoke` / Playwright.
 - VM tests run creatures for N ticks in memory — no DB, fast.
 

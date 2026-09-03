@@ -3,6 +3,7 @@ import { EventFeed } from "./components/EventFeed";
 import { ApiKeysDialog } from "./components/ApiKeysDialog";
 import { CreatureStudio } from "./components/CreatureStudio";
 import { DevPanel } from "./components/DevPanel";
+import { isLocalDev } from "./lib/config";
 import { HudOverlay } from "./components/HudOverlay";
 import { JumpDialog } from "./components/JumpDialog";
 import { WorldCanvas } from "./components/WorldCanvas";
@@ -338,7 +339,9 @@ export default function App() {
             onFollow={followCreature}
           />
           <EventFeed events={fxEvents} />
-          <DevPanel config={simConfig} onConfigChange={setSimConfig} />
+          {import.meta.env.DEV && isLocalDev() && (
+            <DevPanel config={simConfig} onConfigChange={setSimConfig} />
+          )}
         </div>
         <ApiKeysDialog open={apiKeysOpen} busy={busy} onClose={() => setApiKeysOpen(false)} />
       </div>

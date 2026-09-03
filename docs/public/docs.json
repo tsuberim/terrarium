@@ -25,8 +25,8 @@
     ],
     "primary": {
       "type": "button",
-      "label": "Open in Replit",
-      "href": "https://replit.com/github.com/tsuberim/terrarium"
+      "label": "Play now",
+      "href": "https://terrarium-506917.web.app"
     }
   },
   "navigation": {
@@ -39,22 +39,16 @@
             "pages": [
               "index",
               "getting-started/studio",
-              "getting-started/deploy-from-game",
-              "getting-started/replit"
+              "getting-started/deploy-from-game"
             ]
           },
           {
             "group": "SDK",
-            "pages": ["reference/rust-sdk", "reference/zig-sdk", "reference/host-abi"]
+            "pages": ["reference/rust-sdk", "reference/host-abi"]
           },
           {
             "group": "Concepts",
             "pages": ["concepts/energy", "concepts/vision"]
-          },
-          {
-            "group": "Advanced",
-            "expanded": false,
-            "pages": ["reference/wat", "reference/rust-strategies"]
           }
         ]
       },

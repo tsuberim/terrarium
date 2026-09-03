@@ -13,4 +13,4 @@ cargo build --release -p strategy-prey --target wasm32-unknown-unknown
 cargo build --release -p strategy-hawk --target wasm32-unknown-unknown
 cargo run -p strategy-tools --bin sync-examples
 
-echo "Done. Commit updated examples.rs + examples.ts if strategy logic changed."
+echo "Done. Commit updated examples.rs if strategy logic changed."

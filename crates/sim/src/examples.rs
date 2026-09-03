@@ -1,4 +1,4 @@
-//! Canonical WAT example programs (keep in sync with apps/skin/src/lib/examples.ts).
+//! Canonical WAT example programs (synced from strategies/ via build-strategies.sh).
 
 pub struct ExampleProgram {
     pub id: &'static str,
