@@ -13,7 +13,7 @@ on:
       - "strategies/**"
       - "scripts/**"
       - "firebase.json"
-      - ".github/workflows/**"
+      - ".github/**"
 
 jobs:
   test:
