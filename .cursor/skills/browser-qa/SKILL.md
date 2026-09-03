@@ -9,7 +9,7 @@ description: >-
 
 # Terrarium Browser QA
 
-Exploratory end-user QA in the Cursor browser tab. Complements headless `npm run qa`.
+Exploratory end-user QA in the Cursor browser tab. Complements headless `npm run smoke`.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ Exploratory end-user QA in the Cursor browser tab. Complements headless `npm run
    - http://127.0.0.1:9099 (auth emulator)
    - http://localhost:5173 (Vite)
 
-Run `npm run qa:preflight` then `npm run qa` for sanity checks.
+Run `npm run preflight` then `npm run smoke` for sanity checks.
 
 ## Start
 
@@ -33,7 +33,7 @@ With auth emulator enabled, the app auto-signs-in as `qa@terrarium.dev` and open
 Verify state:
 
 ```js
-window.__TERRARIUM_QA__.getState()
+window.__TERRARIUM_E2E__.getState()
 // expect: { signedIn: true, studioOpen: true, wasmReady: false, ... }
 
 document.body.dataset.qaReady === "true"  // idle + ready
@@ -45,10 +45,10 @@ Scenarios: [docs/internal/qa/scenarios/](../../docs/internal/qa/scenarios/).
 
 ### Studio compile + test
 
-1. Click **Studio** (`qa-hud-studio`) if studio not open
-2. Click **Test** (`qa-studio-test`) — wait for "Testing…" to finish
+1. Click **Studio** (`e2e-hud-studio`) if studio not open
+2. Click **Test** (`e2e-studio-test`) — wait for "Testing…" to finish
 3. Verify WASM ready (upload button shows `creature.wasm`)
-4. Click **Play** (`qa-studio-play`) → **Pause** / **Stop**
+4. Click **Play** (`e2e-studio-play`) → **Pause** / **Stop**
 
 ### Deploy creature
 
@@ -58,14 +58,14 @@ Scenarios: [docs/internal/qa/scenarios/](../../docs/internal/qa/scenarios/).
 2. **Pick map cell before opening deploy dialog** — click the world map area to the right of the studio pane
 3. URL should gain `x=` and `y=` params; status bar shows coordinates
 4. Click **+100 glims** if deploy dialog says insufficient glims (min cost ~110)
-5. Click **Deploy** (`qa-studio-deploy`)
-6. Confirm in dialog (`qa-deploy-confirm`)
+5. Click **Deploy** (`e2e-studio-deploy`)
+6. Confirm in dialog (`e2e-deploy-confirm`)
 
 ### Map clicks
 
 1. `browser_take_screenshot` first (required before xy clicks)
 2. Click on the **map pane** (right side when studio is open), not the deploy modal
-3. Target element: canvas / `qa-world-map`
+3. Target element: canvas / `e2e-world-map`
 4. If deploy dialog is open, click map areas **outside** the centered panel
 
 ## Browser MCP workflow
@@ -76,7 +76,7 @@ browser_snapshot                    # get element refs
 browser_click(ref)                  # prefer over CDP synthetic clicks
 browser_take_screenshot             # before browser_mouse_click_xy
 browser_mouse_click_xy(x, y)        # map picks only
-browser_cdp → Runtime.evaluate      # read __TERRARIUM_QA__ when available
+browser_cdp → Runtime.evaluate      # read __TERRARIUM_E2E__ when available
 ```
 
 Lock tab for long sessions: `browser_lock` → interact → `browser_unlock`.
@@ -97,19 +97,19 @@ Lock tab for long sessions: `browser_lock` → interact → `browser_unlock`.
 Run API confirmation:
 
 ```bash
-npm run qa
+npm run smoke
 ```
 
 ## Reference
 
 - Framework: [docs/internal/qa/README.md](../../docs/internal/qa/README.md)
 - Scenarios: [docs/internal/qa/scenarios/](../../docs/internal/qa/scenarios/)
-- Headless smoke: [scripts/qa-smoke.sh](../../scripts/qa-smoke.sh)
+- Headless smoke: [scripts/api-smoke.sh](../../scripts/api-smoke.sh)
 - QA user: `qa@terrarium.dev` / `qa-terrarium`
 
 ## When to use Playwright instead
 
-Use `npm run qa:e2e` for:
+Use `npm run e2e` for:
 
 - Repeatable regression runs
 - Same flow every time without agent judgment

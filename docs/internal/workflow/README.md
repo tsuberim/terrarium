@@ -16,7 +16,7 @@ How to work on Terrarium. **Scope:** commands, loop, pointers.
 | Daily dev | `./scripts/dev.sh` |
 | Stop | Ctrl+C or `./scripts/dev-stop.sh` |
 | Fast check (no stack) | `./scripts/test.sh` |
-| Full local QA | `npm run qa:all` |
+| Full local QA | `npm run test:integration` |
 
 **Local URL:** http://localhost:5173
 
@@ -30,7 +30,7 @@ How to work on Terrarium. **Scope:** commands, loop, pointers.
 1. DOCS — update product/requirements.md (+ eng/qa/ops/public as needed)
 2. CODE — implement to match docs
 3. SYNC — if code diverged, update docs in same PR
-4. VERIFY — ./scripts/test.sh, dev.sh, npm run qa:all
+4. VERIFY — ./scripts/test.sh, dev.sh, npm run test:integration
 5. MERGE — docs and code agree → PR with auto-merge ([prs.md](prs.md))
 ```
 
@@ -61,7 +61,7 @@ Run verification yourself. Eng principles: [../engineering/principles.md](../eng
 | `setup-dev.sh` | One-time bootstrap |
 | `dev.sh` / `dev-stop.sh` | Local stack |
 | `test.sh` | fmt, clippy, unit, lint, build |
-| `qa-smoke.sh` / `qa-e2e.sh` / `ci-e2e.sh` | QA layers |
+| `api-smoke.sh` / `e2e.sh` / `ci-api-smoke.sh` / `ci-e2e.sh` | Integration test layers |
 
 ---
 

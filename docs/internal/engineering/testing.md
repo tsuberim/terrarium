@@ -27,14 +27,14 @@ Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 | **Sim unit** | Assembler bugs, VM semantics, example programs | `cargo test -p terrarium-sim` |
 | **Server sim** | DB persistence, tick loop, UNIQUE position updates | `cargo test -p terrarium-server` |
 | **Manual dev** | Auth, Studio, deploy flow | `./scripts/dev.sh` → http://localhost:5173 |
-| **QA (local)** | API smoke + Playwright e2e | `npm run qa:all` (requires dev stack) |
+| **QA (local)** | API smoke + Playwright e2e | `npm run test:integration` (requires dev stack) |
 | **E2E (CI)** | Full stack in GitHub Actions | `./scripts/ci-e2e.sh` via `reusable-test.yml` `e2e` job |
 
 ## Sim tests
 
 - Example WAT programs live in `crates/sim/src/examples.rs` (used by sim unit tests).
 - Predator/scavenger examples are authored in Rust under `strategies/` and synced via `./scripts/build-strategies.sh` → committed WAT in `examples.rs`. CI does **not** rebuild strategies.
-- Default Studio source is `apps/skin/src/lib/creatureEditor.ts` (`DEFAULT_RUST_SOURCE`) — compile path tested by `npm run qa` / Playwright.
+- Default Studio source is `apps/skin/src/lib/creatureEditor.ts` (`DEFAULT_RUST_SOURCE`) — compile path tested by `npm run smoke` / Playwright.
 - VM tests run creatures for N ticks in memory — no DB, fast.
 
 ## Logic tests
@@ -82,7 +82,7 @@ Plain `:memory:` gives **each pool connection its own empty database**, so deplo
 4. Pick map cell → **Deploy** → confirm (~110 glims; use faucet if needed)
 5. `curl -s localhost:8080/api/v1/world | jq '.creatures | length'` — count increases
 
-Or run `npm run qa:all` for automated smoke + e2e.
+Or run `npm run test:integration` for automated smoke + e2e.
 
 ## CI
 

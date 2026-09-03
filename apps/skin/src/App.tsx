@@ -14,10 +14,10 @@ import { describeCell } from "./lib/cell";
 import { formatDeathNotice, type DeathEvent } from "./lib/death";
 import { formatGlimString } from "./lib/glim";
 import { auth, googleProvider, signInWithPopup, signOut } from "./lib/firebase";
-import { signInWithEmulatorQaUser } from "./lib/emulatorAuth";
-import { qaMode, authEmulatorEnabled } from "./lib/config";
-import { useQaBridge } from "./hooks/useQaBridge";
-import type { StudioQaSlice } from "./lib/qaBridge";
+import { signInWithEmulatorTestUser } from "./lib/emulatorAuth";
+import { e2eHooksEnabled, authEmulatorEnabled } from "./lib/config";
+import { useE2eBridge } from "./hooks/useE2eBridge";
+import type { StudioE2eSlice } from "./lib/e2eBridge";
 import { resolveInitialViewerState, clampStudioWidthPct, clampStudioCodeHeightPct, DEFAULT_STUDIO_WIDTH_PCT, DEFAULT_STUDIO_CODE_HEIGHT_PCT } from "./lib/viewerPrefs";
 
 type Hover = { x: number; y: number };
@@ -43,7 +43,7 @@ export default function App() {
   );
   const [hover, setHover] = useState<Hover | null>(null);
   const [deathNotice, setDeathNotice] = useState<string | null>(null);
-  const [studioQa, setStudioQa] = useState<StudioQaSlice>({
+  const [studioE2e, setStudioE2e] = useState<StudioE2eSlice>({
     testing: false,
     wasmReady: false,
     playback: "idle",
@@ -89,26 +89,26 @@ export default function App() {
 
   useEffect(() => {
     if (!ready || user || !authEmulatorEnabled()) return;
-    void signInWithEmulatorQaUser().catch(() => {});
+    void signInWithEmulatorTestUser().catch(() => {});
   }, [ready, user]);
 
   useEffect(() => {
-    if (!ready || !user || !qaMode()) return;
+    if (!ready || !user || !e2eHooksEnabled()) return;
     setStudioOpen(true);
   }, [ready, user]);
 
   const error = authError ?? actionError;
-  useQaBridge({
+  useE2eBridge({
     ready,
     signedIn: !!user,
     studioOpen: studioVisible,
     deployCell,
     deployDialogOpen,
     credits,
-    testing: studioQa.testing,
-    wasmReady: studioQa.wasmReady,
-    playback: studioQa.playback,
-    error: studioQa.error ?? error,
+    testing: studioE2e.testing,
+    wasmReady: studioE2e.wasmReady,
+    playback: studioE2e.playback,
+    error: studioE2e.error ?? error,
     busy,
   });
 
@@ -192,7 +192,7 @@ export default function App() {
     setAuthError(null);
     try {
       if (authEmulatorEnabled()) {
-        await signInWithEmulatorQaUser();
+        await signInWithEmulatorTestUser();
         return;
       }
       await signInWithPopup(auth, googleProvider);
@@ -299,7 +299,7 @@ export default function App() {
           runtimeRef={runtimeRef}
           worldTick={tick}
           tickHz={tickHz}
-          mapTestId="qa-world-map"
+          mapTestId="e2e-world-map"
         />
         <div
           className="hud-shell"
@@ -359,7 +359,7 @@ export default function App() {
           canCheck
           onDeploy={(x, y, code, extra, wasmB64) => void submitDeploy(x, y, code, extra, wasmB64)}
           onDeployDialogChange={handleDeployDialogChange}
-          onQaSliceChange={setStudioQa}
+          onE2eSliceChange={setStudioE2e}
           onClose={() => {
             setDeployCell(null);
             setStudioOpen(false);

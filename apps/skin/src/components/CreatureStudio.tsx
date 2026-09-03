@@ -14,7 +14,7 @@ import { RustEditor } from "./RustEditor";
 import { WorldCanvas } from "./WorldCanvas";
 import { useSandboxPlayback } from "../hooks/useSandboxPlayback";
 import { clampStudioWidthPct, clampStudioCodeHeightPct } from "../lib/viewerPrefs";
-import { mapPlayback, type StudioQaSlice } from "../lib/qaBridge";
+import { mapPlayback, type StudioE2eSlice } from "../lib/e2eBridge";
 
 type Props = {
   open: boolean;
@@ -32,7 +32,7 @@ type Props = {
   canCheck?: boolean;
   onDeploy: (x: number, y: number, code: string, extraEnergy: number, wasmB64?: string) => void;
   onDeployDialogChange?: (open: boolean) => void;
-  onQaSliceChange?: (slice: StudioQaSlice) => void;
+  onE2eSliceChange?: (slice: StudioE2eSlice) => void;
   onClose: () => void;
 };
 
@@ -65,7 +65,7 @@ export function CreatureStudio({
   canCheck = false,
   onDeploy,
   onDeployDialogChange,
-  onQaSliceChange,
+  onE2eSliceChange,
   onClose,
 }: Props) {
   const [source, setSource] = useState(DEFAULT_RUST_SOURCE);
@@ -156,13 +156,13 @@ export function CreatureStudio({
   }, [deployOpen, onDeployDialogChange]);
 
   useEffect(() => {
-    onQaSliceChange?.({
+    onE2eSliceChange?.({
       testing,
       wasmReady: !!wasmB64,
       playback: mapPlayback(playback),
       error,
     });
-  }, [testing, wasmB64, playback, error, onQaSliceChange]);
+  }, [testing, wasmB64, playback, error, onE2eSliceChange]);
 
   useEffect(() => {
     if (!open || !canCheck || busy || testing) return;
@@ -315,7 +315,7 @@ export function CreatureStudio({
             disabled={locked || !canDeploy}
             onClick={() => setDeployOpen(true)}
             title="Deploy creature"
-            data-testid="qa-studio-deploy"
+            data-testid="e2e-studio-deploy"
           >
             <DeployIcon />
             <span>Deploy</span>
@@ -326,7 +326,7 @@ export function CreatureStudio({
             onClick={onClose}
             disabled={locked}
             title="Close"
-            data-testid="qa-studio-close"
+            data-testid="e2e-studio-close"
           >
             <CloseIcon />
           </button>
@@ -383,7 +383,7 @@ export function CreatureStudio({
               disabled={locked || testLoopActive}
               onClick={() => void startTestLoop()}
               title="Run all scenarios"
-              data-testid="qa-studio-test"
+              data-testid="e2e-studio-test"
             >
               {testing ? "Testing…" : "Test"}
             </button>
@@ -394,7 +394,7 @@ export function CreatureStudio({
                 disabled={!sandbox?.frames.length || locked}
                 title={playback === "playing" ? "Pause" : "Play"}
                 aria-label={playback === "playing" ? "Pause" : "Play"}
-                data-testid="qa-studio-play"
+                data-testid="e2e-studio-play"
                 onClick={() => (playback === "playing" ? pause() : play())}
               >
                 {playback === "playing" ? <PauseIcon /> : <PlayIcon />}
@@ -405,7 +405,7 @@ export function CreatureStudio({
                 disabled={!sandbox?.frames.length || locked}
                 title="Stop"
                 aria-label="Stop"
-                data-testid="qa-studio-stop"
+                data-testid="e2e-studio-stop"
                 onClick={testLoopActive ? stopTestLoop : stop}
               >
                 <StopIcon />
@@ -559,7 +559,7 @@ function DeployDialog({
           </div>
 
           <div
-            data-testid="qa-deploy-location"
+            data-testid="e2e-deploy-location"
             className={`mt-3 rounded-lg border px-3 py-2.5 ${
               hasCell ? "border-biolume/25 bg-biolume/5" : "border-white/[0.08] bg-black/20"
             }`}
@@ -587,7 +587,7 @@ function DeployDialog({
                 max={maxExtra}
                 step={GLIM_SCALE}
                 value={extra}
-                data-testid="qa-deploy-extra"
+                data-testid="e2e-deploy-extra"
                 onChange={(e) => setExtra(Number.parseInt(e.target.value, 10) || minExtra)}
                 className="w-24 rounded-md border border-white/[0.08] bg-black/30 px-2 py-1 text-right font-mono text-[11px] text-white/75 outline-none focus:border-biolume/25"
               />
@@ -610,7 +610,7 @@ function DeployDialog({
               className="deploy-btn"
               onClick={onClose}
               disabled={submitting || busy}
-              data-testid="qa-deploy-cancel"
+              data-testid="e2e-deploy-cancel"
             >
               Cancel
             </button>
@@ -619,7 +619,7 @@ function DeployDialog({
               className="deploy-btn deploy-btn-primary flex items-center gap-1"
               disabled={!valid || submitting || busy}
               onClick={() => void submit()}
-              data-testid="qa-deploy-confirm"
+              data-testid="e2e-deploy-confirm"
             >
               {!submitting && !busy && <DeployIcon />}
               <span>{submitting || busy ? "Deploying…" : "Deploy"}</span>

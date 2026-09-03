@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Headless local QA: auth emulator → compile → sandbox → (optional) deploy.
-# Requires ./scripts/dev.sh running (server :8080, compile-worker :8081, auth :9099).
+# Headless API smoke: auth emulator → compile → sandbox → (optional) deploy.
+# Requires server :8080, compile-worker :8081, auth emulator :9099.
 set -euo pipefail
 
 API="${API_BASE:-http://127.0.0.1:8080/api}"
 AUTH_HOST="${FIREBASE_AUTH_EMULATOR_HOST:-127.0.0.1:9099}"
 COMPILE="${COMPILE_WORKER_URL:-http://127.0.0.1:8081}"
-QA_EMAIL="${QA_EMAIL:-qa@terrarium.dev}"
-QA_PASSWORD="${QA_PASSWORD:-qa-terrarium}"
-QA_DEPLOY="${QA_DEPLOY:-1}"
-QA_DEPLOY_X="${QA_DEPLOY_X:-32}"
-QA_DEPLOY_Y="${QA_DEPLOY_Y:-32}"
+SMOKE_EMAIL="${SMOKE_EMAIL:-qa@terrarium.dev}"
+SMOKE_PASSWORD="${SMOKE_PASSWORD:-qa-terrarium}"
+SMOKE_DEPLOY="${SMOKE_DEPLOY:-1}"
+SMOKE_DEPLOY_X="${SMOKE_DEPLOY_X:-32}"
+SMOKE_DEPLOY_Y="${SMOKE_DEPLOY_Y:-32}"
 
 json_get() {
   python3 -c "import json,sys; print(json.load(sys.stdin)$1)" 2>/dev/null
@@ -48,7 +48,7 @@ print('body_wrap ok')
 "
 
 echo "==> Auth emulator sign-in"
-TOKEN="$(auth_emulator_token "${QA_EMAIL}" "${QA_PASSWORD}")"
+TOKEN="$(auth_emulator_token "${SMOKE_EMAIL}" "${SMOKE_PASSWORD}")"
 AUTH=(-H "Authorization: Bearer ${TOKEN}")
 
 echo "==> GET /v1/me"
@@ -95,7 +95,7 @@ assert len(frames) >= 1, d
 print('sandbox ok:', len(frames), 'frames, alive=', d.get('alive'))
 "
 
-if [[ "$QA_DEPLOY" == "1" ]]; then
+if [[ "$SMOKE_DEPLOY" == "1" ]]; then
   echo "==> POST /v1/deploy"
   WORLD="$(curl -sf "${API}/v1/world")"
   ME="$(curl -sf "${AUTH[@]}" "${API}/v1/me")"
@@ -110,8 +110,8 @@ credits = int(me.get('credits') or 0)
 faucet = max(0, need - credits)
 occupied = {(int(c['x']), int(c['y'])) for c in world.get('creatures') or []}
 solid = {(int(t['x']), int(t['y'])) for t in world.get('tiles') or [] if t.get('kind') == 1}
-pin_x = int('${QA_DEPLOY_X}')
-pin_y = int('${QA_DEPLOY_Y}')
+pin_x = int('${SMOKE_DEPLOY_X}')
+pin_y = int('${SMOKE_DEPLOY_Y}')
 x = y = None
 if (pin_x, pin_y) not in occupied and (pin_x, pin_y) not in solid:
     x, y = pin_x, pin_y
@@ -142,7 +142,7 @@ print(x, y, deploy_cost, faucet)
     done
   fi
   DEPLOY_BODY="$(mktemp)"
-  python3 -c "import json; print(json.dumps({'x':${DEPLOY_X},'y':${DEPLOY_Y},'code':'qa-smoke','energy':${DEPLOY_ENERGY},'wasm_b64':'${WASM}'}))" >"$DEPLOY_BODY"
+  python3 -c "import json; print(json.dumps({'x':${DEPLOY_X},'y':${DEPLOY_Y},'code':'api-smoke','energy':${DEPLOY_ENERGY},'wasm_b64':'${WASM}'}))" >"$DEPLOY_BODY"
   curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -d @"$DEPLOY_BODY" "${API}/v1/deploy" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
@@ -152,4 +152,4 @@ print('deployed', d['id'], 'at', d.get('x'), d.get('y'))
   rm -f "$DEPLOY_BODY"
 fi
 
-echo "QA smoke passed."
+echo "API smoke passed."

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 
-export type QaState = {
+export type E2eState = {
   ready: boolean;
   signedIn: boolean;
   studioOpen: boolean;
@@ -14,13 +14,13 @@ export type QaState = {
   busy: boolean;
 };
 
-export async function getQaState(page: Page): Promise<QaState | null> {
-  return page.evaluate(() => window.__TERRARIUM_QA__?.getState() ?? null);
+export async function getE2eState(page: Page): Promise<E2eState | null> {
+  return page.evaluate(() => window.__TERRARIUM_E2E__?.getState() ?? null);
 }
 
-export async function waitForQaReady(page: Page, timeoutMs = 30_000) {
+export async function waitForE2eReady(page: Page, timeoutMs = 30_000) {
   await page.waitForFunction(
-    () => document.body.dataset.qaReady === "true",
+    () => document.body.dataset.e2eReady === "true",
     undefined,
     { timeout: timeoutMs },
   );
@@ -29,7 +29,7 @@ export async function waitForQaReady(page: Page, timeoutMs = 30_000) {
 export async function waitForWasmReady(page: Page, timeoutMs = 45_000) {
   await page.waitForFunction(
     () => {
-      const s = window.__TERRARIUM_QA__?.getState();
+      const s = window.__TERRARIUM_E2E__?.getState();
       return !!s && !s.testing && s.wasmReady;
     },
     undefined,
@@ -37,9 +37,9 @@ export async function waitForWasmReady(page: Page, timeoutMs = 45_000) {
   );
 }
 
-export async function waitForPlayback(page: Page, playback: QaState["playback"], timeoutMs = 10_000) {
+export async function waitForPlayback(page: Page, playback: E2eState["playback"], timeoutMs = 10_000) {
   await page.waitForFunction(
-    (expected) => window.__TERRARIUM_QA__?.getState()?.playback === expected,
+    (expected) => window.__TERRARIUM_E2E__?.getState()?.playback === expected,
     playback,
     { timeout: timeoutMs },
   );
@@ -47,7 +47,7 @@ export async function waitForPlayback(page: Page, playback: QaState["playback"],
 
 export async function waitForDeployCell(page: Page, timeoutMs = 5_000) {
   await page.waitForFunction(
-    () => window.__TERRARIUM_QA__?.getState()?.deployCell != null,
+    () => window.__TERRARIUM_E2E__?.getState()?.deployCell != null,
     undefined,
     { timeout: timeoutMs },
   );
@@ -55,7 +55,7 @@ export async function waitForDeployCell(page: Page, timeoutMs = 5_000) {
 
 export async function waitForDeployDialog(page: Page, open: boolean, timeoutMs = 5_000) {
   await page.waitForFunction(
-    (expected) => window.__TERRARIUM_QA__?.getState()?.deployDialogOpen === expected,
+    (expected) => window.__TERRARIUM_E2E__?.getState()?.deployDialogOpen === expected,
     open,
     { timeout: timeoutMs },
   );

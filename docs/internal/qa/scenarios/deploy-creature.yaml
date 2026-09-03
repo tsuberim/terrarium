@@ -6,28 +6,28 @@ requires:
   - api
 steps:
   - assert:
-      qaState:
+      e2eState:
         signedIn: true
         studioOpen: true
-  - click: qa-studio-test
+  - click: e2e-studio-test
   - waitFor:
-      qaState:
+      e2eState:
         testing: false
         wasmReady: true
       timeout: 30000
   - note: Pick deploy cell on map BEFORE opening deploy dialog (modal blocks mis-aimed clicks)
   - clickMap: {}
   - assert:
-      qaState:
+      e2eState:
         deployCell: not_null
   - note: Faucet if credits below deploy cost (110 glims typical)
   - faucet: true
-  - click: qa-studio-deploy
+  - click: e2e-studio-deploy
   - assert:
-      qaState:
+      e2eState:
         deployDialogOpen: true
-  - click: qa-deploy-confirm
+  - click: e2e-deploy-confirm
   - waitFor:
-      qaState:
+      e2eState:
         deployDialogOpen: false
       timeout: 15000

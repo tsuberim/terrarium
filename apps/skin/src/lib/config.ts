@@ -22,9 +22,9 @@ export function authEmulatorEnabled() {
   return isLocalDev() && import.meta.env.VITE_USE_AUTH_EMULATOR !== "false";
 }
 
-/** Dev QA conveniences: auto sign-in, auto-open studio, expose window.__TERRARIUM_QA__. */
-export function qaMode() {
-  return authEmulatorEnabled() && import.meta.env.VITE_QA_MODE !== "false";
+/** Dev e2e hooks: auto sign-in, auto-open studio, expose window.__TERRARIUM_E2E__. */
+export function e2eHooksEnabled() {
+  return authEmulatorEnabled() && import.meta.env.VITE_E2E_HOOKS !== "false";
 }
 
 export function wsRoot() {

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Verify local dev stack is up before browser or e2e QA.
+# Verify dev stack is up before smoke or e2e.
 set -euo pipefail
 
 API="${API_BASE:-http://127.0.0.1:8080/api}"
 COMPILE="${COMPILE_WORKER_URL:-http://127.0.0.1:8081}"
 AUTH_HOST="${FIREBASE_AUTH_EMULATOR_HOST:-127.0.0.1:9099}"
-UI="${QA_UI_URL:-http://localhost:5173}"
+UI="${E2E_UI_URL:-http://localhost:5173}"
+REQUIRE_UI="${STACK_PREFLIGHT_UI:-true}"
 
 fail() {
-  echo "qa-preflight: $1" >&2
+  echo "stack-preflight: $1" >&2
   exit 1
 }
 
@@ -31,9 +32,13 @@ auth_code="$(
 )"
 [[ "$auth_code" != "000" ]] || fail "auth emulator identity API down at ${AUTH_HOST}"
 
-echo "==> UI ${UI}"
-curl -sf "${UI}" >/dev/null || fail "Vite UI down at ${UI}"
-
-echo ""
-echo "Ready: ${UI}"
-echo "QA bridge: window.__TERRARIUM_QA__.getState()"
+if [[ "$REQUIRE_UI" == "true" ]]; then
+  echo "==> UI ${UI}"
+  curl -sf "${UI}" >/dev/null || fail "Vite UI down at ${UI}"
+  echo ""
+  echo "Ready: ${UI}"
+  echo "E2E bridge: window.__TERRARIUM_E2E__.getState()"
+else
+  echo ""
+  echo "API stack ready (UI not required)"
+fi

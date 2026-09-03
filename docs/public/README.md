@@ -15,7 +15,7 @@ Internal docs: [`../internal/`](../internal/) — not published here.
 | How to play, author, deploy as a user | How to build, test, and ship the product |
 | Short, approachable | Complete, precise, agent-oriented |
 | Studio, SDK guides, concepts | PRD, workflow, architecture, tech-debt |
-| No secrets, no QA hooks | Env vars, CI, `window.__TERRARIUM_QA__` |
+| No secrets, no QA hooks | Env vars, CI, `window.__TERRARIUM_E2E__` |
 
 **Internal PRD wins** when content conflicts until public pages are updated.
 

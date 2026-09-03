@@ -29,8 +29,10 @@ jobs:
             frontend:
               - 'apps/**'
               - 'docs/internal/qa/**'
-              - 'scripts/qa*.sh'
-              - 'scripts/ci-e2e.sh'
+              - 'scripts/api-smoke.sh'
+              - 'scripts/stack-preflight.sh'
+              - 'scripts/e2e.sh'
+              - 'scripts/ci-*.sh'
               - 'scripts/generate-config.sh'
               - 'firebase.json'
             docker:
@@ -102,6 +104,28 @@ jobs:
       - if: needs.changes.outputs.docker != 'true' && needs.changes.outputs.workflows != 'true'
         run: echo "Dockerfile unchanged — skipped"
 
+  smoke:
+    needs: changes
+    runs-on: ubuntu-latest
+    if: >-
+      needs.changes.outputs.rust == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/skin/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: chmod +x scripts/*.sh && ./scripts/ci-api-smoke.sh
+
   e2e:
     needs: changes
     runs-on: ubuntu-latest
@@ -125,7 +149,7 @@ jobs:
       - run: chmod +x scripts/*.sh && ./scripts/ci-e2e.sh
 
   gate:
-    needs: [changes, rust, frontend, docker, e2e]
+    needs: [changes, rust, frontend, docker, smoke, e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -133,6 +157,7 @@ jobs:
           if [ "${{ needs.rust.result }}" = "failure" ] || \
              [ "${{ needs.frontend.result }}" = "failure" ] || \
              [ "${{ needs.docker.result }}" = "failure" ] || \
+             [ "${{ needs.smoke.result }}" = "failure" ] || \
              [ "${{ needs.e2e.result }}" = "failure" ]; then
             echo "A required test job failed"
             exit 1

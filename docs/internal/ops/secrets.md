@@ -23,7 +23,7 @@ Used by: [deploy.md](deploy.md), [../workflow/setup.md](../workflow/setup.md).
 | `CLOUD_RUN_SERVICE` | Default `terrarium-server` |
 | `COMPILE_RUN_SERVICE` | Default `terrarium-compile` |
 
-Frontend: `apps/skin/.env.local` from `setup-dev.sh`. Keys: `VITE_USE_AUTH_EMULATOR`, `VITE_QA_MODE` — see [setup.md](../workflow/setup.md).
+Frontend: `apps/skin/.env.local` from `setup-dev.sh`. Keys: `VITE_USE_AUTH_EMULATOR`, `VITE_E2E_HOOKS` — see [setup.md](../workflow/setup.md).
 
 ---
 

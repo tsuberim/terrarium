@@ -19,7 +19,7 @@ print(f\"VITE_FIREBASE_AUTH_DOMAIN={cfg['authDomain']}\")
 print(f\"VITE_FIREBASE_PROJECT_ID={cfg['projectId']}\")
 print(f\"VITE_FIREBASE_APP_ID={cfg['appId']}\")
 print('VITE_USE_AUTH_EMULATOR=true')
-print('VITE_QA_MODE=true')
+print('VITE_E2E_HOOKS=true')
 " > apps/skin/.env.local
 
 mkdir -p data

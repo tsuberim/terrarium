@@ -43,7 +43,7 @@ Write for an **outsider** — a reviewer or future you who wasn't in the work. N
 - Require auto-merge on all PRs
 
 ## Test plan
-- [ ] npm run qa:all
+- [ ] npm run test:integration
 ```
 
 Skip `--fill` if it produces commit-message noise; write title and body explicitly.
@@ -65,7 +65,7 @@ gh pr create --fill
 gh pr merge --auto
 ```
 
-Auto-merge waits for the `ci.yml` gate (rust, frontend, docker, e2e) to pass.
+Auto-merge waits for the `ci.yml` gate (rust, frontend, docker, smoke, e2e) to pass.
 
 ---
 
@@ -75,7 +75,7 @@ Auto-merge waits for the `ci.yml` gate (rust, frontend, docker, e2e) to pass.
 - [ ] Docs updated before code
 - [ ] [product/requirements.md](../product/requirements.md) matches implementation
 - [ ] Other docs updated if scope changed (engineering, qa, ops, public)
-- [ ] `./scripts/test.sh` and `npm run qa:all` pass locally
+- [ ] `./scripts/test.sh` and `npm run test:integration` pass locally
 
 Full checklist: [../../README.md#pr-checklist-docs--code-in-sync](../../README.md#pr-checklist-docs--code-in-sync).
 
