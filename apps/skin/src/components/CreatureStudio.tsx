@@ -79,7 +79,7 @@ export function CreatureStudio({
   const [deployOpen, setDeployOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const wasmForLoopRef = useRef<string | undefined>();
+  const wasmForLoopRef = useRef<string | undefined>(undefined);
   const resizingRef = useRef(false);
   const splitResizingRef = useRef(false);
   const deployDialogPrevRef = useRef<boolean | null>(null);

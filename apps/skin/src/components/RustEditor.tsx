@@ -53,7 +53,7 @@ export function RustEditor({ value, onChange, diagnostics, readOnly, height = "2
         scrollBeyondLastLine: false,
         wordWrap: "on",
         padding: { top: 8, bottom: 8 },
-        hover: { enabled: true, delay: 200, sticky: true },
+        hover: { enabled: "on", delay: 200, sticky: true },
         parameterHints: { enabled: true, cycle: true },
         quickSuggestions: { other: true, strings: false, comments: false },
         suggestOnTriggerCharacters: true,

@@ -1,5 +1,5 @@
 import type { Monaco } from "@monaco-editor/react";
-import type { languages, Position } from "monaco-editor";
+import type { editor, languages, Position } from "monaco-editor";
 import type { CompileDiagnostic } from "./creatureEditor";
 
 export type SdkSymbol = {
@@ -33,7 +33,7 @@ const SYMBOL_MAP = new Map(SDK_SYMBOLS.flatMap((s) => {
   return keys.map((k) => [k, s] as const);
 }));
 
-function wordAt(model: languages.TextModel, position: Position): string {
+function wordAt(model: editor.ITextModel, position: Position): string {
   const word = model.getWordAtPosition(position);
   return word?.word ?? "";
 }
@@ -60,7 +60,7 @@ export function setupRustLanguageService(monaco: Monaco, getDiagnostics: () => C
   registered = true;
 
   monaco.languages.registerHoverProvider("rust", {
-    provideHover(model, position) {
+    provideHover(model: editor.ITextModel, position: Position) {
       const lineText = model.getLineContent(position.lineNumber);
       const word = wordAt(model, position);
       if (!word) return null;
@@ -93,7 +93,7 @@ export function setupRustLanguageService(monaco: Monaco, getDiagnostics: () => C
 
   monaco.languages.registerCompletionItemProvider("rust", {
     triggerCharacters: [":", "#", "("],
-    provideCompletionItems(model, position) {
+    provideCompletionItems(model: editor.ITextModel, position: Position) {
       const word = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
@@ -124,7 +124,7 @@ export function setupRustLanguageService(monaco: Monaco, getDiagnostics: () => C
 
   monaco.languages.registerSignatureHelpProvider("rust", {
     signatureHelpTriggerCharacters: ["("],
-    provideSignatureHelp(model, position) {
+    provideSignatureHelp(model: editor.ITextModel, position: Position) {
       const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
       const match = /(\w+)\($/.exec(line);
       const name = match?.[1];
