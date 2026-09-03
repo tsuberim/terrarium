@@ -10,7 +10,7 @@ Persistent 2D hex-world MMO where you deploy **WebAssembly creatures** that comp
 2. **Open Creature Studio** — edit Rust in-game, run test scenarios, preview in sandbox.
 3. **Deploy** to an empty cell — pay glims, your creature runs on the live 2 Hz world.
 
-External authors can use **Zig + Replit** or upload prebuilt **WASM**. See the [docs](https://terrarium.mintlify.app).
+Upload prebuilt **WASM** or deploy via **API key** — see the [docs](https://terrarium.mintlify.app).
 
 ## Local dev
 

@@ -36,16 +36,16 @@ auth_emulator_token() {
   | json_get "['idToken']"
 }
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=health-check.sh
+source "$ROOT/scripts/health-check.sh"
+
 echo "==> Server health"
-curl -sf "${API}/health" | json_get "['status']" | grep -qx ok
+health_check_api "$API"
 
 echo "==> Compile worker (body_wrap)"
-curl -sf "${COMPILE}/health" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-assert d.get('status') == 'ok' and d.get('body_wrap') is True, d
-print('body_wrap ok')
-"
+health_check_compile "$COMPILE"
+echo "body_wrap ok"
 
 echo "==> Auth emulator sign-in"
 TOKEN="$(auth_emulator_token "${SMOKE_EMAIL}" "${SMOKE_PASSWORD}")"

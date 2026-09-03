@@ -83,7 +83,7 @@
         "properties": {
           "x": { "type": "integer" },
           "y": { "type": "integer" },
-          "code": { "type": "string", "description": "Creature label or source snippet for audit (e.g. Rust module name). Required even when using wasm_b64." },
+          "code": { "type": "string", "description": "WAT source or label when using wasm_b64" },
           "energy": { "type": "integer", "format": "int64", "description": "Extra glims beyond corpse floor; credits charged = corpse_energy + energy (1:1 import)" },
           "wasm_b64": { "type": "string", "description": "Precompiled WASM (base64, max 64 KB)" }
         }
