@@ -161,6 +161,7 @@
         "description": "Current creatures, tiles, and deploy costs (REST). Live updates use WebSocket deltas.",
         "responses": {
           "200": {
+            "description": "World snapshot",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/WorldResponse" }
@@ -175,6 +176,7 @@
         "tags": ["world", "public"],
         "summary": "World WebSocket",
         "description": "Real-time deltas. Upgrade to WebSocket; messages are JSON deltas (`full: true` on connect/resync).",
+        "x-hidden": true,
         "responses": {
           "101": { "description": "Switching Protocols" }
         }
@@ -187,6 +189,7 @@
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
+            "description": "Account credits",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/MeResponse" }
@@ -204,6 +207,7 @@
         "security": [{ "bearerAuth": [] }],
         "responses": {
           "200": {
+            "description": "API key list",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiKeyList" }
@@ -227,6 +231,7 @@
         },
         "responses": {
           "201": {
+            "description": "Key minted",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/MintApiKeyResponse" }
@@ -234,6 +239,7 @@
             }
           },
           "400": {
+            "description": "Bad request",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
@@ -279,6 +285,7 @@
         },
         "responses": {
           "200": {
+            "description": "Creature deployed",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/DeployResponse" }
@@ -288,6 +295,7 @@
           "402": { "description": "Insufficient credits" },
           "409": { "description": "Cell occupied" },
           "400": {
+            "description": "Invalid deploy request",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
