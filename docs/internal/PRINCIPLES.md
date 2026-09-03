@@ -46,7 +46,7 @@ Every internal and public doc follows these rules.
 | `product/requirements.md` | Shipped behavior, acceptance criteria | Dev commands, sim math |
 | `product/vision.md` | Why, principles, non-goals | Acceptance criteria |
 | `workflow/` | Commands, loop, local troubleshooting | Prod infra, sim rules |
-| `workflow/prs.md` | PR policy, auto-merge, title/body | CI job definitions |
+| `workflow/prs.md` | PR policy, auto-merge, babysitting, title/body | CI job definitions |
 | `engineering/` | Architecture, sim, ABI, tech-debt | Product UX requirements |
 | `engineering/principles.md` | How we change code | Doc writing rules |
 | `ops/` | Prod deploy, GCP, secrets | Local dev |

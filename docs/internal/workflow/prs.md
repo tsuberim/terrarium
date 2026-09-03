@@ -8,12 +8,27 @@
 
 1. **Docs before code** — same PR, always in sync ([PRINCIPLES § Docs-first](../PRINCIPLES.md#docs-first-development))
 2. **Auto-merge** — every PR created with auto-merge enabled; merges when CI passes
-3. **Title & description** — accurate, succinct, for someone not in the thread (see below)
-4. **No force-push to `main`**
+3. **Babysit** — whoever opens the PR owns it until merged (see below)
+4. **Title & description** — accurate, succinct, for someone not in the thread (see below)
+5. **No force-push to `main`**
 
 ---
 
-## Title & description
+## Babysitting
+
+Opening a PR means you **own it until it's on `main`**.
+
+1. Enable auto-merge (`gh pr merge --auto`)
+2. **Monitor CI in the background** — poll checks without blocking the conversation
+3. **Fix failures** — push fixes, re-enable auto-merge if needed
+4. **Confirm merge** when green
+
+```bash
+gh pr checks 44 --watch          # optional; or poll between other work
+gh run list --branch "$(git branch --show-current)" --limit 3
+```
+
+Don't hand off a red PR. If CI is still running when the session ends, note status and what's left.
 
 Write for an **outsider** — a reviewer or future you who wasn't in the work. No jargon dumps, no implementation trivia unless it matters.
 

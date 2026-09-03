@@ -73,4 +73,4 @@ Eng principles: [docs/internal/engineering/principles.md](docs/internal/engineer
 
 ## Commits & PRs
 
-Do not commit unless asked. Every PR: [auto-merge + title/body rules](docs/internal/workflow/prs.md). CI must pass: rust, frontend, docker, qa.
+Do not commit unless asked. Every PR: [auto-merge, babysit until merged](docs/internal/workflow/prs.md). CI must pass: rust, frontend, docker, qa.
