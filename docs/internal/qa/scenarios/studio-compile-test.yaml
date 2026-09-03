@@ -7,21 +7,21 @@ requires:
 steps:
   - note: QA mode should auto sign-in and open studio
   - assert:
-      qaState:
+      e2eState:
         signedIn: true
         studioOpen: true
-  - click: qa-studio-test
+  - click: e2e-studio-test
   - waitFor:
-      qaState:
+      e2eState:
         testing: false
         wasmReady: true
       timeout: 30000
-  - click: qa-studio-play
+  - click: e2e-studio-play
   - waitFor:
-      qaState:
+      e2eState:
         playback: playing
       timeout: 5000
-  - click: qa-studio-stop
+  - click: e2e-studio-stop
   - assert:
-      qaState:
+      e2eState:
         playback: idle

@@ -1,13 +1,13 @@
-export type QaPlayback = "idle" | "playing" | "paused";
+export type E2ePlayback = "idle" | "playing" | "paused";
 
-export type StudioQaSlice = {
+export type StudioE2eSlice = {
   testing: boolean;
   wasmReady: boolean;
-  playback: QaPlayback;
+  playback: E2ePlayback;
   error: string | null;
 };
 
-export type QaState = {
+export type E2eState = {
   ready: boolean;
   signedIn: boolean;
   studioOpen: boolean;
@@ -16,23 +16,23 @@ export type QaState = {
   credits: number | null;
   testing: boolean;
   wasmReady: boolean;
-  playback: QaPlayback;
+  playback: E2ePlayback;
   error: string | null;
   busy: boolean;
 };
 
-export type QaBridge = {
-  getState: () => QaState;
-  waitFor: (predicate: (state: QaState) => boolean, timeoutMs?: number) => Promise<QaState>;
+export type E2eBridge = {
+  getState: () => E2eState;
+  waitFor: (predicate: (state: E2eState) => boolean, timeoutMs?: number) => Promise<E2eState>;
 };
 
 declare global {
   interface Window {
-    __TERRARIUM_QA__?: QaBridge;
+    __TERRARIUM_E2E__?: E2eBridge;
   }
 }
 
-export function mapPlayback(playback: "stopped" | "playing" | "paused"): QaPlayback {
+export function mapPlayback(playback: "stopped" | "playing" | "paused"): E2ePlayback {
   if (playback === "playing") return "playing";
   if (playback === "paused") return "paused";
   return "idle";

@@ -6,14 +6,14 @@ import { expect, type Page } from "@playwright/test";
 import { parse } from "yaml";
 
 import {
-  getQaState,
+  getE2eState,
   waitForDeployCell,
   waitForDeployDialog,
   waitForPlayback,
-  waitForQaReady,
+  waitForE2eReady,
   waitForWasmReady,
-  type QaState,
-} from "./qa-bridge";
+  type E2eState,
+} from "./e2e-bridge";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const SCENARIOS_DIR = path.join(REPO_ROOT, "docs/internal/qa/scenarios");
@@ -21,15 +21,15 @@ const SCENARIOS_DIR = path.join(REPO_ROOT, "docs/internal/qa/scenarios");
 /** ~110 glims at GLIM_SCALE — minimum deploy with default extra */
 const MIN_DEPLOY_CREDITS = 11_000_000;
 
-type QaStateExpect = Partial<QaState> & { deployCell?: "not_null" | null };
+type E2eStateExpect = Partial<E2eState> & { deployCell?: "not_null" | null };
 
 type ScenarioStep =
   | { note: string }
   | { click: string }
   | { clickMap: Record<string, never> | { x?: number; y?: number } }
   | { faucet: boolean }
-  | { assert: { qaState: QaStateExpect } }
-  | { waitFor: { qaState: QaStateExpect; timeout?: number } };
+  | { assert: { e2eState: E2eStateExpect } }
+  | { waitFor: { e2eState: E2eStateExpect; timeout?: number } };
 
 export type Scenario = {
   id: string;
@@ -55,8 +55,8 @@ export function listScenarioIds(): string[] {
     .sort();
 }
 
-function assertQaState(actual: QaState | null, expected: QaStateExpect) {
-  expect(actual, "QA state missing").not.toBeNull();
+function assertE2eState(actual: E2eState | null, expected: E2eStateExpect) {
+  expect(actual, "E2E state missing").not.toBeNull();
   for (const [key, value] of Object.entries(expected)) {
     if (key === "deployCell") {
       if (value === "not_null") {
@@ -66,14 +66,14 @@ function assertQaState(actual: QaState | null, expected: QaStateExpect) {
       }
       continue;
     }
-    expect(actual![key as keyof QaState]).toEqual(value);
+    expect(actual![key as keyof E2eState]).toEqual(value);
   }
 }
 
-async function waitForQaStateMatch(page: Page, expected: QaStateExpect, timeoutMs: number) {
+async function waitForE2eStateMatch(page: Page, expected: E2eStateExpect, timeoutMs: number) {
   await page.waitForFunction(
     ({ exp }) => {
-      const state = window.__TERRARIUM_QA__?.getState();
+      const state = window.__TERRARIUM_E2E__?.getState();
       if (!state) return false;
       for (const [key, value] of Object.entries(exp)) {
         if (key === "deployCell") {
@@ -93,7 +93,7 @@ async function waitForQaStateMatch(page: Page, expected: QaStateExpect, timeoutM
   );
 }
 
-async function runWaitFor(page: Page, expected: QaStateExpect, timeoutMs: number) {
+async function runWaitFor(page: Page, expected: E2eStateExpect, timeoutMs: number) {
   if (expected.testing === false && expected.wasmReady === true) {
     await waitForWasmReady(page, timeoutMs);
     return;
@@ -110,15 +110,15 @@ async function runWaitFor(page: Page, expected: QaStateExpect, timeoutMs: number
     await waitForDeployCell(page, timeoutMs);
     return;
   }
-  await waitForQaStateMatch(page, expected, timeoutMs);
+  await waitForE2eStateMatch(page, expected, timeoutMs);
 }
 
 async function maybeFaucet(page: Page) {
-  let state = await getQaState(page);
+  let state = await getE2eState(page);
   for (let i = 0; i < 3 && (state?.credits ?? 0) < MIN_DEPLOY_CREDITS; i++) {
-    await page.getByTestId("qa-hud-faucet").click();
+    await page.getByTestId("e2e-hud-faucet").click();
     await page.waitForTimeout(400);
-    state = await getQaState(page);
+    state = await getE2eState(page);
   }
   expect((state?.credits ?? 0) >= MIN_DEPLOY_CREDITS).toBeTruthy();
 }
@@ -128,22 +128,22 @@ export async function runScenario(page: Page, id: string, opts?: { skipGoto?: bo
 
   if (!opts?.skipGoto) {
     await page.goto("/");
-    await waitForQaReady(page);
+    await waitForE2eReady(page);
   }
 
   for (const step of scenario.steps) {
     if ("note" in step) continue;
 
     if ("click" in step) {
-      if (step.click === "qa-deploy-confirm") {
-        await expect(page.getByTestId("qa-deploy-confirm")).toBeEnabled({ timeout: 5_000 });
+      if (step.click === "e2e-deploy-confirm") {
+        await expect(page.getByTestId("e2e-deploy-confirm")).toBeEnabled({ timeout: 5_000 });
       }
       await page.getByTestId(step.click).click();
       continue;
     }
 
     if ("clickMap" in step) {
-      const map = page.getByTestId("qa-world-map");
+      const map = page.getByTestId("e2e-world-map");
       const box = await map.boundingBox();
       expect(box).toBeTruthy();
       const relX = step.clickMap?.x ?? 0.75;
@@ -158,12 +158,12 @@ export async function runScenario(page: Page, id: string, opts?: { skipGoto?: bo
     }
 
     if ("assert" in step) {
-      assertQaState(await getQaState(page), step.assert.qaState);
+      assertE2eState(await getE2eState(page), step.assert.e2eState);
       continue;
     }
 
     if ("waitFor" in step) {
-      await runWaitFor(page, step.waitFor.qaState, step.waitFor.timeout ?? 10_000);
+      await runWaitFor(page, step.waitFor.e2eState, step.waitFor.timeout ?? 10_000);
     }
   }
 }

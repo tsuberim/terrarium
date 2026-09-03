@@ -5,12 +5,12 @@ requires:
   - api
 steps:
   - note: Requires VITE_USE_AUTH_EMULATOR=false or manual sign-out first
-  - click: qa-hud-sign-out
+  - click: e2e-hud-sign-out
   - waitFor:
-      qaState:
+      e2eState:
         signedIn: false
       timeout: 5000
   - assert:
-      qaState:
+      e2eState:
         studioOpen: false
-  - note: qa-hud-studio should not exist or be disabled when signed out
+  - note: e2e-hud-studio should not exist or be disabled when signed out

@@ -9,7 +9,7 @@ Guide for AI agents working in this repository.
 1. Edit [product/requirements.md](docs/internal/product/requirements.md) (and eng/qa/ops/public as needed)
 2. Implement to match
 3. If code diverges → update docs before merge
-4. Verify: `./scripts/test.sh`, `npm run qa:all`
+4. Verify: `./scripts/test.sh`, `npm run test:integration`
 
 Full rules: [docs/internal/PRINCIPLES.md](docs/internal/PRINCIPLES.md)
 
@@ -36,7 +36,7 @@ Public: [terrarium.mintlify.app](https://terrarium.mintlify.app) · [`docs/publi
 ```bash
 ./scripts/setup-dev.sh   # once
 ./scripts/dev.sh         # terminal 1 — keep running
-npm run qa:all           # terminal 2
+npm run test:integration   # terminal 2
 ```
 
 Eng principles: [docs/internal/engineering/principles.md](docs/internal/engineering/principles.md)
@@ -55,11 +55,11 @@ Eng principles: [docs/internal/engineering/principles.md](docs/internal/engineer
 
 ---
 
-## QA hooks (`VITE_QA_MODE=true`)
+## E2E hooks (`VITE_E2E_HOOKS=true`)
 
-- `window.__TERRARIUM_QA__.getState()`
-- `data-testid="qa-*"`
-- `document.body.dataset.qaReady === "true"`
+- `window.__TERRARIUM_E2E__.getState()`
+- `data-testid="e2e-*"`
+- `document.body.dataset.e2eReady === "true"`
 
 ---
 
@@ -73,4 +73,4 @@ Eng principles: [docs/internal/engineering/principles.md](docs/internal/engineer
 
 ## Commits & PRs
 
-Do not commit unless asked. Every PR: [auto-merge, babysit until merged](docs/internal/workflow/prs.md). CI must pass: rust, frontend, docker, e2e.
+Do not commit unless asked. Every PR: [auto-merge, babysit until merged](docs/internal/workflow/prs.md). CI must pass: rust, frontend, docker, smoke, e2e.

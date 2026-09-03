@@ -1,19 +1,19 @@
 import { useEffect, useRef } from "react";
-import { qaMode } from "../lib/config";
-import type { QaBridge, QaState } from "../lib/qaBridge";
+import { e2eHooksEnabled } from "../lib/config";
+import type { E2eBridge, E2eState } from "../lib/e2eBridge";
 
-export function useQaBridge(state: QaState) {
+export function useE2eBridge(state: E2eState) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
   useEffect(() => {
-    if (!qaMode()) {
-      delete window.__TERRARIUM_QA__;
-      delete document.body.dataset.qaReady;
+    if (!e2eHooksEnabled()) {
+      delete window.__TERRARIUM_E2E__;
+      delete document.body.dataset.e2eReady;
       return;
     }
 
-    const bridge: QaBridge = {
+    const bridge: E2eBridge = {
       getState: () => stateRef.current,
       waitFor: (predicate, timeoutMs = 30_000) =>
         new Promise((resolve, reject) => {
@@ -25,7 +25,7 @@ export function useQaBridge(state: QaState) {
               return;
             }
             if (Date.now() - start >= timeoutMs) {
-              reject(new Error("QA waitFor timeout"));
+              reject(new Error("E2E waitFor timeout"));
               return;
             }
             window.setTimeout(tick, 100);
@@ -34,18 +34,18 @@ export function useQaBridge(state: QaState) {
         }),
     };
 
-    window.__TERRARIUM_QA__ = bridge;
+    window.__TERRARIUM_E2E__ = bridge;
     return () => {
-      delete window.__TERRARIUM_QA__;
+      delete window.__TERRARIUM_E2E__;
     };
   }, []);
 
   useEffect(() => {
-    if (!qaMode()) return;
+    if (!e2eHooksEnabled()) return;
     const s = stateRef.current;
     const ready =
       s.ready && s.signedIn && s.studioOpen && !s.testing && !s.busy;
-    if (ready) document.body.dataset.qaReady = "true";
-    else delete document.body.dataset.qaReady;
+    if (ready) document.body.dataset.e2eReady = "true";
+    else delete document.body.dataset.e2eReady;
   }, [state]);
 }

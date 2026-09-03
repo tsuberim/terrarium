@@ -72,7 +72,7 @@ export function HudOverlay({
               onClick={onCodeOpen}
               disabled={busy}
               title="Creature studio"
-              data-testid="qa-hud-studio"
+              data-testid="e2e-hud-studio"
             >
               <StudioIcon />
               <span className="hidden text-[10px] sm:inline">Studio</span>
@@ -94,7 +94,7 @@ export function HudOverlay({
               Follow
             </button>
           </div>
-          <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen} data-testid="qa-hud-jump">
+          <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen} data-testid="e2e-hud-jump">
             ⌕
           </button>
         </div>
@@ -145,7 +145,7 @@ export function HudOverlay({
                 className="hud-action"
                 onClick={onFaucet}
                 disabled={busy}
-                data-testid="qa-hud-faucet"
+                data-testid="e2e-hud-faucet"
               >
                 +{formatGlimString(10_000_000)}
               </button>
@@ -154,7 +154,7 @@ export function HudOverlay({
                 className="hud-action"
                 onClick={onSignOut}
                 disabled={busy}
-                data-testid="qa-hud-sign-out"
+                data-testid="e2e-hud-sign-out"
               >
                 Out
               </button>
@@ -165,7 +165,7 @@ export function HudOverlay({
               className="hud-action hud-action-accent"
               onClick={onSignIn}
               disabled={busy}
-              data-testid="qa-hud-sign-in"
+              data-testid="e2e-hud-sign-in"
             >
               Sign in
             </button>

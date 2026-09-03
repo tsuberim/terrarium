@@ -54,7 +54,7 @@ Open http://localhost:5173. Stop: Ctrl+C or `./scripts/dev-stop.sh`.
 | `VITE_API_BASE=` | Empty → Vite proxies `/api` to `:8080` |
 | `VITE_WS_BASE=` | Empty → WS direct to `:8080` |
 | `VITE_USE_AUTH_EMULATOR=true` | Auth emulator |
-| `VITE_QA_MODE=true` | Auto sign-in, Studio, QA bridge |
+| `VITE_E2E_HOOKS=true` | Auto sign-in, Studio, QA bridge |
 
 ---
 

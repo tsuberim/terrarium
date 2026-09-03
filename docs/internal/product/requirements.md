@@ -146,7 +146,7 @@ Display unit: **glims** (◆). Internal scale: `GLIM_SCALE = 100_000` (= sim `EN
 | AUTH-1 | Studio, deploy, faucet, API keys require sign-in | **shipped** |
 | AUTH-2 | Prod: Google sign-in via Firebase Auth popup | **shipped** |
 | AUTH-3 | Local: Firebase Auth Emulator on `:9099` | **shipped** |
-| AUTH-4 | Local QA: auto sign-in as `qa@terrarium.dev` / `qa-terrarium` when emulator + `VITE_QA_MODE` | **shipped** dev-only |
+| AUTH-4 | Local QA: auto sign-in as `qa@terrarium.dev` / `qa-terrarium` when emulator + `VITE_E2E_HOOKS` | **shipped** dev-only |
 | AUTH-5 | Sign out clears studio shell, deploy cell, deploy dialog | **shipped** |
 | AUTH-6 | API accepts Firebase JWT or API keys (Bearer) | **shipped** |
 | AUTH-7 | Server validates emulator JWTs when `FIREBASE_AUTH_EMULATOR_HOST` set | **shipped** dev-only |
@@ -319,12 +319,13 @@ Dev-only automation; not exposed in prod. Detail: [../qa/README.md](../qa/README
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| QA-1 | `npm run qa` — headless API smoke (auth, compile, sandbox, deploy) | **shipped** dev-only |
-| QA-2 | `npm run qa:e2e` — Playwright runs every `docs/internal/qa/scenarios/*.yaml` | **shipped** |
-| QA-3 | `VITE_QA_MODE` exposes `window.__TERRARIUM_QA__` + `data-testid="qa-*"` | **shipped** dev-only |
-| QA-4 | `npm run qa:preflight` verifies dev stack before browser/e2e | **shipped** |
-| QA-5 | CI `e2e` job runs `./scripts/ci-e2e.sh` (same smoke + Playwright) | **shipped** |
-| QA-6 | API smoke deploy uses pinned cell (`QA_DEPLOY_X` / `QA_DEPLOY_Y`, default 32,32) with scan fallback | **shipped** |
+| QA-1 | `npm run smoke` — headless API smoke (auth, compile, sandbox, deploy) | **shipped** dev-only |
+| QA-2 | `npm run e2e` — Playwright runs every `docs/internal/qa/scenarios/*.yaml` | **shipped** |
+| QA-3 | `VITE_E2E_HOOKS` exposes `window.__TERRARIUM_E2E__` + `data-testid="e2e-*"` | **shipped** dev-only |
+| QA-4 | `npm run preflight` verifies dev stack before browser/e2e | **shipped** |
+| QA-5 | CI `smoke` job runs `./scripts/ci-api-smoke.sh` | **shipped** |
+| QA-5b | CI `e2e` job runs `./scripts/ci-e2e.sh` (Playwright only) | **shipped** |
+| QA-6 | API smoke deploy uses pinned cell (`SMOKE_DEPLOY_X` / `SMOKE_DEPLOY_Y`, default 32,32) with scan fallback | **shipped** |
 | QA-7 | API smoke tops up credits in faucet-sized chunks when deploy cost exceeds one request | **shipped** |
 
 Scenarios: studio compile+playback, deploy creature, signed-out auth gate.

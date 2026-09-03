@@ -144,7 +144,7 @@ Docs-first — write specs before code, keep in sync through merge:
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ 3. VERIFY                                                                 │
-│    ./scripts/test.sh · dev.sh · npm run qa:all                            │
+│    ./scripts/test.sh · dev.sh · npm run test:integration                            │
 └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -165,7 +165,7 @@ Docs-first — write specs before code, keep in sync through merge:
 ```bash
 ./scripts/setup-dev.sh   # once
 ./scripts/dev.sh         # terminal 1
-npm run qa:all           # terminal 2
+npm run test:integration           # terminal 2
 ```
 
 Detail: [`internal/workflow/README.md`](internal/workflow/README.md).

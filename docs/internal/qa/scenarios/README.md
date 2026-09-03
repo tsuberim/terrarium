@@ -16,13 +16,13 @@ steps:
       qaState:
         signedIn: true
         studioOpen: true
-  - click: qa-studio-test
+  - click: e2e-studio-test
   - waitFor:
       qaState:
         testing: false
         wasmReady: true
       timeout: 30000
-  - click: qa-studio-play
+  - click: e2e-studio-play
   - waitFor:
       qaState:
         playback: playing
@@ -36,12 +36,12 @@ steps:
 | `waitFor` | `qaState: { ... }`, `timeout` | Poll until match or fail |
 | `click` | testid string | Click element with `data-testid` |
 | `clickMap` | `x`, `y` (optional) | Click world map; omit coords to use center of map pane |
-| `faucet` | — | Click `qa-hud-faucet` if credits insufficient |
+| `faucet` | — | Click `e2e-hud-faucet` if credits insufficient |
 | `note` | string | Documentation only; ignored by runners |
 
 ## QA state fields
 
-Used in `assert` / `waitFor` (via `window.__TERRARIUM_QA__.getState()`):
+Used in `assert` / `waitFor` (via `window.__TERRARIUM_E2E__.getState()`):
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -68,4 +68,4 @@ Used in `assert` / `waitFor` (via `window.__TERRARIUM_QA__.getState()`):
 
 - **Playwright:** `apps/skin/e2e/scenarios.spec.ts` loads every `*.yaml` via `helpers/run-scenario.ts`
 - **Cursor agent:** read scenario YAML, execute steps via browser MCP + QA bridge (see `.cursor/skills/browser-qa`)
-- **API smoke:** backend-only subset (no `click` steps); see `scripts/qa-smoke.sh`
+- **API smoke:** backend-only subset (no `click` steps); see `scripts/api-smoke.sh`

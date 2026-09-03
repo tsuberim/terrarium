@@ -4,8 +4,8 @@ Local QA for Terrarium uses **one shared contract** (test hooks + state bridge +
 
 | Runner | Command | Use when |
 |--------|---------|----------|
-| **API smoke** | `npm run qa` | Fast backend check — auth, compile, sandbox, deploy. No browser. |
-| **Playwright** | `npm run qa:e2e` | Repeatable UI flows, regression, CI. |
+| **API smoke** | `npm run smoke` | Fast backend check — auth, compile, sandbox, deploy. No browser. |
+| **Playwright** | `npm run e2e` | Repeatable UI flows, regression, CI. |
 | **Cursor browser** | Agent skill `.cursor/skills/browser-qa` | Exploratory manual QA, layout, new flows. |
 
 **Principle:** instrument the app once; runners differ only in how they drive the browser.
@@ -20,7 +20,7 @@ Dev workflow: [../workflow/README.md](../workflow/README.md).
 ./scripts/setup-dev.sh   # once
 ./scripts/dev.sh         # terminal 1 — auth emu, API, compile worker, Vite
 
-npm run qa               # terminal 2 — headless API smoke (works today)
+npm run smoke               # terminal 2 — headless API smoke (works today)
 ```
 
 Open **http://localhost:5173** — with auth emulator enabled, the app auto-signs in as `qa@terrarium.dev`.
@@ -34,13 +34,13 @@ For agent/browser QA, see [Browser QA (Cursor)](#browser-qa-cursor) below.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Runners                                                │
-│    npm run qa          → scripts/qa-smoke.sh (curl)     │
-│    npm run qa:e2e      → Playwright (apps/skin/e2e/)    │
+│    npm run smoke          → scripts/api-smoke.sh (curl)     │
+│    npm run e2e      → Playwright (apps/skin/e2e/)    │
 │    Cursor browser MCP  → exploratory (agent skill)      │
 ├─────────────────────────────────────────────────────────┤
 │  Shared contract                                        │
-│    data-testid="qa-*"   stable selectors                │
-│    window.__TERRARIUM_QA__   runtime state bridge      │
+│    data-testid="e2e-*"   stable selectors                │
+│    window.__TERRARIUM_E2E__   runtime state bridge      │
 │    docs/internal/qa/scenarios/*.yaml  human + machine-readable flows  │
 ├─────────────────────────────────────────────────────────┤
 │  Dev stack (./scripts/dev.sh)                           │
@@ -80,9 +80,9 @@ For agent/browser QA, see [Browser QA (Cursor)](#browser-qa-cursor) below.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `VITE_USE_AUTH_EMULATOR` | `true` | Connect Firebase client to `:9099` |
-| `VITE_QA_MODE` | `true` | Auto sign-in, auto-open Studio, expose QA bridge |
+| `VITE_E2E_HOOKS` | `true` | Auto sign-in, auto-open Studio, expose QA bridge |
 
-Disable QA conveniences: `VITE_QA_MODE=false` or `VITE_USE_AUTH_EMULATOR=false`.
+Disable QA conveniences: `VITE_E2E_HOOKS=false` or `VITE_USE_AUTH_EMULATOR=false`.
 
 ### QA user (auth emulator)
 
@@ -91,13 +91,13 @@ Disable QA conveniences: `VITE_QA_MODE=false` or `VITE_USE_AUTH_EMULATOR=false`.
 | Email | `qa@terrarium.dev` |
 | Password | `qa-terrarium` |
 
-Created on first sign-in. Same credentials used by `scripts/qa-smoke.sh` and Playwright helpers.
+Created on first sign-in. Same credentials used by `scripts/api-smoke.sh` and Playwright helpers.
 
 ---
 
-## API smoke (`npm run qa`)
+## API smoke (`npm run smoke`)
 
-Script: [`scripts/qa-smoke.sh`](../scripts/qa-smoke.sh)
+Script: [`scripts/api-smoke.sh`](../scripts/api-smoke.sh)
 
 Headless curl flow — no browser, no Vite required (but dev stack must be running):
 
@@ -111,9 +111,9 @@ Headless curl flow — no browser, no Vite required (but dev stack must be runni
 **Options:**
 
 ```bash
-QA_DEPLOY=0 npm run qa          # skip deploy
-QA_DEPLOY_X=40 QA_DEPLOY_Y=40 npm run qa   # pin deploy cell (default 32,32)
-QA_EMAIL=... QA_PASSWORD=... npm run qa
+SMOKE_DEPLOY=0 npm run smoke          # skip deploy
+SMOKE_DEPLOY_X=40 SMOKE_DEPLOY_Y=40 npm run smoke   # pin deploy cell (default 32,32)
+SMOKE_EMAIL=... QA_PASSWORD=... npm run smoke
 ```
 
 ---
@@ -124,21 +124,21 @@ These hooks let Playwright and the Cursor browser agent interact reliably withou
 
 ### QA mode
 
-When `qaMode()` is true (local dev + auth emulator + `VITE_QA_MODE !== false`):
+When `e2eHooksEnabled()` is true (local dev + auth emulator + `VITE_E2E_HOOKS !== false`):
 
 - Auto sign-in as QA user
 - Auto-open Creature Studio after auth
-- Publish runtime state on `window.__TERRARIUM_QA__`
-- Set `document.body[data-qa-ready="true"]` when idle and ready for interaction
+- Publish runtime state on `window.__TERRARIUM_E2E__`
+- Set `document.body[data-e2e-ready="true"]` when idle and ready for interaction
 
 ### State bridge
 
 ```ts
-window.__TERRARIUM_QA__.getState()
+window.__TERRARIUM_E2E__.getState()
 // → { ready, signedIn, studioOpen, deployCell, deployDialogOpen,
 //     credits, testing, wasmReady, playback, error }
 
-window.__TERRARIUM_QA__.waitFor(
+window.__TERRARIUM_E2E__.waitFor(
   (s) => !s.testing && s.wasmReady,
   30_000
 )
@@ -152,10 +152,10 @@ Prefix: `data-testid="qa-{area}-{control}"`
 
 | Area | IDs |
 |------|-----|
-| HUD | `qa-hud-studio`, `qa-hud-faucet`, `qa-hud-sign-in`, `qa-hud-sign-out`, `qa-hud-jump` |
-| Studio | `qa-studio-test`, `qa-studio-play`, `qa-studio-stop`, `qa-studio-deploy`, `qa-studio-close` |
-| Deploy dialog | `qa-deploy-confirm`, `qa-deploy-cancel`, `qa-deploy-extra`, `qa-deploy-location` |
-| World | `qa-world-map` |
+| HUD | `e2e-hud-studio`, `e2e-hud-faucet`, `e2e-hud-sign-in`, `e2e-hud-sign-out`, `e2e-hud-jump` |
+| Studio | `e2e-studio-test`, `e2e-studio-play`, `e2e-studio-stop`, `e2e-studio-deploy`, `e2e-studio-close` |
+| Deploy dialog | `e2e-deploy-confirm`, `e2e-deploy-cancel`, `e2e-deploy-extra`, `e2e-deploy-location` |
+| World | `e2e-world-map` |
 
 Implementation targets: `HudOverlay.tsx`, `CreatureStudio.tsx`, `WorldCanvas.tsx`.
 
@@ -187,17 +187,17 @@ For agents doing exploratory manual QA in the Cursor IDE browser tab.
 
 **Typical flow:**
 
-1. Confirm dev stack is up (`npm run qa:preflight` when available, or curl health endpoints)
+1. Confirm dev stack is up (`npm run preflight` when available, or curl health endpoints)
 2. Navigate to http://localhost:5173
-3. Read `window.__TERRARIUM_QA__.getState()` — verify `signedIn`, `studioOpen`
+3. Read `window.__TERRARIUM_E2E__.getState()` — verify `signedIn`, `studioOpen`
 4. Click via snapshot refs or `data-testid` elements
-5. Map clicks: screenshot first, click `qa-world-map` area (right of studio pane)
+5. Map clicks: screenshot first, click `e2e-world-map` area (right of studio pane)
 6. Deploy: pick cell on map → open deploy → confirm
-7. Run `npm run qa` to confirm API layer still healthy
+7. Run `npm run smoke` to confirm API layer still healthy
 
 **Known pitfalls:**
 
-- Studio **closed** → shell has `pointer-events: none`; open Studio first (`qa-hud-studio`)
+- Studio **closed** → shell has `pointer-events: none`; open Studio first (`e2e-hud-studio`)
 - Deploy modal is centered — map clicks must land **outside** the panel bbox
 - `browser_mouse_click_xy` requires a fresh screenshot first
 - Prefer MCP `browser_click` over CDP synthetic events (may be blocked)
@@ -209,15 +209,15 @@ For agents doing exploratory manual QA in the Cursor IDE browser tab.
 Location: `apps/skin/e2e/`
 
 ```bash
-npm run qa:e2e    # preflight + playwright test
+npm run e2e    # preflight + playwright test
 ```
 
 - Base URL: `http://localhost:5173`
 - Auth: QA mode auto sign-in (same as agent)
-- Helpers: `e2e/helpers/qa-bridge.ts`, `e2e/helpers/run-scenario.ts`
+- Helpers: `e2e/helpers/e2e-bridge.ts`, `e2e/helpers/run-scenario.ts`
 - Specs: `e2e/scenarios.spec.ts` — runs all `docs/internal/qa/scenarios/*.yaml`
 
-**CI:** PRs run `./scripts/ci-e2e.sh` in the `e2e` job (`.github/workflows/reusable-test.yml`) — starts auth emulator, API, compile worker, Vite, then `npm run qa` + Playwright.
+**CI:** `test / smoke` runs `./scripts/ci-api-smoke.sh`; `test / e2e` runs `./scripts/ci-e2e.sh`. Both required on `main`.
 
 ---
 
@@ -225,10 +225,10 @@ npm run qa:e2e    # preflight + playwright test
 
 | Script | Status | Description |
 |--------|--------|-------------|
-| `npm run qa` | **Live** | API smoke (`scripts/qa-smoke.sh`) |
-| `npm run qa:preflight` | **Live** | Check all dev services before browser QA |
-| `npm run qa:e2e` | **Live** | Preflight + Playwright |
-| `npm run qa:all` | **Live** | `qa` then `qa:e2e` |
+| `npm run smoke` | **Live** | API smoke (`scripts/api-smoke.sh`) |
+| `npm run preflight` | **Live** | Check all dev services before browser QA |
+| `npm run e2e` | **Live** | Preflight + Playwright |
+| `npm run test:integration` | **Live** | smoke then e2e |
 
 ---
 
@@ -237,10 +237,10 @@ npm run qa:e2e    # preflight + playwright test
 | Component | Status |
 |-----------|--------|
 | Auth emulator + auto sign-in | Done |
-| `scripts/qa-smoke.sh` | Done |
-| `VITE_QA_MODE` + QA bridge | Done |
+| `scripts/api-smoke.sh` | Done |
+| `VITE_E2E_HOOKS` + e2e bridge | Done |
 | `data-testid` hooks | Done |
-| `scripts/qa-preflight.sh` | Done |
+| `scripts/stack-preflight.sh` | Done |
 | Playwright e2e | Done |
 | Scenario YAML files | Done |
 | Agent skill | Done |
@@ -249,6 +249,6 @@ npm run qa:e2e    # preflight + playwright test
 
 ## Out of scope (v1)
 
-- QA mode in production/staging
+- E2e hooks in production/staging
 - `/api/v1/qa/state` HTTP endpoint (window bridge is enough)
 - Visual regression / screenshot diffing
