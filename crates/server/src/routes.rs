@@ -7,15 +7,17 @@ use axum::{
     Extension, Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use terrarium_kernel::SimConfig;
+use terrarium_sim::SimConfig;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::accounts::{account_credits, add_credits};
 use crate::api_keys;
 use crate::auth::AuthenticatedUser;
+use crate::compile_client;
 use crate::deploy::{deploy_creature, DeployError};
 use crate::docs;
 use crate::middleware::{dev_only, require_firebase_user, require_user};
+use crate::sandbox;
 use crate::state::AppState;
 use crate::wire::{CreaturePublic, TilePublic};
 use crate::ws;
@@ -62,6 +64,29 @@ struct DeployRequest {
     wasm_b64: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct CompileBody {
+    language: String,
+    source: String,
+}
+
+#[derive(Deserialize)]
+struct SandboxRunBody {
+    wasm_b64: String,
+    #[serde(default = "default_scenario")]
+    scenario: String,
+    #[serde(default = "default_sandbox_ticks")]
+    ticks: u64,
+}
+
+fn default_scenario() -> String {
+    "open".into()
+}
+
+fn default_sandbox_ticks() -> u64 {
+    100
+}
+
 #[derive(Serialize)]
 struct ClearWorldResponse {
     ok: bool,
@@ -99,6 +124,8 @@ pub fn build_app(state: AppState) -> Router {
         .route("/me", get(me))
         .route("/faucet", post(faucet))
         .route("/deploy", post(deploy))
+        .route("/compile", post(compile))
+        .route("/sandbox/run", post(sandbox_run))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_user));
 
     let v1 = Router::new()
@@ -126,7 +153,7 @@ pub fn build_app(state: AppState) -> Router {
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
-        tick_hz: terrarium_kernel::TICK_HZ,
+        tick_hz: terrarium_sim::TICK_HZ,
     })
 }
 
@@ -249,6 +276,58 @@ async fn deploy(
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+async fn compile(
+    State(state): State<AppState>,
+    Json(body): Json<CompileBody>,
+) -> impl IntoResponse {
+    let Some(worker_url) = state.config.compile_worker_url.as_deref() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "compile worker not configured" })),
+        )
+            .into_response();
+    };
+
+    match compile_client::compile_creature(worker_url, &body.language, &body.source).await {
+        Ok(res) => {
+            if res.ok {
+                Json(res).into_response()
+            } else {
+                (StatusCode::BAD_REQUEST, Json(res)).into_response()
+            }
+        }
+        Err(err) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": err })),
+        )
+            .into_response(),
+    }
+}
+
+async fn sandbox_run(
+    State(state): State<AppState>,
+    Json(body): Json<SandboxRunBody>,
+) -> impl IntoResponse {
+    let wasm = match sandbox::decode_wasm(&body.wasm_b64) {
+        Ok(bytes) => bytes,
+        Err(msg) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": msg })),
+            )
+                .into_response();
+        }
+    };
+
+    let scenario = terrarium_sim::SandboxScenario::parse_or_open(&body.scenario);
+
+    let mut config = state.engine.sim_config();
+    config.max_active_food = 0;
+    config.food_spawn_interval = u64::MAX;
+    let result = sandbox::run_creature_sandbox(&wasm, scenario, body.ticks, Some(config));
+    Json(result).into_response()
 }
 
 async fn list_api_keys(

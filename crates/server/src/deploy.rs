@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
-use terrarium_kernel::{compile_wat, host, vm::Creature, WatError, CORPSE_ENERGY};
+use terrarium_sim::{compile_wat, host, vm::Creature, WatError, CORPSE_ENERGY};
 use uuid::Uuid;
 
 use crate::accounts::{account_credits, ensure_account};

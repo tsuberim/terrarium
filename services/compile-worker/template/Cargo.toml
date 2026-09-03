@@ -1,0 +1,16 @@
+[package]
+name = "creature"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+terrarium-sdk = { path = "/opt/terrarium-sdk" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

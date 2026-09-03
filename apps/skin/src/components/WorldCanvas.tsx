@@ -43,9 +43,11 @@ type Props = {
   onHover?: (hover: { x: number; y: number } | null) => void;
   onManualCamera?: () => void;
   onZoomChange?: (zoom: number) => void;
+  onViewportChange?: (center: { x: number; y: number }, zoom: number) => void;
   runtimeRef: RefObject<WorldRuntime>;
   worldTick?: number;
   tickHz?: number;
+  mapTestId?: string;
 };
 
 function clampZoom(z: number) {
@@ -67,6 +69,10 @@ function cellToPan(q: number, r: number, w: number, h: number, zoom: number) {
   };
 }
 
+function viewportCenterCell(w: number, h: number, camera: Camera) {
+  return screenToCell(w / 2, h / 2, camera);
+}
+
 
 export function WorldCanvas({
   creaturesLiveRef,
@@ -85,9 +91,11 @@ export function WorldCanvas({
   onHover,
   onManualCamera,
   onZoomChange,
+  onViewportChange,
   runtimeRef,
   worldTick = 0,
   tickHz = DEFAULT_TICK_HZ,
+  mapTestId,
 }: Props) {
   const tickMs = 1000 / tickHz;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -104,6 +112,7 @@ export function WorldCanvas({
   const onHoverRef = useRef(onHover);
   const onManualCameraRef = useRef(onManualCamera);
   const onZoomChangeRef = useRef(onZoomChange);
+  const onViewportChangeRef = useRef(onViewportChange);
   const viewRef = useRef(view);
   const followIdRef = useRef(followId);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
@@ -124,6 +133,7 @@ export function WorldCanvas({
   onHoverRef.current = onHover;
   onManualCameraRef.current = onManualCamera;
   onZoomChangeRef.current = onZoomChange;
+  onViewportChangeRef.current = onViewportChange;
   viewRef.current = view;
   followIdRef.current = followId;
 
@@ -491,6 +501,13 @@ export function WorldCanvas({
       raf = requestAnimationFrame(draw);
     };
 
+    const emitViewport = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const cell = viewportCenterCell(container.clientWidth, container.clientHeight, cameraRef.current);
+      onViewportChangeRef.current?.(cell, cameraRef.current.zoom);
+    };
+
     const zoomAt = (clientX: number, clientY: number, factor: number) => {
       const rect = canvas.getBoundingClientRect();
       const sx = clientX - rect.left;
@@ -502,6 +519,7 @@ export function WorldCanvas({
       cam.panX = sx - worldX * cam.zoom;
       cam.panY = sy - worldY * cam.zoom;
       onZoomChangeRef.current?.(cam.zoom);
+      emitViewport();
     };
 
     const onWheel = (e: WheelEvent) => {
@@ -572,6 +590,8 @@ export function WorldCanvas({
       if (!drag.moved && canDeployRef.current) {
         const cell = screenToCell(drag.startX, drag.startY, cameraRef.current);
         onCellSelectRef.current(cell.x, cell.y);
+      } else if (drag.moved) {
+        emitViewport();
       }
     };
 
@@ -620,7 +640,11 @@ export function WorldCanvas({
   }, [canDeploy]);
 
   return (
-    <div ref={containerRef} className="absolute inset-0 touch-none">
+    <div
+      ref={containerRef}
+      className="absolute inset-0 touch-none"
+      data-testid={mapTestId}
+    >
       <canvas
         ref={canvasRef}
         aria-label="World simulation"

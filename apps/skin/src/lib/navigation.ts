@@ -8,13 +8,24 @@ export type NavState = {
   view: CameraView;
   followId: string | null;
   focus: NavFocus | null;
+  zoom: number;
+  studioOpen: boolean;
 };
+
+export const DEFAULT_ZOOM = 1;
 
 export function parseLocation(search = window.location.search): NavState {
   const params = new URLSearchParams(search);
+  const studioOpen = params.get("studio") === "1";
+  const zoomRaw = params.get("z");
+  const zoom =
+    zoomRaw !== null && Number.isFinite(Number.parseFloat(zoomRaw))
+      ? Number.parseFloat(zoomRaw)
+      : DEFAULT_ZOOM;
+
   const creature = params.get("creature")?.trim();
   if (creature) {
-    return { view: "follow", followId: creature, focus: null };
+    return { view: "follow", followId: creature, focus: null, zoom, studioOpen };
   }
 
   const xRaw = params.get("x");
@@ -23,15 +34,20 @@ export function parseLocation(search = window.location.search): NavState {
     const x = Number.parseInt(xRaw, 10);
     const y = Number.parseInt(yRaw, 10);
     if (Number.isFinite(x) && Number.isFinite(y)) {
-      return { view: "god", followId: null, focus: { x, y } };
+      return { view: "god", followId: null, focus: { x, y }, zoom, studioOpen };
     }
   }
 
-  return { view: "god", followId: null, focus: null };
+  return { view: "god", followId: null, focus: null, zoom, studioOpen };
 }
 
 export function writeLocation(state: NavState) {
   const params = new URLSearchParams();
+
+  if (state.studioOpen) {
+    params.set("studio", "1");
+  }
+
   if (state.view === "follow" && state.followId) {
     params.set("creature", state.followId);
   } else if (state.focus) {
@@ -39,9 +55,14 @@ export function writeLocation(state: NavState) {
     params.set("y", String(state.focus.y));
   }
 
+  if (Math.abs(state.zoom - DEFAULT_ZOOM) > 0.001) {
+    params.set("z", state.zoom.toFixed(3).replace(/\.?0+$/, ""));
+  }
+
   const qs = params.toString();
   const next = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-  if (next !== `${window.location.pathname}${window.location.search}`) {
+  const current = `${window.location.pathname}${window.location.search}`;
+  if (next !== current) {
     window.history.replaceState(null, "", next);
   }
 }

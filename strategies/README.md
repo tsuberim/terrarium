@@ -1,13 +1,12 @@
 # Dev-only strategy sources
 
-Rust strategies compiled to WASM for the **Predator** and **Scavenger** deploy examples.
-Not a runtime feature — players still deploy WAT; this is just how we author those examples.
+Rust strategies compiled to WASM for **Predator** and **Scavenger** ecosystem examples in the sim seed. Not a player-facing deploy path — players use Creature Studio or upload WASM.
 
 ## Layout
 
 - `hunter/` — shared hunt logic (scan vision, step toward, eat adjacent)
 - `predator/` / `scavenger/` — thin WASM exports (`tick`)
-- `tools/` — sync compiled WASM → WAT in kernel + skin examples
+- `tools/` — sync compiled WASM → WAT in sim examples
 
 ## Build
 
@@ -17,12 +16,7 @@ Not a runtime feature — players still deploy WAT; this is just how we author t
 
 Requires `wasm32-unknown-unknown` (script runs `rustup target add` if needed).
 
-Updates:
-
-- `crates/kernel/src/examples.rs`
-- `apps/skin/src/lib/examples.ts`
-
-Commit the synced WAT after changing strategy logic. CI does **not** build strategies.
+Updates committed WAT in `crates/sim/src/examples.rs`. CI does **not** build strategies — run the script locally and commit after changing strategy logic.
 
 ## Pseudocode
 

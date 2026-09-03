@@ -18,6 +18,8 @@ print(f\"VITE_FIREBASE_API_KEY={cfg['apiKey']}\")
 print(f\"VITE_FIREBASE_AUTH_DOMAIN={cfg['authDomain']}\")
 print(f\"VITE_FIREBASE_PROJECT_ID={cfg['projectId']}\")
 print(f\"VITE_FIREBASE_APP_ID={cfg['appId']}\")
+print('VITE_USE_AUTH_EMULATOR=true')
+print('VITE_QA_MODE=true')
 " > apps/skin/.env.local
 
 mkdir -p data
@@ -26,6 +28,7 @@ grep -q '^DATABASE_URL=' .env 2>/dev/null || echo 'DATABASE_URL=sqlite://data/te
 
 npm install
 npm --prefix apps/skin install
+npx --prefix apps/skin playwright install chromium
 command -v cargo-watch >/dev/null || cargo install cargo-watch
 
 if command -v pre-commit >/dev/null; then

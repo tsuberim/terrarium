@@ -22,11 +22,15 @@ jobs:
           filters: |
             rust:
               - 'crates/**'
+              - 'services/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'strategies/**'
             frontend:
               - 'apps/**'
+              - 'docs/internal/qa/**'
+              - 'scripts/qa*.sh'
+              - 'scripts/ci-qa.sh'
               - 'scripts/generate-config.sh'
               - 'firebase.json'
             docker:
@@ -98,15 +102,38 @@ jobs:
       - if: needs.changes.outputs.docker != 'true' && needs.changes.outputs.workflows != 'true'
         run: echo "Dockerfile unchanged — skipped"
 
+  qa:
+    needs: changes
+    runs-on: ubuntu-latest
+    if: >-
+      needs.changes.outputs.rust == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/skin/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: chmod +x scripts/*.sh && ./scripts/ci-qa.sh
+
   gate:
-    needs: [changes, rust, frontend, docker]
+    needs: [changes, rust, frontend, docker, qa]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
           if [ "${{ needs.rust.result }}" = "failure" ] || \
              [ "${{ needs.frontend.result }}" = "failure" ] || \
-             [ "${{ needs.docker.result }}" = "failure" ]; then
+             [ "${{ needs.docker.result }}" = "failure" ] || \
+             [ "${{ needs.qa.result }}" = "failure" ]; then
             echo "A required test job failed"
             exit 1
           fi

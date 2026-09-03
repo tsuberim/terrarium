@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Creature } from "../lib/api";
-import {
-  parseLocation,
-  type CameraView,
-  type NavFocus,
-  writeLocation,
-} from "../lib/navigation";
-import { resolveInitialViewerState, saveViewerPrefs } from "../lib/viewerPrefs";
+import { parseLocation, type CameraView, type NavFocus } from "../lib/navigation";
+import { clampZoom, loadViewerPrefs, persistViewerState, resolveInitialViewerState, type ViewerPrefs } from "../lib/viewerPrefs";
 
 export type FocusTarget = NavFocus & { seq: number };
 
-export function useWorldNavigation(creatures: Creature[]) {
+type ShellState = Pick<ViewerPrefs, "studioOpen" | "deployCell" | "studioWidthPct" | "studioCodeHeightPct">;
+
+export type PopShellState = Pick<ViewerPrefs, "studioOpen" | "deployCell">;
+
+export function useWorldNavigation(
+  creatures: Creature[],
+  shell: ShellState,
+  onPopShell?: (next: PopShellState) => void,
+) {
   const initial = useRef(resolveInitialViewerState());
   const seqRef = useRef(0);
   const [view, setView] = useState<CameraView>(initial.current.view);
@@ -23,38 +26,41 @@ export function useWorldNavigation(creatures: Creature[]) {
   });
   const [jumpOpen, setJumpOpen] = useState(false);
 
-  const persist = useCallback(
-    (nextView: CameraView, nextFollowId: string | null, nextFocus: NavFocus | null, nextZoom: number) => {
-      writeLocation({ view: nextView, followId: nextFollowId, focus: nextFocus });
-      saveViewerPrefs({
-        view: nextView,
-        followId: nextFollowId,
-        focus: nextFocus,
-        zoom: nextZoom,
-      });
-    },
-    [],
-  );
-
   useEffect(() => {
-    persist(view, followId, focus ? { x: focus.x, y: focus.y } : null, zoom);
-  }, [view, followId, focus, zoom, persist]);
+    persistViewerState({
+      view,
+      followId,
+      focus: focus ? { x: focus.x, y: focus.y } : null,
+      zoom,
+      studioOpen: shell.studioOpen,
+      deployCell: shell.deployCell,
+      studioWidthPct: shell.studioWidthPct,
+      studioCodeHeightPct: shell.studioCodeHeightPct,
+    });
+  }, [view, followId, focus, zoom, shell.studioOpen, shell.deployCell, shell.studioWidthPct, shell.studioCodeHeightPct]);
 
   useEffect(() => {
     const onPop = () => {
       const nav = parseLocation();
+      const stored = loadViewerPrefs();
       setView(nav.view);
       setFollowId(nav.followId);
-      if (nav.focus) {
+      setZoom(clampZoom(nav.zoom));
+      const nextFocus = nav.studioOpen ? stored.focus : nav.focus;
+      if (nextFocus) {
         seqRef.current += 1;
-        setFocus({ ...nav.focus, seq: seqRef.current });
+        setFocus({ ...nextFocus, seq: seqRef.current });
       } else {
         setFocus(null);
       }
+      onPopShell?.({
+        studioOpen: nav.studioOpen,
+        deployCell: nav.studioOpen && nav.focus ? nav.focus : null,
+      });
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [onPopShell]);
 
   useEffect(() => {
     if (view !== "follow" || !followId || creatures.length === 0) return;
@@ -97,6 +103,14 @@ export function useWorldNavigation(creatures: Creature[]) {
     setJumpOpen(true);
   }, [followId]);
 
+  const syncViewport = useCallback((center: NavFocus, nextZoom: number) => {
+    setView("god");
+    setFollowId(null);
+    seqRef.current += 1;
+    setFocus({ x: center.x, y: center.y, seq: seqRef.current });
+    setZoom(clampZoom(nextZoom));
+  }, []);
+
   return {
     view,
     followId,
@@ -109,5 +123,6 @@ export function useWorldNavigation(creatures: Creature[]) {
     followCreature,
     exitFollow,
     enterFollow,
+    syncViewport,
   };
 }

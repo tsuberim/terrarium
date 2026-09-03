@@ -3,9 +3,7 @@
 use std::collections::HashSet;
 
 use sqlx::SqlitePool;
-use terrarium_kernel::{
-    compile_wat, vm::Creature, DeathReason, EnergyLedger, WorldTile, WorldTiles,
-};
+use terrarium_sim::{compile_wat, vm::Creature, DeathReason, EnergyLedger, WorldTile, WorldTiles};
 
 const IDLE_WAT: &str = r#"
 (module

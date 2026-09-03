@@ -1,0 +1,21 @@
+---
+title: Energy & glims
+description: Deflationary economy and free-mint budget.
+---
+
+Energy is the sole in-world resource. **Glims** (◆) are the display unit: 1 glim = 100,000 energy units.
+
+## Flow
+
+| Class | Examples |
+|-------|----------|
+| **Import** | Deploy (credits → creature), dev faucet |
+| **Transfer** | Eat corpse, spawn, suicide payout |
+| **Destroy** | Opcode gas, action costs, death leak |
+| **Free mint** | Terrain food (budgeted) |
+
+**Budget rule:** for every 2 energy destroyed, at most 1 free unit may be minted over the world's lifetime.
+
+Deploy costs **corpse base + extra glims** you choose. Suicide returns remaining energy to your credits.
+
+See [internal/engineering/sim/energy-budget.md](https://github.com/tsuberim/terrarium/blob/main/docs/internal/engineering/sim/energy-budget.md) for full ledger details.

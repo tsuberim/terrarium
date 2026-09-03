@@ -1,4 +1,4 @@
-/** Matches kernel `ENERGY_SCALE` — one display unit. */
+/** Matches sim `ENERGY_SCALE` — one display unit. */
 export const GLIM_SCALE = 100_000;
 
 export const GLIM_NAME = "glim";

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use terrarium_kernel::TICK_HZ;
+use terrarium_sim::TICK_HZ;
 
 use crate::engine::WorldEngine;
 use crate::persist::{credit_payout, persist_world, PersistSnapshot};

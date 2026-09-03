@@ -6,6 +6,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 mod accounts;
 mod api_keys;
 mod auth;
+mod compile_client;
 mod config;
 mod deploy;
 mod docs;
@@ -13,6 +14,7 @@ mod engine;
 mod middleware;
 mod persist;
 mod routes;
+mod sandbox;
 mod seed;
 mod state;
 mod tick_loop;
