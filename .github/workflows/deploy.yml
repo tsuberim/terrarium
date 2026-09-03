@@ -1,7 +1,7 @@
 name: Deploy
 
 # Push to main always runs tests. Cloud deploy runs only when the repo variable
-# DEPLOY_ENABLED=true and GCP/Firebase secrets are configured (see docs/secrets.md).
+# DEPLOY_ENABLED=true and GCP/Firebase secrets are configured (see docs/internal/ops/secrets.md).
 
 on:
   push:

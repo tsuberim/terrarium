@@ -1,0 +1,33 @@
+id: deploy-creature
+description: Compile creature, pick map cell, deploy with minimum glims
+requires:
+  - auth_emulator
+  - compile_worker
+  - api
+steps:
+  - assert:
+      qaState:
+        signedIn: true
+        studioOpen: true
+  - click: qa-studio-test
+  - waitFor:
+      qaState:
+        testing: false
+        wasmReady: true
+      timeout: 30000
+  - note: Pick deploy cell on map BEFORE opening deploy dialog (modal blocks mis-aimed clicks)
+  - clickMap: {}
+  - assert:
+      qaState:
+        deployCell: not_null
+  - note: Faucet if credits below deploy cost (110 glims typical)
+  - faucet: true
+  - click: qa-studio-deploy
+  - assert:
+      qaState:
+        deployDialogOpen: true
+  - click: qa-deploy-confirm
+  - waitFor:
+      qaState:
+        deployDialogOpen: false
+      timeout: 15000

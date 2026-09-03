@@ -185,15 +185,36 @@ export const postDeploy = (
     body: JSON.stringify({ x, y, code, energy, wasm_b64: wasmB64 }),
   });
 
-export const postCompile = (language: string, source: string) =>
-  api<{
-    ok: boolean;
-    wasm_b64?: string;
-    diagnostics: { level: string; message: string; line?: number; column?: number }[];
-  }>("/v1/compile", {
+export type CompileResult = {
+  ok: boolean;
+  wasm_b64?: string;
+  diagnostics: { level: string; message: string; line?: number; column?: number }[];
+};
+
+export async function postCompile(language: string, source: string): Promise<CompileResult> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const user = auth.currentUser;
+  if (user) {
+    headers.set("Authorization", `Bearer ${await user.getIdToken()}`);
+  }
+  const res = await fetch(`${apiRoot()}/v1/compile`, {
     method: "POST",
+    headers,
     body: JSON.stringify({ language, source }),
   });
+  const text = await res.text().catch(() => "");
+  let body: CompileResult & { error?: string };
+  try {
+    body = text ? (JSON.parse(text) as CompileResult & { error?: string }) : { ok: false, diagnostics: [] };
+  } catch {
+    throw new Error(text || res.statusText || `HTTP ${res.status}`);
+  }
+  if (res.ok || (res.status === 400 && Array.isArray(body.diagnostics))) {
+    return body;
+  }
+  const msg = body.diagnostics?.[0]?.message ?? body.error ?? "Compile failed";
+  throw new Error(msg);
+}
 
 export const postSandboxRun = (wasmB64: string, scenario: string, ticks: number) =>
   api<import("./creatureEditor").SandboxResult>("/v1/sandbox/run", {

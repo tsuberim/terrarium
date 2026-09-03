@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Creature } from "../lib/api";
 import { GlimAmount } from "./GlimAmount";
 import { formatGlimString } from "../lib/glim";
@@ -64,6 +65,19 @@ export function HudOverlay({
         <div className="flex items-center gap-1.5">
           <span className={`hud-dot shrink-0 ${online ? "hud-dot-live" : ""}`} />
           <span className="shrink-0 text-[12px] font-medium text-white/75">Terrarium</span>
+          {signedIn && (
+            <button
+              type="button"
+              className="hud-btn-sm flex shrink-0 items-center gap-1 px-1.5 text-white/55 hover:text-white/85"
+              onClick={onCodeOpen}
+              disabled={busy}
+              title="Creature studio"
+              data-testid="qa-hud-studio"
+            >
+              <StudioIcon />
+              <span className="hidden text-[10px] sm:inline">Studio</span>
+            </button>
+          )}
           <div className="hud-segment min-w-0 flex-1">
             <button
               type="button"
@@ -80,7 +94,7 @@ export function HudOverlay({
               Follow
             </button>
           </div>
-          <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen}>
+          <button type="button" className="hud-btn-sm shrink-0 px-1.5" onClick={onJumpOpen} data-testid="qa-hud-jump">
             ⌕
           </button>
         </div>
@@ -123,21 +137,36 @@ export function HudOverlay({
           )}
           {signedIn ? (
             <>
-              <button type="button" className="hud-action" onClick={onCodeOpen} disabled={busy}>
-                Code
-              </button>
               <button type="button" className="hud-action" onClick={onApiKeysOpen} disabled={busy}>
                 Keys
               </button>
-              <button type="button" className="hud-action" onClick={onFaucet} disabled={busy}>
+              <button
+                type="button"
+                className="hud-action"
+                onClick={onFaucet}
+                disabled={busy}
+                data-testid="qa-hud-faucet"
+              >
                 +{formatGlimString(10_000_000)}
               </button>
-              <button type="button" className="hud-action" onClick={onSignOut} disabled={busy}>
+              <button
+                type="button"
+                className="hud-action"
+                onClick={onSignOut}
+                disabled={busy}
+                data-testid="qa-hud-sign-out"
+              >
                 Out
               </button>
             </>
           ) : (
-            <button type="button" className="hud-action hud-action-accent" onClick={onSignIn} disabled={busy}>
+            <button
+              type="button"
+              className="hud-action hud-action-accent"
+              onClick={onSignIn}
+              disabled={busy}
+              data-testid="qa-hud-sign-in"
+            >
               Sign in
             </button>
           )}
@@ -155,6 +184,7 @@ export function HudOverlay({
               <span className="shrink-0 tabular-nums text-white/35">
                 {statusText.cell.x}, {statusText.cell.y}
               </span>
+              <CopyCoordsButton x={statusText.cell.x} y={statusText.cell.y} />
               <span className="text-white/15">·</span>
               <span className="truncate text-white/55">{statusText.cell.label}</span>
             </>
@@ -164,5 +194,63 @@ export function HudOverlay({
         </div>
       )}
     </div>
+  );
+}
+
+function CopyCoordsButton({ x, y }: { x: number; y: number }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    const text = `${x}, ${y}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className="pointer-events-auto -my-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/60"
+      onClick={() => void copy()}
+      title={copied ? "Copied" : "Copy coordinates"}
+      aria-label={copied ? "Copied coordinates" : "Copy coordinates"}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="9" y="9" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.75" />
+      <path d="M6 15H5a2 2 0 01-2-2V5a2 2 0 012-2h8a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StudioIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden className="shrink-0">
+      <path
+        d="M8 6l-4 6 4 6M16 6l4 6-4 6M14 4l-4 16"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

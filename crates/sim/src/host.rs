@@ -709,7 +709,10 @@ pub fn run_creature_tick(
         }
     };
 
-    let tick = match instance.get_typed_func::<(), ()>(&mut store, "tick") {
+    let tick = match instance
+        .get_typed_func::<(), ()>(&mut store, "main")
+        .or_else(|_| instance.get_typed_func::<(), ()>(&mut store, "tick"))
+    {
         Ok(f) => f,
         Err(_) => {
             mark_dead(store.data_mut().creature(), DeathReason::InvalidProgram);

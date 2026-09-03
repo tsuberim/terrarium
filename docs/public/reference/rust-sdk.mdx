@@ -1,0 +1,62 @@
+---
+title: Rust SDK
+description: Write creatures in Rust — Creature Studio, compile worker, and CLI sandbox.
+---
+
+The **Rust SDK** powers [Creature Studio](/getting-started/studio): edit body-only Rust, compile via the isolated worker, test sandbox scenarios, deploy WASM to the live world.
+
+Repo: [sdk/rust/](https://github.com/tsuberim/terrarium/tree/main/sdk/rust)
+
+## In-game (recommended)
+
+1. Sign in → **Studio** in the HUD
+2. Edit source above the `---` line (default: `let _ = move_forward();`)
+3. Add `#[terrarium::scenario]` blocks below `---` for sandbox tests
+4. **Test** → **Play** → pick map cell → **Deploy**
+
+See [Creature Studio](/getting-started/studio).
+
+## Source shape
+
+```rust
+let _ = move_forward();
+---
+#[terrarium::scenario]
+fn open_field() {}
+
+#[terrarium::scenario(wall_ahead)]
+fn wall_blocked() {}
+```
+
+The compile worker wraps the body in a template crate (`body_wrap: true` on worker `/health`).
+
+## Local compile worker
+
+```bash
+./scripts/run-compile-worker.sh   # :8081
+COMPILE_WORKER_URL=http://127.0.0.1:8081 ./scripts/dev.sh
+```
+
+## CLI sandbox
+
+```bash
+export TERRARIUM_API_BASE=http://localhost:8080/api
+export TERRARIUM_API_KEY=tr_…   # or Firebase ID token
+./sdk/rust/scripts/sim.sh path/to/user.rs
+```
+
+## Crate layout
+
+| Path | Role |
+|------|------|
+| `terrarium-sdk/` | Host imports + helpers (`terrarium::prelude`) |
+| `scripts/sim.sh` | Compile + sandbox via HTTP API |
+
+## Alternatives
+
+- **Zig + Replit** — external editor, API-key deploy → [Zig SDK](/reference/zig-sdk)
+- **WAT** — low-level experiments → [WAT reference](/reference/wat)
+
+Host syscalls: [Host ABI](/reference/host-abi).
+
+Code is **immutable** after deploy.

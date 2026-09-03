@@ -26,7 +26,7 @@ pub fn validate_wasm(wasm: &[u8]) -> Result<(), String> {
             Payload::ExportSection(reader) => {
                 for export in reader {
                     let export = export.map_err(|e| format!("export error: {e}"))?;
-                    if export.name == "tick" {
+                    if export.name == "main" || export.name == "tick" {
                         has_tick_export = true;
                     }
                 }
@@ -36,7 +36,7 @@ pub fn validate_wasm(wasm: &[u8]) -> Result<(), String> {
     }
 
     if !has_tick_export {
-        return Err("WASM must export `tick`".into());
+        return Err("WASM must export `main`".into());
     }
     Ok(())
 }

@@ -1,6 +1,6 @@
 //! Terrarium creature SDK for `wasm32-unknown-unknown`.
 //!
-//! Player code lives in `user.rs` and implements [`user::tick`].
+//! Player code is body-only in the editor; the compile worker wraps it in `main` with prelude imported.
 
 #![no_std]
 

@@ -1,0 +1,27 @@
+id: studio-compile-test
+description: Sign in, open studio, compile default source, verify WASM and sandbox playback
+requires:
+  - auth_emulator
+  - compile_worker
+  - api
+steps:
+  - note: QA mode should auto sign-in and open studio
+  - assert:
+      qaState:
+        signedIn: true
+        studioOpen: true
+  - click: qa-studio-test
+  - waitFor:
+      qaState:
+        testing: false
+        wasmReady: true
+      timeout: 30000
+  - click: qa-studio-play
+  - waitFor:
+      qaState:
+        playback: playing
+      timeout: 5000
+  - click: qa-studio-stop
+  - assert:
+      qaState:
+        playback: idle

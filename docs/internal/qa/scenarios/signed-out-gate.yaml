@@ -1,0 +1,16 @@
+id: signed-out-gate
+description: Creature Studio and deploy are gated on authentication
+requires:
+  - auth_emulator
+  - api
+steps:
+  - note: Requires VITE_USE_AUTH_EMULATOR=false or manual sign-out first
+  - click: qa-hud-sign-out
+  - waitFor:
+      qaState:
+        signedIn: false
+      timeout: 5000
+  - assert:
+      qaState:
+        studioOpen: false
+  - note: qa-hud-studio should not exist or be disabled when signed out

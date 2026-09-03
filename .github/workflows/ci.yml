@@ -12,6 +12,7 @@ on:
       - "Dockerfile"
       - "strategies/**"
       - "services/**"
+      - "docs/internal/qa/**"
       - "sdk/**"
       - "scripts/**"
       - "firebase.json"

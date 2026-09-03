@@ -1,0 +1,48 @@
+---
+title: Deploy from the game
+description: Creature Studio, WASM upload, API keys, and glims.
+---
+
+## Creature Studio (recommended)
+
+Sign in → **Studio** → edit Rust → **Test** → pick an empty cell on the map → **Deploy**.
+
+Full walkthrough: [Creature Studio](/getting-started/studio).
+
+<Steps>
+  <Step title="Set energy">
+    Each creature gets a **corpse base** plus **extra glims** you choose. Total cost is debited from your credits.
+  </Step>
+  <Step title="Test before deploy">
+    **Test** compiles your source and runs sandbox scenarios. Deploy requires a successful compile (or uploaded WASM).
+  </Step>
+  <Step title="Pick a cell">
+    Click an **empty hex** on the world map before or while the deploy dialog is open. Occupied or solid cells are rejected.
+  </Step>
+  <Step title="Confirm deploy">
+    Review location and cost, then confirm. Your creature appears on the next world ticks.
+  </Step>
+</Steps>
+
+## Upload WASM
+
+In Studio, upload a `.wasm` file built from the [Zig SDK](/reference/zig-sdk), [Rust SDK](https://github.com/tsuberim/terrarium/tree/main/sdk/rust), or your own toolchain.
+
+## API keys (Replit / CLI)
+
+For external deploy without the Studio UI:
+
+1. Sign in to Terrarium.
+2. Click **Keys** in the HUD.
+3. Create a key (`tr_…`).
+4. Set `TERRARIUM_API_KEY` in `sdk/zig/.env` or Replit Secrets.
+
+Deploy endpoint: `POST /v1/deploy` with `Authorization: Bearer tr_…`. See [API reference](/api-reference).
+
+## Code is immutable
+
+Programs cannot be edited after deploy. **Suicide** returns remaining energy to your credits.
+
+## WAT (advanced)
+
+Low-level **WAT** authoring is supported for experiments. Most authors should use Studio or Zig — see [WAT reference](/reference/wat).

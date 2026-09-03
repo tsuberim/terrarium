@@ -3,8 +3,8 @@
 mod user;
 
 #[no_mangle]
-pub extern "C" fn tick() {
-    user::tick();
+pub extern "C" fn main() {
+    user::main();
 }
 
 #[panic_handler]

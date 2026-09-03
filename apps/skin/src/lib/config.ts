@@ -17,6 +17,16 @@ export function isLocalDev() {
   return import.meta.env.DEV && !config.apiBase && !import.meta.env.VITE_WS_BASE;
 }
 
+/** Local Firebase Auth Emulator (see scripts/run-auth-emulator.sh). Auto sign-in when enabled. */
+export function authEmulatorEnabled() {
+  return isLocalDev() && import.meta.env.VITE_USE_AUTH_EMULATOR !== "false";
+}
+
+/** Dev QA conveniences: auto sign-in, auto-open studio, expose window.__TERRARIUM_QA__. */
+export function qaMode() {
+  return authEmulatorEnabled() && import.meta.env.VITE_QA_MODE !== "false";
+}
+
 export function wsRoot() {
   // Firebase Hosting rewrites /api for HTTP but cannot proxy WebSocket upgrades;
   // prod builds set VITE_WS_BASE to the Cloud Run URL (see generate-config.sh).

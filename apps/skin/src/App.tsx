@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EventFeed } from "./components/EventFeed";
 import { ApiKeysDialog } from "./components/ApiKeysDialog";
-import { AuthorDialog } from "./components/AuthorDialog";
-import { DeployDialog } from "./components/DeployDialog";
+import { CreatureStudio } from "./components/CreatureStudio";
 import { DevPanel } from "./components/DevPanel";
 import { HudOverlay } from "./components/HudOverlay";
 import { JumpDialog } from "./components/JumpDialog";
@@ -15,14 +14,60 @@ import { describeCell } from "./lib/cell";
 import { formatDeathNotice, type DeathEvent } from "./lib/death";
 import { formatGlimString } from "./lib/glim";
 import { auth, googleProvider, signInWithPopup, signOut } from "./lib/firebase";
+import { signInWithEmulatorQaUser } from "./lib/emulatorAuth";
+import { qaMode, authEmulatorEnabled } from "./lib/config";
+import { useQaBridge } from "./hooks/useQaBridge";
+import type { StudioQaSlice } from "./lib/qaBridge";
+import { resolveInitialViewerState, clampStudioWidthPct, clampStudioCodeHeightPct, DEFAULT_STUDIO_WIDTH_PCT, DEFAULT_STUDIO_CODE_HEIGHT_PCT } from "./lib/viewerPrefs";
 
 type Hover = { x: number; y: number };
 
 export default function App() {
+  const initialSession = useRef(resolveInitialViewerState());
   const { user, ready } = useAuth();
   const [credits, setCredits] = useState<number | null>(null);
   const { creatures, tiles, deployCost, corpseEnergy, simConfig, tick, tickHz, connected, fxEvents, runtimeRef, creaturesLiveRef, tilesLiveRef, setSimConfig, mergeCreatureMeta } =
     useWorldStream();
+  const [busy, setBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deployCell, setDeployCell] = useState<{ x: number; y: number } | null>(initialSession.current.deployCell);
+  const [deployDialogOpen, setDeployDialogOpen] = useState(false);
+  const [apiKeysOpen, setApiKeysOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(initialSession.current.studioOpen);
+  const [studioWidthPct, setStudioWidthPct] = useState(() =>
+    clampStudioWidthPct(initialSession.current.studioWidthPct ?? DEFAULT_STUDIO_WIDTH_PCT),
+  );
+  const [studioCodeHeightPct, setStudioCodeHeightPct] = useState(() =>
+    clampStudioCodeHeightPct(initialSession.current.studioCodeHeightPct ?? DEFAULT_STUDIO_CODE_HEIGHT_PCT),
+  );
+  const [hover, setHover] = useState<Hover | null>(null);
+  const [deathNotice, setDeathNotice] = useState<string | null>(null);
+  const [studioQa, setStudioQa] = useState<StudioQaSlice>({
+    testing: false,
+    wasmReady: false,
+    playback: "idle",
+    error: null,
+  });
+
+  const studioVisible = !!user && (studioOpen || !!deployCell);
+
+  const onPopShell = useCallback((next: { studioOpen: boolean; deployCell: { x: number; y: number } | null }) => {
+    setStudioOpen(next.studioOpen);
+    setDeployCell(next.deployCell);
+  }, []);
+
+  useEffect(() => {
+    if (!ready || user) return;
+    setStudioOpen(false);
+    setDeployCell(null);
+    setDeployDialogOpen(false);
+  }, [ready, user]);
+
+  const handleDeployDialogChange = useCallback((open: boolean) => {
+    setDeployDialogOpen((prev) => (prev === open ? prev : open));
+  }, []);
+
   const {
     view,
     followId,
@@ -35,15 +80,37 @@ export default function App() {
     followCreature,
     exitFollow,
     enterFollow,
-  } = useWorldNavigation(creatures);
-  const [busy, setBusy] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [deployCell, setDeployCell] = useState<{ x: number; y: number } | null>(null);
-  const [apiKeysOpen, setApiKeysOpen] = useState(false);
-  const [codeOpen, setCodeOpen] = useState(false);
-  const [hover, setHover] = useState<Hover | null>(null);
-  const [deathNotice, setDeathNotice] = useState<string | null>(null);
+    syncViewport,
+  } = useWorldNavigation(
+    creatures,
+    { studioOpen: studioVisible, deployCell, studioWidthPct, studioCodeHeightPct },
+    onPopShell,
+  );
+
+  useEffect(() => {
+    if (!ready || user || !authEmulatorEnabled()) return;
+    void signInWithEmulatorQaUser().catch(() => {});
+  }, [ready, user]);
+
+  useEffect(() => {
+    if (!ready || !user || !qaMode()) return;
+    setStudioOpen(true);
+  }, [ready, user]);
+
+  const error = authError ?? actionError;
+  useQaBridge({
+    ready,
+    signedIn: !!user,
+    studioOpen: studioVisible,
+    deployCell,
+    deployDialogOpen,
+    credits,
+    testing: studioQa.testing,
+    wasmReady: studioQa.wasmReady,
+    playback: studioQa.playback,
+    error: studioQa.error ?? error,
+    busy,
+  });
 
   useEffect(() => {
     const deaths = fxEvents.filter((e): e is DeathEvent & { at: number } => e.type === "death");
@@ -124,6 +191,10 @@ export default function App() {
     setBusy(true);
     setAuthError(null);
     try {
+      if (authEmulatorEnabled()) {
+        await signInWithEmulatorQaUser();
+        return;
+      }
       await signInWithPopup(auth, googleProvider);
     } catch (err) {
       const code = err instanceof Error && "code" in err ? String((err as { code: string }).code) : "";
@@ -162,12 +233,12 @@ export default function App() {
     }
   };
 
-  const submitDeploy = async (code: string, extraEnergy: number, wasmB64?: string) => {
-    if (!user || !deployCell) return;
+  const submitDeploy = async (x: number, y: number, code: string, extraEnergy: number, wasmB64?: string) => {
+    if (!user) return;
     setBusy(true);
     setActionError(null);
     try {
-      const res = await postDeploy(deployCell.x, deployCell.y, code, extraEnergy, wasmB64);
+      const res = await postDeploy(x, y, code, extraEnergy, wasmB64);
       setCredits(res.credits);
       setDeployCell(null);
       await refreshAccount();
@@ -178,11 +249,13 @@ export default function App() {
     }
   };
 
-  const canDeploy = !!user && credits !== null && credits >= deployCost && !busy && !deployCell && !jumpOpen;
-  const error = authError ?? actionError;
+  const canDeploy = !!user && credits !== null && credits >= deployCost && !busy && !studioOpen && !deployCell && !jumpOpen && !deployDialogOpen;
+  const canPickDeployCell = !!user && !busy && (deployDialogOpen || studioVisible);
 
   const message =
-    deployCell
+    deployDialogOpen || (studioVisible && !deployCell)
+      ? "Click a cell on the map to set deploy location"
+      : deployCell
       ? "Edit Rust, test, then deploy"
       : jumpOpen
         ? "Search by coordinates or creature id"
@@ -196,77 +269,104 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-void">
-      <WorldCanvas
-        creaturesLiveRef={creaturesLiveRef}
-        tilesLiveRef={tilesLiveRef}
-        canDeploy={canDeploy}
-        userUid={user?.uid}
-        senseRange={simConfig?.r_vis ?? 5}
-        signalRange={simConfig?.r_sig ?? 5}
-        visHalfArc={simConfig?.vis_half_arc ?? 1}
-        corpseEnergy={corpseEnergy}
-        view={view}
-        followId={followId}
-        focus={focus}
-        initialZoom={zoom}
-        onCellSelect={(x, y) => setDeployCell({ x, y })}
-        onHover={setHover}
-        onManualCamera={exitFollow}
-        onZoomChange={setZoom}
-        runtimeRef={runtimeRef}
-        worldTick={tick}
-        tickHz={tickHz}
-      />
-      <HudOverlay
-        online={connected}
-        credits={credits}
-        signedIn={!!user}
-        busy={busy}
-        view={view}
-        followId={followId}
-        myCreatures={myCreatures}
-        cell={cellInfo}
-        message={message}
-        deathNotice={deathNotice}
-        error={error}
-        onViewChange={(next) => (next === "god" ? exitFollow() : enterFollow())}
-        onJumpOpen={() => setJumpOpen(true)}
-        onFollowCreature={followCreature}
-        onSignIn={() => void signIn()}
-        onSignOut={() => void signOutUser()}
-        onFaucet={() => void faucet()}
-        onApiKeysOpen={() => setApiKeysOpen(true)}
-        onCodeOpen={() => setCodeOpen(true)}
-      />
-      <AuthorDialog
-        open={codeOpen}
-        cell={deployCell}
-        onClose={() => setCodeOpen(false)}
-        onOpenKeys={() => {
-          setCodeOpen(false);
-          setApiKeysOpen(true);
-        }}
-      />
-      <JumpDialog
-        open={jumpOpen}
-        creatures={creatures}
-        userUid={user?.uid}
-        onClose={() => setJumpOpen(false)}
-        onJump={jumpTo}
-        onFollow={followCreature}
-      />
-      <ApiKeysDialog open={apiKeysOpen} busy={busy} onClose={() => setApiKeysOpen(false)} />
-      <DeployDialog
-        cell={deployCell}
-        minExtra={deployCost}
-        corpseEnergy={corpseEnergy}
-        credits={credits}
-        busy={busy}
-        onDeploy={(code, extra, wasmB64) => void submitDeploy(code, extra, wasmB64)}
-        onClose={() => setDeployCell(null)}
-      />
-      <EventFeed events={fxEvents} />
-      <DevPanel config={simConfig} onConfigChange={setSimConfig} />
+      <div className="game-shell">
+        <WorldCanvas
+          creaturesLiveRef={creaturesLiveRef}
+          tilesLiveRef={tilesLiveRef}
+          canDeploy={canDeploy || canPickDeployCell}
+          userUid={user?.uid}
+          senseRange={simConfig?.r_vis ?? 5}
+          signalRange={simConfig?.r_sig ?? 5}
+          visHalfArc={simConfig?.vis_half_arc ?? 1}
+          corpseEnergy={corpseEnergy}
+          view={view}
+          followId={followId}
+          focus={focus}
+          initialZoom={zoom}
+          onCellSelect={(x, y) => {
+            if (!user) return;
+            if (deployDialogOpen || studioVisible) {
+              setDeployCell({ x, y });
+              return;
+            }
+            setStudioOpen(true);
+            setDeployCell({ x, y });
+          }}
+          onHover={setHover}
+          onManualCamera={exitFollow}
+          onZoomChange={setZoom}
+          onViewportChange={syncViewport}
+          runtimeRef={runtimeRef}
+          worldTick={tick}
+          tickHz={tickHz}
+          mapTestId="qa-world-map"
+        />
+        <div
+          className="hud-shell"
+          style={studioVisible ? { left: `${studioWidthPct}%` } : undefined}
+        >
+          <HudOverlay
+            online={connected}
+            credits={credits}
+            signedIn={!!user}
+            busy={busy}
+            view={view}
+            followId={followId}
+            myCreatures={myCreatures}
+            cell={cellInfo}
+            message={message}
+            deathNotice={deathNotice}
+            error={error}
+            onViewChange={(next) => (next === "god" ? exitFollow() : enterFollow())}
+            onJumpOpen={() => setJumpOpen(true)}
+            onFollowCreature={followCreature}
+            onSignIn={() => void signIn()}
+            onSignOut={() => void signOutUser()}
+            onFaucet={() => void faucet()}
+            onApiKeysOpen={() => setApiKeysOpen(true)}
+            onCodeOpen={() => {
+              if (!user) return;
+              setStudioOpen(true);
+            }}
+          />
+          <JumpDialog
+            open={jumpOpen}
+            creatures={creatures}
+            userUid={user?.uid}
+            onClose={() => setJumpOpen(false)}
+            onJump={jumpTo}
+            onFollow={followCreature}
+          />
+          <EventFeed events={fxEvents} />
+          <DevPanel config={simConfig} onConfigChange={setSimConfig} />
+        </div>
+        <ApiKeysDialog open={apiKeysOpen} busy={busy} onClose={() => setApiKeysOpen(false)} />
+      </div>
+      {user && (
+        <CreatureStudio
+          open={studioVisible}
+          widthPct={studioWidthPct}
+          onWidthChange={setStudioWidthPct}
+          codeHeightPct={studioCodeHeightPct}
+          onCodeHeightChange={setStudioCodeHeightPct}
+          cell={deployCell}
+          minExtra={deployCost}
+          corpseEnergy={corpseEnergy}
+          credits={credits}
+          busy={busy}
+          tickHz={tickHz}
+          senseRange={simConfig?.r_vis ?? 5}
+          canCheck
+          onDeploy={(x, y, code, extra, wasmB64) => void submitDeploy(x, y, code, extra, wasmB64)}
+          onDeployDialogChange={handleDeployDialogChange}
+          onQaSliceChange={setStudioQa}
+          onClose={() => {
+            setDeployCell(null);
+            setStudioOpen(false);
+            setDeployDialogOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

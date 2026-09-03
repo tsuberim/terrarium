@@ -9,6 +9,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 #[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
+    /// Present on workers that wrap editor body in `main` + `loop`.
+    body_wrap: bool,
 }
 
 #[tokio::main]
@@ -33,5 +35,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse { status: "ok" })
+    Json(HealthResponse {
+        status: "ok",
+        body_wrap: true,
+    })
 }

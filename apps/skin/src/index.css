@@ -143,6 +143,88 @@
     @apply bg-biolume/10 text-biolume/90 hover:bg-biolume/15 hover:text-biolume;
   }
 
+  .game-shell {
+    @apply absolute inset-0;
+  }
+
+  .hud-shell {
+    @apply pointer-events-none absolute inset-y-0 right-0 z-10;
+  }
+
+  .studio-shell {
+    @apply fixed inset-y-0 left-0 z-40 flex flex-col border-r border-white/[0.08] bg-void shadow-[4px_0_24px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-out;
+    transform: translateX(-100%);
+    pointer-events: none;
+  }
+
+  .studio-resize-handle {
+    @apply absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none;
+  }
+
+  .studio-resize-handle:hover,
+  .studio-resize-handle:active {
+    @apply bg-biolume/20;
+  }
+
+  .studio-shell-open {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .studio-shell-passthrough {
+    pointer-events: none;
+  }
+
+  .studio-shell-closed {
+    transform: translateX(-100%);
+    pointer-events: none;
+  }
+
+  .studio-toolbar {
+    @apply flex shrink-0 items-center justify-between border-b border-white/[0.06] px-3 py-2;
+  }
+
+  .studio-body {
+    @apply flex min-h-0 flex-1 flex-col;
+  }
+
+  .studio-code-pane {
+    @apply flex min-h-0 flex-col gap-2 overflow-y-auto p-3;
+  }
+
+  .studio-split-handle {
+    @apply relative z-10 h-1.5 shrink-0 cursor-row-resize touch-none border-y border-white/[0.06];
+  }
+
+  .studio-split-handle:hover,
+  .studio-split-handle:active {
+    @apply border-biolume/20 bg-biolume/10;
+  }
+
+  .studio-editor-wrap {
+    @apply flex min-h-[8rem] flex-1 flex-col overflow-hidden rounded-lg border border-white/[0.08];
+  }
+
+  .studio-preview-pane {
+    @apply relative min-h-0 flex-1 overflow-hidden;
+  }
+
+  .studio-controls {
+    @apply flex flex-wrap items-center gap-2;
+  }
+
+  .studio-icon-btn {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/[0.06] hover:text-white/75 disabled:opacity-35;
+  }
+
+  .studio-scrub {
+    @apply space-y-1 rounded-lg border border-white/[0.06] bg-black/20 p-2;
+  }
+
+  .studio-deploy-row {
+    @apply flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2;
+  }
+
   .jump-row {
     @apply flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04];
   }

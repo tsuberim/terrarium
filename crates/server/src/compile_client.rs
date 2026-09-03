@@ -50,7 +50,7 @@ pub async fn compile_creature(
     let status = res.status();
     let text = res.text().await.map_err(|e| e.to_string())?;
     let parsed: CompileResponse = serde_json::from_str(&text).map_err(|_| text.clone())?;
-    if status.is_success() {
+    if status.is_success() || status == reqwest::StatusCode::BAD_REQUEST {
         Ok(parsed)
     } else {
         Err(parsed

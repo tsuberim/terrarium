@@ -1,4 +1,9 @@
 {
+  "emulators": {
+    "auth": { "host": "127.0.0.1", "port": 9099 },
+    "ui": { "enabled": true, "host": "127.0.0.1", "port": 4000 },
+    "singleProjectMode": true
+  },
   "auth": {
     "authorizedDomains": ["localhost", "127.0.0.1", "terrarium-506917.web.app", "terrarium-506917.firebaseapp.com"],
     "providers": {

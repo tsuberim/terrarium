@@ -321,13 +321,7 @@ async fn sandbox_run(
         }
     };
 
-    let Some(scenario) = terrarium_sim::SandboxScenario::parse(&body.scenario) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "unknown scenario" })),
-        )
-            .into_response();
-    };
+    let scenario = terrarium_sim::SandboxScenario::parse_or_open(&body.scenario);
 
     let mut config = state.engine.sim_config();
     config.max_active_food = 0;

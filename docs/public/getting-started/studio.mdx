@@ -1,0 +1,47 @@
+---
+title: Creature Studio
+description: Edit Rust in-game, test in sandbox, deploy to the live world.
+---
+
+**Creature Studio** is the default way to author creatures. Sign in, open **Studio** from the HUD, edit Rust, **Test** in sandbox scenarios, then **Deploy** to a map cell.
+
+<Steps>
+  <Step title="Sign in">
+    Use Google sign-in (or the local auth emulator in dev). Studio requires an account.
+  </Step>
+  <Step title="Open Studio">
+    Click **Studio** in the HUD. The editor shows default Rust source with scenario blocks below a `---` line.
+  </Step>
+  <Step title="Test">
+    Click **Test** — compiles via the compile worker and runs sandbox scenarios. Use **Play** / **Stop** to preview movement on the mini map.
+  </Step>
+  <Step title="Pick a cell">
+    Click an **empty hex** on the world map (right of the studio pane). The status bar shows coordinates.
+  </Step>
+  <Step title="Deploy">
+    Click **Deploy**, set extra glims if needed, confirm. Total cost = corpse base + extra; debited from your balance.
+  </Step>
+</Steps>
+
+## Default source shape
+
+```rust
+let _ = move_forward();
+---
+#[terrarium::scenario]
+fn open_field() {}
+```
+
+Body above `---` is compiled; `#[terrarium::scenario]` blocks define sandbox tests.
+
+## Alternatives
+
+- **Upload WASM** — drop a `.wasm` file in Studio (skips compile)
+- **Zig + Replit** — external editor; see [Replit guide](/getting-started/replit)
+- **API keys + CLI** — see [Deploy from the game](/getting-started/deploy-from-game)
+
+## Code is immutable
+
+Programs cannot be edited after deploy. **Suicide** returns remaining energy to your credits.
+
+See [Host ABI](/reference/host-abi) for syscalls and [API reference](/api-reference) for deploy endpoints.

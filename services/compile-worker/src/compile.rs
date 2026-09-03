@@ -156,7 +156,11 @@ async fn run_compile(
 ) -> Result<(), CompileResponse> {
     copy_template(template_dir, work).map_err(|err| compile_error(err.to_string()))?;
     patch_manifest(work, sdk_path).map_err(|err| compile_error(err.to_string()))?;
-    fs::write(work.join("src/user.rs"), source).map_err(|err| compile_error(err.to_string()))?;
+    fs::write(
+        work.join("src/user.rs"),
+        wrap_user_source(&creature_body(source)),
+    )
+    .map_err(|err| compile_error(err.to_string()))?;
 
     let mut cmd = Command::new("cargo");
     cmd.current_dir(work)
@@ -190,6 +194,7 @@ async fn run_compile(
                 column: None,
             });
         }
+        remap_user_diagnostics(&mut diagnostics);
         return Err(CompileResponse {
             ok: false,
             wasm_b64: None,
@@ -198,6 +203,39 @@ async fn run_compile(
     }
 
     Ok(())
+}
+
+/// Editor body starts inside `loop {` — offset past prelude + main + loop lines.
+const USER_BODY_LINE_OFFSET: u32 = 4;
+
+fn creature_body(source: &str) -> String {
+    let normalized = source.replace("\r\n", "\n");
+    normalized
+        .split("\n---\n")
+        .next()
+        .or_else(|| normalized.split("\n---").next())
+        .unwrap_or(normalized.as_str())
+        .trim()
+        .to_string()
+}
+
+fn wrap_user_source(source: &str) -> String {
+    format!(
+        "use terrarium_sdk::prelude::*;\n\npub fn main() {{\n    loop {{\n{}\n    }}\n}}\n",
+        source.trim_end()
+    )
+}
+
+fn remap_user_diagnostics(diagnostics: &mut [Diagnostic]) {
+    for d in diagnostics {
+        if let Some(line) = d.line {
+            if line > USER_BODY_LINE_OFFSET {
+                d.line = Some(line - USER_BODY_LINE_OFFSET);
+            } else {
+                d.line = None;
+            }
+        }
+    }
 }
 
 fn compile_error(message: String) -> CompileResponse {
@@ -216,13 +254,13 @@ fn compile_error(message: String) -> CompileResponse {
 fn template_root() -> PathBuf {
     std::env::var("TEMPLATE_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/opt/template"))
+        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("template"))
 }
 
 fn sdk_root() -> PathBuf {
-    std::env::var("SDK_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/opt/terrarium-sdk"))
+    std::env::var("SDK_PATH").map(PathBuf::from).unwrap_or_else(|_| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../sdk/rust/terrarium-sdk")
+    })
 }
 
 fn copy_template(from: &Path, to: &Path) -> anyhow::Result<()> {
@@ -291,5 +329,31 @@ mod tests {
         let diags = parse_cargo_diagnostics(sample);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].line, Some(3));
+    }
+
+    #[test]
+    fn creature_body_splits_on_delimiter() {
+        let src = "let x = 1;\n---\n#[terrarium::scenario]\nfn s() {}";
+        assert_eq!(creature_body(src), "let x = 1;");
+    }
+
+    #[test]
+    fn wrap_user_source_injects_prelude_and_main() {
+        let wrapped = wrap_user_source("let _ = move_forward();");
+        assert!(wrapped.contains("use terrarium_sdk::prelude::*;"));
+        assert!(wrapped.contains("pub fn main()"));
+        assert!(wrapped.contains("let _ = move_forward();"));
+    }
+
+    #[test]
+    fn remap_user_diagnostics_shifts_line_numbers() {
+        let mut diags = vec![Diagnostic {
+            level: "error".into(),
+            message: "x".into(),
+            line: Some(5),
+            column: Some(1),
+        }];
+        remap_user_diagnostics(&mut diags);
+        assert_eq!(diags[0].line, Some(1));
     }
 }

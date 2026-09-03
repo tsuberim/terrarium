@@ -1,7 +1,11 @@
 {
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,green \"cargo watch -q -x 'run -p terrarium-server --bin terrarium-server'\" \"npm run dev --prefix apps/skin\""
+    "dev": "concurrently -k -n auth,compile,api,web -c magenta,yellow,blue,green \"./scripts/run-auth-emulator.sh\" \"./scripts/run-compile-worker.sh\" \"cargo watch -q -w crates/server -w crates/sim -x 'run -p terrarium-server --bin terrarium-server'\" \"npm run dev --prefix apps/skin\"",
+    "qa": "./scripts/qa-smoke.sh",
+    "qa:preflight": "./scripts/qa-preflight.sh",
+    "qa:e2e": "./scripts/qa-e2e.sh",
+    "qa:all": "./scripts/qa-smoke.sh && ./scripts/qa-e2e.sh"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

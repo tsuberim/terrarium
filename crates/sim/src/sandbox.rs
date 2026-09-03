@@ -26,12 +26,16 @@ pub enum SandboxScenario {
 impl SandboxScenario {
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
-            "open" => Self::Open,
-            "food_ahead" => Self::FoodAhead,
-            "wall_ahead" => Self::WallAhead,
-            "corpse_ahead" => Self::CorpseAhead,
+            "open" | "open_field" => Self::Open,
+            "food_ahead" | "food" => Self::FoodAhead,
+            "wall_ahead" | "wall" | "wall_blocked" => Self::WallAhead,
+            "corpse_ahead" | "corpse" => Self::CorpseAhead,
             _ => return None,
         })
+    }
+
+    pub fn parse_or_open(s: &str) -> Self {
+        Self::parse(s).unwrap_or(Self::Open)
     }
 }
 

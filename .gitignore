@@ -7,6 +7,9 @@
 firebase-debug.log
 node_modules/
 apps/skin/dist/
+apps/skin/test-results/
+apps/skin/playwright-report/
+apps/skin/blob-report/
 apps/skin/.env.local
 apps/skin/.env.production
 .dev/
