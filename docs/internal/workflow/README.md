@@ -61,7 +61,7 @@ Run verification yourself. Eng principles: [../engineering/principles.md](../eng
 | `setup-dev.sh` | One-time bootstrap |
 | `dev.sh` / `dev-stop.sh` | Local stack |
 | `test.sh` | fmt, clippy, unit, lint, build |
-| `qa-smoke.sh` / `qa-e2e.sh` / `ci-qa.sh` | QA layers |
+| `qa-smoke.sh` / `qa-e2e.sh` / `ci-e2e.sh` | QA layers |
 
 ---
 

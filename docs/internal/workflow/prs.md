@@ -65,7 +65,7 @@ gh pr create --fill
 gh pr merge --auto
 ```
 
-Auto-merge waits for the `ci.yml` gate (rust, frontend, docker, qa) to pass.
+Auto-merge waits for the `ci.yml` gate (rust, frontend, docker, e2e) to pass.
 
 ---
 

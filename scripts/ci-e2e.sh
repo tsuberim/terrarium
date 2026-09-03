@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI: build stack, run API smoke + Playwright e2e. Used by .github/workflows/reusable-test.yml.
+# CI: build stack, run API smoke + Playwright e2e. Used by reusable-test.yml `e2e` job.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -70,12 +70,11 @@ PIDS+=($!)
 echo "==> Wait for stack"
 for _ in $(seq 1 90); do
   if ./scripts/qa-preflight.sh >/dev/null 2>&1; then
-    ./scripts/qa-preflight.sh
     break
   fi
   sleep 2
 done
-./scripts/qa-preflight.sh
+./scripts/qa-preflight.sh || exit 1
 
 echo "==> API smoke"
 ./scripts/qa-smoke.sh
