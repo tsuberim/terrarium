@@ -9,8 +9,8 @@ source "$ROOT/scripts/ci-stack.sh"
 ci_stack_write_env true
 ci_stack_build
 ci_stack_start_api
-ci_stack_install_playwright
 ci_stack_start_ui
+ci_stack_install_playwright
 ci_stack_wait true
 
 echo "==> Playwright e2e"
