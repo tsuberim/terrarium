@@ -4,6 +4,7 @@ FROM rust:1-bookworm AS builder
 WORKDIR /build
 COPY services/compile-worker/Cargo.toml services/compile-worker/Cargo.lock* ./
 COPY services/compile-worker/src ./src
+COPY crates/test-spec /crates/test-spec
 RUN cargo build --release
 
 FROM rust:1-bookworm
