@@ -226,7 +226,7 @@ export function CreatureStudio({
   }), []);
 
   useEffect(() => {
-    if (!open || !canCheck || busy || testing) return;
+    if (!open || !canCheck || busy || testing || e2eHooksEnabled()) return;
     const t = window.setTimeout(() => {
       const { source: liveSource, testsSource: liveTests } = readEditorSources();
       void postCompile("rust", liveSource, liveTests)
