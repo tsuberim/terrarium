@@ -47,6 +47,7 @@ export default function App() {
   const [studioE2e, setStudioE2e] = useState<StudioE2eSlice>({
     testing: false,
     wasmReady: false,
+    allTestsPassed: false,
     playback: "idle",
     error: null,
   });
@@ -108,6 +109,7 @@ export default function App() {
     credits,
     testing: studioE2e.testing,
     wasmReady: studioE2e.wasmReady,
+    allTestsPassed: studioE2e.allTestsPassed,
     playback: studioE2e.playback,
     error: studioE2e.error ?? error,
     busy,

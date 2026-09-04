@@ -13,6 +13,7 @@ import {
 import { formatGlimString, GLIM_SCALE } from "../lib/glim";
 import { postCompile, postSandboxRun } from "../lib/api";
 import { authorLinks } from "../lib/authoringLinks";
+import { e2eHooksEnabled } from "../lib/config";
 import { GlimAmount } from "./GlimAmount";
 import { RustEditor, type RustEditorHandle } from "./RustEditor";
 import { WorldCanvas } from "./WorldCanvas";
@@ -210,10 +211,11 @@ export function CreatureStudio({
     onE2eSliceChange?.({
       testing,
       wasmReady: !!wasmB64,
+      allTestsPassed,
       playback: mapPlayback(playback),
       error,
     });
-  }, [testing, wasmB64, playback, error, onE2eSliceChange]);
+  }, [testing, wasmB64, allTestsPassed, playback, error, onE2eSliceChange]);
 
   const locked = busy || testing;
 
@@ -312,7 +314,7 @@ export function CreatureStudio({
         loadResult(result);
         setPreviewGen((g) => g + 1);
         if (result.frames.length > 0) {
-          window.requestAnimationFrame(() => play());
+          if (!e2eHooksEnabled()) window.requestAnimationFrame(() => play());
         } else if (result.error) setError(result.error);
       }
       return result;
@@ -568,6 +570,7 @@ export function CreatureStudio({
               disabled={locked || tests.length === 0}
               onClick={() => void runAllTests()}
               title="Run all tests (required before deploy)"
+              data-testid="e2e-studio-run-all"
             >
               Run all
             </button>
