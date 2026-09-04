@@ -5,6 +5,7 @@ import {
   DEFAULT_RUST_SOURCE,
   DEFAULT_TESTS_SOURCE,
   parseTests,
+  normalizeCompileDiagnostics,
   type CompileDiagnostic,
   type ParsedTest,
   type SandboxResult,
@@ -213,7 +214,7 @@ export function CreatureStudio({
     if (!open || !canCheck || busy || testing) return;
     const t = window.setTimeout(() => {
       void postCompile("rust", source, testsSource)
-        .then((compiled) => setDiagnostics(compiled.diagnostics))
+        .then((compiled) => setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics)))
         .catch(() => {
           /* offline / auth */
         });
@@ -256,7 +257,7 @@ export function CreatureStudio({
   const ensureWasm = useCallback(async (): Promise<string | null> => {
     if (wasmB64) return wasmB64;
     const compiled = await postCompile("rust", source, testsSource);
-    setDiagnostics(compiled.diagnostics);
+    setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
     if (!compiled.wasm_b64) {
       const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
       setError(msg);
@@ -275,7 +276,7 @@ export function CreatureStudio({
 
   const compileForTest = useCallback(async (): Promise<string | null> => {
     const compiled = await postCompile("rust", source, testsSource);
-    setDiagnostics(compiled.diagnostics);
+    setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
     if (!compiled.wasm_b64) {
       const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
       setError(msg);

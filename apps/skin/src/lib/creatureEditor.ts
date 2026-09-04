@@ -52,8 +52,8 @@ export type TestSpec = {
   facing: number;
   start_energy: number;
   tiles: Array<
-    | { At: { x: number; y: number; kind: Record<string, unknown> } }
-    | { Ahead: { kind: Record<string, unknown>; facing: number } }
+    | { At: { x: number; y: number; kind: unknown } }
+    | { Ahead: { kind: unknown; facing: number } }
   >;
   assertions: Array<
     | { Alive: { expected: boolean; line: number } }
@@ -114,6 +114,18 @@ export type SandboxResult = {
 
 const MAX_TICKS = 500;
 const DEFAULT_START_ENERGY = 4_000_000;
+
+export function normalizeCompileDiagnostics(
+  diagnostics: { level: string; message: string; line?: number; column?: number; area?: string }[],
+): CompileDiagnostic[] {
+  return diagnostics.map((d) => ({
+    level: d.level,
+    message: d.message,
+    line: d.line,
+    column: d.column,
+    area: d.area === "tests" ? "tests" : d.area === "source" ? "source" : undefined,
+  }));
+}
 
 export function parseTests(source: string): { tests: ParsedTest[]; diagnostics: CompileDiagnostic[] } {
   const normalized = source.replace(/\r\n/g, "\n");
@@ -258,9 +270,9 @@ function toWireSpec(spec: InternalSpec): TestSpec {
   };
 }
 
-function opWire(op: TestAssertion extends { type: "compare" } ? TestAssertion["op"] : never): string {
+function opWire(op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte"): string {
   const map = { eq: "Eq", ne: "Ne", gt: "Gt", gte: "Gte", lt: "Lt", lte: "Lte" } as const;
-  return map[op as keyof typeof map];
+  return map[op];
 }
 
 function wireTileKind(tile: TestTileKind): unknown {
