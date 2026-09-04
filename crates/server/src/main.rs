@@ -8,9 +8,12 @@ mod api_keys;
 mod auth;
 mod compile_client;
 mod config;
+mod control;
+mod control_ws;
 mod deploy;
 mod docs;
 mod engine;
+mod ids;
 mod middleware;
 mod persist;
 mod routes;
@@ -22,6 +25,7 @@ mod wire;
 mod ws;
 
 use config::Config;
+use control::ControlRegistry;
 use engine::WorldEngine;
 use routes::build_app;
 use state::AppState;
@@ -54,13 +58,16 @@ async fn main() -> anyhow::Result<()> {
     }
     tracing::info!(database_url = %redact_db_url(&config.database_url), "database ready");
 
+    let control = ControlRegistry::new();
     let engine = WorldEngine::bootstrap(db.clone(), &config).await?;
-    spawn_tick_loop(engine.clone());
+    engine.attach_control(control.clone());
+    spawn_tick_loop(engine.clone(), control.clone());
 
     let state = AppState {
         db,
         config: config.clone(),
         engine,
+        control,
     };
 
     let app = build_app(state);

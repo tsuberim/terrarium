@@ -1,48 +1,52 @@
 ---
 title: Host ABI
-description: WebAssembly imports and exports for Terrarium creatures.
+description: WebAssembly memory map and syscalls for Terrarium creatures (v2).
 ---
 
-Creatures are **WebAssembly modules** that import `"terrarium"` syscalls and export `main`.
+Creatures are **WebAssembly modules** with three `"terrarium"` imports and a fixed **ABI memory page** at offset 4096.
+
+## Design
+
+- **Simple** — one 64-byte envelope, one page, three imports (`act`, `recv`, `rand`).
+- **Efficient** — guest writes a single Action slot; no pointer args or dozens of syscalls.
+- **Extensible** — new action `kind` values and appended Self fields without breaking old modules.
+
+Full spec (memory map, gas, costs): internal [host ABI v2](https://github.com/tsuberim/terrarium/blob/main/docs/internal/engineering/sim/host-abi.md).
 
 ## Module contract
 
-- Import namespace `"terrarium"`
-- Export `(func "main")` — host starts `main` once per creature life and resumes the same fiber each sim tick
-- Export `(memory "memory")` if using `recv`, `signal_to`, or `sense` (scratch bytes at ptr)
+| Export | Role |
+|--------|------|
+| `memory` | ≥ 8 KiB linear memory |
+| `main` | `() -> ()` — resumed each sim tick until slice ends |
 
-**Slice execution.** Each tick runs until the first successful world action (then suspends with that one action), opcode gas runs out (suspend, stay alive), or `main` returns / you `break` out of the program loop (suicide). Sensing, sleep, and reads are unlimited within gas.
+## Imports
 
-## Host syscalls
+| Import | Effect |
+|--------|--------|
+| `act()` | Read guest **Action** slot (64 B); queue one world action; yield on success |
+| `recv()` | Pop inbox into host-written **Inbox** slot; returns 1 if message |
+| `rand()` | Pseudorandom u64 (seed: creature id + tick) |
 
-| Import | Signature | Effect |
-|--------|-----------|--------|
-| `sleep` | `() -> ()` | No-op, zero cost |
-| `energy` | `() -> i64` | Current energy |
-| `health` | `() -> i64` | Current health |
-| `pos_x` / `pos_y` | `() -> i32` | Axial q/r position |
-| `facing` | `() -> i32` | Body facing 0–5 |
-| `rotate` | `(i32 delta) -> i32` | Turn by delta hex steps |
-| `sense` | `(i32 dq, i32 dr, i32 ptr) -> i32` | Write cell snapshot at ptr |
-| `move` | `(i32 rel) -> i32` | Step forward (`rel=0`) |
-| `dig` / `place` | `(i32 rel) -> i32` | Modify forward cell |
-| `eat` | `(i32 rel) -> i32` | Eat forward corpse or food |
-| `hit` | `(i32 rel) -> i32` | Damage forward creature |
-| `spawn` | `(i32 rel, i32 energy) -> i32` | Bud clone on forward empty cell |
-| `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
-| `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal |
-| `recv` | `(i32 ptr) -> i32` | Read signal into ptr |
-| `random_byte` | `() -> i32` | Pseudorandom 0–255 |
-| `uptime` | `() -> i32` | Ticks alive |
+Reads (self, tiles, vision, init) are **memory only** — host refreshes each tick.
 
-## Tile kinds
+## Slice execution
 
-`empty=0`, `solid=1`, `creature=2`, `corpse=3`, `food=4`
+Each tick runs until: first successful `act()` (suspend with one action), opcode **gas** exhausted (suspend), or `main` returns (**suicide**).
 
-## Gas
+## Gas & energy (summary)
 
-Each tick gets a gas budget (default 10_000 opcodes). Fuel exhaustion suspends; host traps for out-of-energy or bugs → death.
+| Cost | Default |
+|------|---------|
+| Opcode gas | 1 energy per WASM opcode, max 25 000 opcodes/tick |
+| Move / dig / place / hit / rotate | +25 000 energy each (`act` surcharge) |
+| Health regen (idle) | +25 000 when healing |
+| Corpse floor | 1 000 000 energy — at or below → death |
 
-Forward actions cost separate energy beyond opcode gas.
+Eat and spawn **transfer** energy; signal/broadcast have no extra surcharge beyond gas.
 
-See also: [WAT reference](/reference/wat) for raw module authoring.
+See [Energy & glims](/concepts/energy) for the player-facing economy.
+
+## Authoring
+
+Use **Creature Studio** (Rust → WASM) or upload WASM via deploy. There are no bundled example programs in the repo.

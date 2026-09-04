@@ -1,7 +1,5 @@
 .agents/
 /target
-/strategies/target
-/strategies/__pycache__/
 .env
 *.db
 .firebase/

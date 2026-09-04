@@ -1,9 +1,9 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
-use terrarium_sim::{compile_wat, host, vm::Creature, WatError, CORPSE_ENERGY};
-use uuid::Uuid;
+use terrarium_sim::{compile_wat, host, vm::Creature, Payload, WatError, CORPSE_ENERGY};
 
 use crate::accounts::{account_credits, ensure_account};
+use crate::ids::next_global_id;
 use crate::state::AppState;
 
 const MAX_CREATURE_CODE_LEN: usize = 32_768;
@@ -12,7 +12,8 @@ const MAX_WASM_B64_LEN: usize = 96 * 1024;
 
 #[derive(Serialize)]
 pub struct DeployResponse {
-    pub id: String,
+    #[serde(with = "crate::wire::serde_u64")]
+    pub id: u64,
     pub x: i64,
     pub y: i64,
     pub energy: i64,
@@ -82,7 +83,7 @@ pub async fn deploy_creature(
     }
 
     let cost = CORPSE_ENERGY + extra;
-    let id = Uuid::new_v4().to_string();
+    let id = next_global_id(&state.db).await.map_err(deploy_internal)?;
     let energy = cost;
 
     if !state.engine.is_deployable(x, y) {
@@ -116,10 +117,11 @@ pub async fn deploy_creature(
     let sim = state.engine.sim_config();
 
     sqlx::query(
-        "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, born_tick, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, x'')",
+        "INSERT INTO creatures (id, owner_uid, owner_id, x, y, energy, health, max_health, code, bytecode, born_tick, facing, pc, stack) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, x'')",
     )
-    .bind(&id)
+    .bind(id as i64)
     .bind(uid)
+    .bind(id as i64)
     .bind(x)
     .bind(y)
     .bind(energy)
@@ -144,8 +146,9 @@ pub async fn deploy_creature(
     state
         .engine
         .insert_creature(Creature {
-            id: id.clone(),
+            id,
             owner_uid: uid.to_string(),
+            owner_id: id,
             x: x as i32,
             y: y as i32,
             energy,
@@ -159,6 +162,7 @@ pub async fn deploy_creature(
             death_reason: None,
             born_tick: born_tick as u64,
             facing: 0,
+            init: Payload::default(),
         })
         .map_err(deploy_internal)?;
 

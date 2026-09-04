@@ -24,7 +24,7 @@ pub enum WorldTile {
 }
 
 impl WorldTile {
-    pub fn sense_kind(self) -> i32 {
+    pub fn sense_kind(self) -> u64 {
         match self {
             WorldTile::Solid => tile::SOLID,
             WorldTile::Corpse { .. } => tile::CORPSE,
@@ -100,7 +100,7 @@ pub fn place_corpse(
     }
 }
 
-pub fn set_cell(tiles: &mut WorldTiles, dirty: &mut TileDirty, x: i32, y: i32, kind: i32) {
+pub fn set_cell(tiles: &mut WorldTiles, dirty: &mut TileDirty, x: i32, y: i32, kind: u64) {
     if kind == tile::EMPTY {
         if tiles.remove(&(x, y)).is_some() {
             mark_tile(dirty, x, y);
@@ -111,7 +111,7 @@ pub fn set_cell(tiles: &mut WorldTiles, dirty: &mut TileDirty, x: i32, y: i32, k
     }
 }
 
-pub fn sense_kind(tiles: &WorldTiles, x: i32, y: i32, creature: bool) -> i32 {
+pub fn sense_kind(tiles: &WorldTiles, x: i32, y: i32, creature: bool) -> u64 {
     if creature {
         return tile::CREATURE;
     }

@@ -9,6 +9,5 @@ pub extern "C" fn tick() {
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
-    terrarium_sdk::sleep();
     loop {}
 }

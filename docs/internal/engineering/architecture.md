@@ -1,6 +1,6 @@
 # Architecture
 
-System design for contributors. **Shipped API/UX:** [../product/requirements.md](../product/requirements.md) §13–14.
+System design for contributors. **Shipped API/UX:** [../product/requirements.md](../product/requirements.md) §14–15.
 
 Terrarium is a single authoritative world server with many read-only spectators. The design separates **simulation**, **fan-out**, and **persistence** so each can scale independently.
 
@@ -75,7 +75,9 @@ The sim thread uses wall-clock scheduling:
 
 ## Wire protocol
 
-Connect: `GET /api/v1/world/ws`
+Connect: `GET /api/v1/world/ws` (spectator — read-only, **no auth**; client messages except `Ping`/`Close` are ignored)
+
+**External control** (separate, **planned**): `GET /api/v1/control/ws?creature_id=<u64>` — **API key only** (`Bearer tr_…`). Same 64-byte envelope as creature `recv` / signal. See [external-control.md](external-control.md).
 
 **Full delta** (connect + lag recovery — same shape as tick delta, `full: true`):
 
@@ -116,7 +118,7 @@ Connect: `GET /api/v1/world/ws`
 ```
 
 - **`actions`** — explicit per-creature motion (`move`, `rotate`, `eat`, `hit`); client animates these.
-- **`events`** — FX and narrative (`death`, `spawn`, `eat`, `hit`, `signal`); include render fields (death stats, `tile_kind` on eat, spawn parent position).
+- **`events`** — FX and narrative (`death`, `spawn`, `eat`, `hit`, `signal`); include render fields (death stats, `tile_kind` on eat, spawn parent position). **`signal` events carry no inbox payload** — only sender position and optional target id (see [external-control.md](external-control.md)).
 - Empty upsert/remove arrays = heartbeat; client still advances interpolation clock.
 
 ## When sim complexity grows

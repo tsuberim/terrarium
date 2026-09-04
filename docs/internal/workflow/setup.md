@@ -79,4 +79,3 @@ Open http://localhost:5173. Stop: Ctrl+C or `./scripts/dev-stop.sh`.
 |--------|-----|
 | `run-auth-emulator.sh` | Auth emulator only |
 | `run-compile-worker.sh` | Compile worker only |
-| `build-strategies.sh` | Sync strategy examples |

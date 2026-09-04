@@ -1,24 +1,25 @@
 import type { WorldEvent } from "./api";
 import { formatDeathReason } from "./death";
 import { formatGlimString } from "./glim";
+import { shortId } from "./wireIds";
 
 export type TimestampedEvent = WorldEvent & { at: number };
 
 export function formatWorldEvent(event: WorldEvent): string {
   switch (event.type) {
     case "death":
-      return `${event.creature_id.slice(0, 8)} died — ${formatDeathReason(event.reason)}`;
+      return `${shortId(event.creature_id)} died — ${formatDeathReason(event.reason)}`;
     case "hit":
-      return `${event.actor_id.slice(0, 8)} hit ${event.victim_id.slice(0, 8)} (−${event.damage} hp)`;
+      return `${shortId(event.actor_id)} hit ${shortId(event.victim_id)} (−${event.damage} hp)`;
     case "eat":
-      return `${event.actor_id.slice(0, 8)} ate ${formatGlimString(event.energy)}`;
+      return `${shortId(event.actor_id)} ate ${formatGlimString(event.energy)}`;
     case "spawn":
-      return `${event.parent_id.slice(0, 8)} budded ${event.creature_id.slice(0, 8)}`;
+      return `${shortId(event.parent_id)} budded ${shortId(event.creature_id)}`;
     case "signal":
       if (event.broadcast) {
-        return `${event.from_id.slice(0, 8)} ping 0x${event.byte.toString(16).padStart(2, "0")}`;
+        return `${shortId(event.from_id)} broadcast`;
       }
-      return `${event.from_id.slice(0, 8)} → ${event.to_id?.slice(0, 8) ?? "?"} sig`;
+      return `${shortId(event.from_id)} → ${event.to_id != null ? shortId(event.to_id) : "?"} sig`;
     default:
       return "world event";
   }

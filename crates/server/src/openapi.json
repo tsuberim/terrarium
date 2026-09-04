@@ -15,7 +15,8 @@
   "tags": [
     { "name": "public", "description": "No authentication required" },
     { "name": "account", "description": "Account and API keys" },
-    { "name": "world", "description": "Simulation state" }
+    { "name": "world", "description": "Simulation state" },
+    { "name": "control", "description": "External creature control (API key only)" }
   ],
   "components": {
     "securitySchemes": {
@@ -42,8 +43,13 @@
         "type": "object",
         "properties": {
           "uid": { "type": "string" },
-          "credits": { "type": "integer", "format": "int64" }
-        }
+          "credits": { "type": "integer", "format": "int64" },
+          "account_creature_id": {
+            "type": "string",
+            "description": "Stable u64 creature id for this account (same namespace as deployed creatures)"
+          }
+        },
+        "required": ["uid", "credits", "account_creature_id"]
       },
       "Creature": {
         "type": "object",
@@ -179,6 +185,28 @@
         "x-hidden": true,
         "responses": {
           "101": { "description": "Switching Protocols" }
+        }
+      }
+    },
+    "/v1/control/ws": {
+      "get": {
+        "tags": ["control"],
+        "summary": "Creature control WebSocket",
+        "description": "Attach external logic to a creature you own. **API key only** (`tr_…`); Firebase session tokens are rejected. Query: `creature_id` (u64). Messages: `signal`, `broadcast`, `recv` with 64-byte envelope JSON.",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "creature_id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "description": "u64 creature id (decimal string)" }
+          }
+        ],
+        "responses": {
+          "101": { "description": "Switching Protocols" },
+          "401": { "description": "Unauthorized or wrong auth type" },
+          "403": { "description": "Creature not owned by this account" },
+          "404": { "description": "Creature not found" }
         }
       }
     },

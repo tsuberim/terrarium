@@ -39,6 +39,10 @@ Known gaps, shortcuts, and cleanup work. **Not** product decisions — those liv
 | TD-SIM-4 | **P2** | Energy ledger not exposed on public wire | External tools can't audit deflation | Internal-only by design; revisit if we ship analytics |
 | TD-SIM-5 | **P2** | Food/node tuning constants TBD | Economy balance unproven at scale | energy-budget.md constants table |
 | TD-SIM-6 | **P2** | Local corrupt SQLite → `UNIQUE constraint failed: creatures.x,y` | Dev confusion | Document reset; optional startup integrity check |
+| TD-SIM-7 | **P1** | ABI v2 **u64** creature ids in sim; server wire/DB still UUID strings | External control + ABI docs ahead of server | **Done** — migration 011 + wire string encoding |
+| TD-SIM-8 | **P1** | Deploy does not set sim `owner_id` / Init on place | Spawn owner chain broken for deployed creatures | **Done** — deploy sets `owner_id = id` |
+| TD-SIM-9 | **P2** | Creature inbox not persisted | Signals lost on restart | Accept for v1 or persist inbox in checkpoint |
+| TD-EXT-1 | **P1** | No control WS or sim inject/fan-out bridge | External signal/recv (PRD §13) blocked | **Done** — `/v1/control/ws` + sim bridge |
 
 ---
 
@@ -51,6 +55,7 @@ Known gaps, shortcuts, and cleanup work. **Not** product decisions — those liv
 | TD-UI-3 | **P1** | Studio closed → `pointer-events: none` on shell | Clicks silently fail | Open-by-default for signed-in, or visible disabled state |
 | TD-UI-4 | **P2** | No visual regression / screenshot QA | Layout regressions caught late | Playwright screenshots (out of scope v1 per qa/README) |
 | TD-UI-5 | **P2** | Dev panel (sim config) is dev-only with no prod guard beyond build | Accidental exposure if misconfigured | Keep behind `DEV_MODE`; audit env in prod deploy |
+| TD-UI-6 | **P2** | `api.ts` `WorldEvent.signal` still documents legacy `byte` field | Type drift vs sim (metadata-only signal events) | Align with server `wire.rs` when id migration lands |
 
 ---
 
@@ -86,7 +91,7 @@ Known gaps, shortcuts, and cleanup work. **Not** product decisions — those liv
 
 | ID | Priority | Debt | Impact | Direction |
 |----|----------|------|--------|-----------|
-| TD-CODE-1 | **P2** | `strategies/` → WAT sync is manual (`build-strategies.sh`) | Drift if someone edits Rust without sync | CI compiles strategies; run `build-strategies.sh` locally when editing |
+| TD-CODE-1 | **P2** | `strategies/` → WAT sync is manual (`build-strategies.sh`) | Drift if someone edits Rust without sync | **Done** — removed; no bundled examples |
 | TD-CODE-2 | **P2** | OpenAPI deploy `code` field clarified | Secondary path unclear | **Done** |
 | TD-CODE-3 | **P2** | Two SDKs (Rust in-game, Zig external) | Story split | **Done** — Rust SDK + Studio primary; WASM upload + API keys for external |
 | TD-CODE-4 | **P2** | Uncommitted large feature branch (Studio, QA, auth emulator) | Main may lag docs | Land PR; docs already ahead of main |
@@ -107,9 +112,10 @@ Product direction open in PRD §16. Engineering debt once product decides:
 ## Suggested paydown order
 
 1. **TD-INF-1** — persistent prod DB (when prod should be real)
-2. **TD-INF-4** — prod compile worker always-on
-3. **TD-SIM-1 + TD-SIM-2** — before pushing entity count
-4. **TD-QA-3** — pin deploy cell in API smoke — **Done**
+2. **TD-SIM-7 + TD-EXT-1** — u64 ids + control WS (before external control)
+3. **TD-INF-4** — prod compile worker always-on
+4. **TD-SIM-1 + TD-SIM-2** — before pushing entity count
+5. **TD-QA-3** — pin deploy cell in API smoke — **Done**
 
 ---
 

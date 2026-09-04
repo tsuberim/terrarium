@@ -31,18 +31,7 @@ Energy is the sole resource. It enters when players pay for credits (1:1 with in
 
 Cell types, sensing, actions, deploy/spawn, economy tables → **PRD §4–6**.
 
----
-
-## Signal ecosystem (showcase)
-
-Seeded examples use two signal bytes for emergent predator/prey dynamics:
-
-| Byte | Emitter | Effect |
-|------|---------|--------|
-| `0x01` | Prey | Alarm — attracts hawks/scavengers |
-| `0x02` | Predator | Hunt ping while chasing |
-
-Details: PRD §4.3, `strategies/`. Player how-to: [public Mintlify](https://terrarium.mintlify.app/getting-started/studio).
+Player how-to: [public Mintlify](https://terrarium.mintlify.app/getting-started/studio).
 
 ---
 

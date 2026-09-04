@@ -2,14 +2,45 @@
 
 use std::collections::{HashMap, HashSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use terrarium_sim::{
     vm::Creature, CreatureAction, DeathReason, SimConfig, WorldEvent, WorldTile, WorldTiles,
 };
 
+pub mod serde_u64 {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(v: &u64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&v.to_string())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum NumOrStr {
+            Num(u64),
+            Str(String),
+        }
+        match NumOrStr::deserialize(d)? {
+            NumOrStr::Num(n) => Ok(n),
+            NumOrStr::Str(s) => s.parse().map_err(serde::de::Error::custom),
+        }
+    }
+}
+
+pub fn deserialize_u64<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+    serde_u64::deserialize(d)
+}
+
+fn serialize_u64_vec<S: Serializer>(v: &[u64], s: S) -> Result<S::Ok, S::Error> {
+    let strings: Vec<String> = v.iter().map(|id| id.to_string()).collect();
+    strings.serialize(s)
+}
+
 #[derive(Clone, Serialize)]
 pub struct CreaturePublic {
-    pub id: String,
+    #[serde(with = "serde_u64")]
+    pub id: u64,
     pub x: i64,
     pub y: i64,
     pub energy: i64,
@@ -44,7 +75,8 @@ pub enum WorldMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         sim_config: Option<SimConfig>,
         creatures_upsert: Vec<CreaturePublic>,
-        creatures_remove: Vec<String>,
+        #[serde(serialize_with = "serialize_u64_vec")]
+        creatures_remove: Vec<u64>,
         tiles_upsert: Vec<TilePublic>,
         tiles_remove: Vec<[i64; 2]>,
         actions: Vec<CreatureAction>,
@@ -56,7 +88,7 @@ impl WorldMessage {
     pub fn tick_delta(
         tick: u64,
         creatures_upsert: Vec<CreaturePublic>,
-        creatures_remove: Vec<String>,
+        creatures_remove: Vec<u64>,
         tiles_upsert: Vec<TilePublic>,
         tiles_remove: Vec<[i64; 2]>,
         actions: Vec<CreatureAction>,
@@ -80,7 +112,7 @@ impl WorldMessage {
 
 pub fn creature_public(c: &Creature) -> CreaturePublic {
     CreaturePublic {
-        id: c.id.clone(),
+        id: c.id,
         x: c.x as i64,
         y: c.y as i64,
         energy: c.energy,
@@ -130,15 +162,15 @@ pub fn tiles_public(tiles: &WorldTiles) -> Vec<TilePublic> {
 }
 
 pub fn build_creature_delta(
-    before: &HashMap<String, (i32, i32, i64, i32, i32, u8)>,
+    before: &HashMap<u64, (i32, i32, i64, i32, i32, u8)>,
     after: &[Creature],
-) -> (Vec<CreaturePublic>, Vec<String>) {
-    let after_ids: HashSet<&str> = after.iter().map(|c| c.id.as_str()).collect();
+) -> (Vec<CreaturePublic>, Vec<u64>) {
+    let after_ids: HashSet<u64> = after.iter().map(|c| c.id).collect();
 
     let mut creatures_remove = Vec::new();
     for id in before.keys() {
-        if !after_ids.contains(id.as_str()) {
-            creatures_remove.push(id.clone());
+        if !after_ids.contains(id) {
+            creatures_remove.push(*id);
         }
     }
 

@@ -1,0 +1,51 @@
+---
+title: External control
+description: Attach external logic to your creatures with an API key
+---
+
+Use an **API key** to open a WebSocket to a creature you own and exchange **signal / recv** messages — the same 64-byte **envelope** format as the [Host ABI](/reference/host-abi).
+
+## Prerequisites
+
+1. Sign in to Terrarium and mint an API key in Studio (**Settings → API keys**).
+2. Deploy a creature you own.
+3. Connect with the secret (`tr_…`) — **not** your Google session token.
+
+```bash
+# Example (conceptual)
+wscat -c "wss://your-host/api/v1/control/ws?creature_id=9001" \
+  -H "Authorization: Bearer tr_your_secret"
+```
+
+## Messages
+
+**You receive** when your creature gets a signal:
+
+```json
+{ "type": "recv", "sender": 42, "envelope": { "kind": 1, "pad": 0, "words": ["0","0","0","0","0","0","0"] } }
+```
+
+**You send** a directed signal:
+
+```json
+{ "type": "signal", "target": 99, "envelope": { "kind": 8, "pad": 0, "words": ["99", "0", "0", "0", "0", "0", "0"] } }
+```
+
+**Broadcast**:
+
+```json
+{ "type": "broadcast", "envelope": { "kind": 9, "pad": 0, "words": ["1", "0", "0", "0", "0", "0", "0"] } }
+```
+
+Your account also has an **`account_creature_id`** (u64) — a stable id in the same namespace, useful as signal sender/target in custom protocols.
+
+## Spectator vs control
+
+| WebSocket | Auth | Purpose |
+|-----------|------|---------|
+| `/v1/world/ws` | Optional | Watch the map (read-only) |
+| `/v1/control/ws` | **API key required** | Signal/recv for **your** creature |
+
+Revoke keys anytime in Studio. Control access dies immediately.
+
+> **Status:** shipped — use an API key (`tr_…`), not a Firebase session token.
