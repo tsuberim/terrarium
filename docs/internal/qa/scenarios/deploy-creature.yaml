@@ -9,12 +9,13 @@ steps:
       e2eState:
         signedIn: true
         studioOpen: true
-  - click: e2e-studio-test
+  - click: e2e-studio-run-all
   - waitFor:
       e2eState:
         testing: false
         wasmReady: true
-      timeout: 30000
+        allTestsPassed: true
+      timeout: 60000
   - note: Pick deploy cell on map BEFORE opening deploy dialog (modal blocks mis-aimed clicks)
   - clickMap: {}
   - assert:
