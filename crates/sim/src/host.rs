@@ -1,10 +1,16 @@
 //! Host syscalls for creature WASM modules.
 
+use std::cell::Cell;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::future::Future;
+use std::hash::{Hash, Hasher};
+use std::pin::Pin;
 use std::sync::{Mutex, OnceLock};
+use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use uuid::Uuid;
-use wasmtime::{Caller, Config, Engine, Error, Linker, Module, Store};
+use wasmtime::{Caller, Config, Engine, Error, Linker, Module, Store, TypedFunc};
 
 use crate::abi::{RECV_STRUCT_SIZE, SENSE_STRUCT_SIZE};
 use crate::energy_ledger::EnergyLedger;
@@ -12,6 +18,101 @@ use crate::events::DeathReason;
 use crate::sim_config::SimConfig;
 use crate::vm::{mark_dead, Creature, Signal, Snapshot};
 use crate::world_tile::{sense_kind, WorldTile, WorldTiles};
+
+/// One poll pending, one poll ready — yields the wasmtime fiber for this sim slice.
+struct YieldOnce {
+    done: bool,
+}
+
+impl YieldOnce {
+    fn new() -> Self {
+        Self { done: false }
+    }
+}
+
+impl Future for YieldOnce {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.done {
+            Poll::Ready(())
+        } else {
+            self.done = true;
+            Poll::Pending
+        }
+    }
+}
+
+fn block_on<F: Future>(future: F) -> F::Output {
+    let mut future = Box::pin(future);
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        match future.as_mut().poll(&mut cx) {
+            Poll::Ready(val) => return val,
+            Poll::Pending => {}
+        }
+    }
+}
+fn noop_waker() -> Waker {
+    const VTABLE: RawWakerVTable = RawWakerVTable::new(
+        |_| RawWaker::new(std::ptr::null(), &VTABLE),
+        |_| {},
+        |_| {},
+        |_| {},
+    );
+    unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SliceEnd {
+    None,
+    Action,
+}
+
+enum PollOutcome {
+    Suspended,
+    Halted,
+    Trap(Error),
+}
+
+impl std::fmt::Debug for PollOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Suspended => write!(f, "Suspended"),
+            Self::Halted => write!(f, "Halted"),
+            Self::Trap(err) => write!(f, "Trap({err})"),
+        }
+    }
+}
+
+const FUEL_YIELD_CHUNK: u64 = 512;
+
+fn fuel_yield_interval(budget: u64) -> u64 {
+    if budget <= FUEL_YIELD_CHUNK {
+        1
+    } else {
+        FUEL_YIELD_CHUNK
+    }
+}
+
+fn prepare_think_fuel(store: &mut Store<HostState>, budget: u64) -> Result<(), Error> {
+    store.fuel_async_yield_interval(Some(fuel_yield_interval(budget)))?;
+    store.set_fuel(budget.saturating_add(1))?;
+    Ok(())
+}
+
+fn poll_main_slice(
+    run: Pin<&mut (dyn Future<Output = std::result::Result<(), Error>> + Send)>,
+) -> PollOutcome {
+    let waker = noop_waker();
+    let mut cx = Context::from_waker(&waker);
+    match run.poll(&mut cx) {
+        Poll::Ready(Ok(())) => PollOutcome::Halted,
+        Poll::Ready(Err(err)) => PollOutcome::Trap(err),
+        Poll::Pending => PollOutcome::Suspended,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingAction {
@@ -48,7 +149,7 @@ pub enum PendingAction {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ThinkResult {
     pub action: Option<PendingAction>,
     pub suicide: bool,
@@ -68,12 +169,8 @@ impl ThinkResult {
         true
     }
 
-    pub fn take_suicide(&mut self) -> bool {
-        if self.tick_busy() {
-            return false;
-        }
+    pub fn mark_halted(&mut self) {
         self.suicide = true;
-        true
     }
 
     pub fn effective_facing(&self, facing: u8) -> u8 {
@@ -94,6 +191,7 @@ pub struct HostState {
     rng_seed: u64,
     rng_calls: u64,
     pub result: ThinkResult,
+    slice_end: SliceEnd,
 }
 
 // HostState is only used on the sim thread.
@@ -122,6 +220,14 @@ impl HostState {
 
     fn ledger(&mut self) -> &mut EnergyLedger {
         unsafe { &mut *self.ledger }
+    }
+
+    fn take_world_action(&mut self, action: PendingAction) -> bool {
+        if !self.result.take_action(action) {
+            return false;
+        }
+        self.slice_end = SliceEnd::Action;
+        true
     }
 
     fn pay_action(&mut self, cost: i64) -> Result<(), Error> {
@@ -253,202 +359,212 @@ pub fn link_host(linker: &mut Linker<HostState>) -> Result<(), wasmtime::Error> 
         |mut caller: Caller<'_, HostState>| Ok(i32::from(next_random(caller.data_mut()))),
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "move",
-        |mut caller: Caller<'_, HostState>, d: i32| {
-            HostState::require_forward(d)?;
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let extra = caller.data().config().move_extra;
-            caller.data_mut().pay_action(extra)?;
-            caller.data_mut().result.take_action(PendingAction::Move);
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (d,): (i32,)| {
+            Box::new(async move {
+                HostState::require_forward(d)?;
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let extra = caller.data().config().move_extra;
+                caller.data_mut().pay_action(extra)?;
+                caller.data_mut().take_world_action(PendingAction::Move);
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "dig",
-        |mut caller: Caller<'_, HostState>, d: i32| {
-            HostState::require_forward(d)?;
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let dir = caller.data().creature_ref().facing;
-            let extra = caller.data().config().dig_extra;
-            caller.data_mut().pay_action(extra)?;
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::Dig { dir });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (d,): (i32,)| {
+            Box::new(async move {
+                HostState::require_forward(d)?;
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let dir = caller.data().creature_ref().facing;
+                let extra = caller.data().config().dig_extra;
+                caller.data_mut().pay_action(extra)?;
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::Dig { dir });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "place",
-        |mut caller: Caller<'_, HostState>, d: i32| {
-            HostState::require_forward(d)?;
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let dir = caller.data().creature_ref().facing;
-            let extra = caller.data().config().place_extra;
-            caller.data_mut().pay_action(extra)?;
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::Place { dir });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (d,): (i32,)| {
+            Box::new(async move {
+                HostState::require_forward(d)?;
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let dir = caller.data().creature_ref().facing;
+                let extra = caller.data().config().place_extra;
+                caller.data_mut().pay_action(extra)?;
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::Place { dir });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "eat",
-        |mut caller: Caller<'_, HostState>, d: i32| {
-            HostState::require_forward(d)?;
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let dir = caller.data().creature_ref().facing;
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::Eat { dir });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (d,): (i32,)| {
+            Box::new(async move {
+                HostState::require_forward(d)?;
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let dir = caller.data().creature_ref().facing;
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::Eat { dir });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "hit",
-        |mut caller: Caller<'_, HostState>, d: i32| {
-            HostState::require_forward(d)?;
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let dir = caller.data().creature_ref().facing;
-            let extra = caller.data().config().hit_extra;
-            caller.data_mut().pay_action(extra)?;
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::Hit { dir });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (d,): (i32,)| {
+            Box::new(async move {
+                HostState::require_forward(d)?;
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let dir = caller.data().creature_ref().facing;
+                let extra = caller.data().config().hit_extra;
+                caller.data_mut().pay_action(extra)?;
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::Hit { dir });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "rotate",
-        |mut caller: Caller<'_, HostState>, delta: i32| {
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let extra = caller.data().config().rotate_extra;
-            caller.data_mut().pay_action(extra)?;
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::Rotate { delta });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (delta,): (i32,)| {
+            Box::new(async move {
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let extra = caller.data().config().rotate_extra;
+                caller.data_mut().pay_action(extra)?;
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::Rotate { delta });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "spawn",
-        |mut caller: Caller<'_, HostState>, d: i32, energy: i32| {
-            HostState::require_forward(d)?;
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let dir = caller.data().creature_ref().facing;
-            let energy = energy as i64;
-            let floor = caller.data().config().corpse_energy;
-            if energy <= floor {
-                mark_dead(caller.data_mut().creature(), DeathReason::SpawnEnergyTooLow);
-                return Err(Error::msg("spawn energy"));
-            }
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::Spawn { dir, energy });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (d, energy): (i32, i32)| {
+            Box::new(async move {
+                HostState::require_forward(d)?;
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let dir = caller.data().creature_ref().facing;
+                let energy = energy as i64;
+                let floor = caller.data().config().corpse_energy;
+                if energy <= floor {
+                    mark_dead(caller.data_mut().creature(), DeathReason::SpawnEnergyTooLow);
+                    return Err(Error::msg("spawn energy"));
+                }
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::Spawn { dir, energy });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
-        "terrarium",
-        "suicide",
-        |mut caller: Caller<'_, HostState>| {
-            caller.data_mut().result.take_suicide();
-            Ok(())
-        },
-    )?;
-
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "signal_broadcast",
-        |mut caller: Caller<'_, HostState>, byte: i32| {
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let (x, y) = {
-                let c = caller.data().creature_ref();
-                (c.x, c.y)
-            };
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::SignalBroadcast {
-                    byte: byte as u8,
-                    from_x: x,
-                    from_y: y,
-                });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (byte,): (i32,)| {
+            Box::new(async move {
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let (x, y) = {
+                    let c = caller.data().creature_ref();
+                    (c.x, c.y)
+                };
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::SignalBroadcast {
+                        byte: byte as u8,
+                        from_x: x,
+                        from_y: y,
+                    });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
-    linker.func_wrap(
+    linker.func_wrap_async(
         "terrarium",
         "signal_to",
-        |mut caller: Caller<'_, HostState>, ptr: i32, byte: i32| {
-            if caller.data().result.tick_busy() {
-                return Ok(0_i32);
-            }
-            let id_bytes = read_bytes(&mut caller, ptr, 16)?;
-            let to_id = uuid_from_bytes(&id_bytes).ok_or_else(|| Error::msg("bad uuid"))?;
-            let snapshot = caller.data().snapshot();
-            let Some(&(tx, ty)) = snapshot.positions.get(&to_id) else {
-                mark_dead(
-                    caller.data_mut().creature(),
-                    DeathReason::SignalUnknownTarget,
-                );
-                return Err(Error::msg("unknown target"));
-            };
-            let (sx, sy) = {
-                let c = caller.data().creature_ref();
-                (c.x, c.y)
-            };
-            if !in_sig_range(sx, sy, tx, ty, caller.data().config()) {
-                mark_dead(caller.data_mut().creature(), DeathReason::SignalOutOfRange);
-                return Err(Error::msg("out of signal range"));
-            }
-            caller
-                .data_mut()
-                .result
-                .take_action(PendingAction::SignalTo {
-                    to_id,
-                    byte: byte as u8,
-                    from_x: sx,
-                    from_y: sy,
-                });
-            Ok(0_i32)
+        |mut caller: Caller<'_, HostState>, (ptr, byte): (i32, i32)| {
+            Box::new(async move {
+                if caller.data().result.tick_busy() {
+                    return Ok(0_i32);
+                }
+                let id_bytes = read_bytes(&mut caller, ptr, 16)?;
+                let to_id = uuid_from_bytes(&id_bytes).ok_or_else(|| Error::msg("bad uuid"))?;
+                let snapshot = caller.data().snapshot();
+                let Some(&(tx, ty)) = snapshot.positions.get(&to_id) else {
+                    mark_dead(
+                        caller.data_mut().creature(),
+                        DeathReason::SignalUnknownTarget,
+                    );
+                    return Err(Error::msg("unknown target"));
+                };
+                let (sx, sy) = {
+                    let c = caller.data().creature_ref();
+                    (c.x, c.y)
+                };
+                if !in_sig_range(sx, sy, tx, ty, caller.data().config()) {
+                    mark_dead(caller.data_mut().creature(), DeathReason::SignalOutOfRange);
+                    return Err(Error::msg("out of signal range"));
+                }
+                caller
+                    .data_mut()
+                    .take_world_action(PendingAction::SignalTo {
+                        to_id,
+                        byte: byte as u8,
+                        from_x: sx,
+                        from_y: sy,
+                    });
+                YieldOnce::new().await;
+                Ok(0_i32)
+            })
         },
     )?;
 
@@ -597,10 +713,8 @@ fn gas_budget(creature: &Creature, config: &SimConfig) -> u64 {
     config.opcodes_per_tick.min(affordable)
 }
 
-fn charge_opcode_gas(store: &mut Store<HostState>, budget: u64, config: &SimConfig) {
-    let remaining = store.get_fuel().unwrap_or(0);
-    let used = budget.saturating_sub(remaining);
-    let cost = (used as i64).saturating_mul(config.energy_per_opcode);
+fn charge_opcode_gas(store: &mut Store<HostState>, opcodes_used: u64, config: &SimConfig) {
+    let cost = (opcodes_used as i64).saturating_mul(config.energy_per_opcode);
     let floor = store.data().config().corpse_energy;
     let energy = {
         let c = store.data_mut().creature();
@@ -628,6 +742,9 @@ fn host_trap_reason(msg: &str) -> DeathReason {
 }
 
 fn trap_death_reason(err: &Error) -> DeathReason {
+    if err.downcast_ref::<wasmtime::Trap>() == Some(&wasmtime::Trap::OutOfFuel) {
+        return DeathReason::OutOfGas;
+    }
     let msg = err.to_string();
     if msg.contains("all fuel consumed") || msg.contains("out of fuel") {
         return DeathReason::OutOfGas;
@@ -649,6 +766,80 @@ fn trap_death_reason(err: &Error) -> DeathReason {
     DeathReason::WasmTrap
 }
 
+type MainFiber = Pin<Box<dyn Future<Output = std::result::Result<(), Error>> + Send>>;
+
+struct CachedVm {
+    store: Store<HostState>,
+    main_fn: TypedFunc<(), ()>,
+    /// `call_async` future borrows `store`; take before any other `store` use.
+    main_run: Option<MainFiber>,
+}
+
+/// Stash a fiber that borrows our `Store` until the next tick resumes it.
+///
+/// SAFETY: callers must not touch `CachedVm::store` while `main_run` is `Some`.
+fn stash_main_run(
+    run: Pin<Box<dyn Future<Output = std::result::Result<(), Error>> + Send + '_>>,
+) -> MainFiber {
+    unsafe { std::mem::transmute(run) }
+}
+
+thread_local! {
+    static VM_CACHE_EPOCH: Cell<u64> = const { Cell::new(0) };
+}
+
+static VM_CACHE: OnceLock<Mutex<HashMap<String, CachedVm>>> = OnceLock::new();
+
+fn vm_cache_key(creature: &Creature, wasm: &[u8]) -> String {
+    let epoch = VM_CACHE_EPOCH.with(|e| e.get());
+    let mut hasher = DefaultHasher::new();
+    wasm.hash(&mut hasher);
+    format!(
+        "{epoch}:{}:{:p}:{:x}",
+        creature.id,
+        creature,
+        hasher.finish()
+    )
+}
+
+fn host_state_for_tick(
+    creature: &mut Creature,
+    snapshot: &Snapshot,
+    tiles: &WorldTiles,
+    config: &SimConfig,
+    ledger: &mut EnergyLedger,
+    tick: u64,
+) -> HostState {
+    HostState {
+        creature: creature as *mut Creature,
+        snapshot: snapshot as *const Snapshot,
+        tiles: tiles as *const WorldTiles,
+        config: config as *const SimConfig,
+        ledger: ledger as *mut EnergyLedger,
+        tick,
+        rng_seed: creature_rng_seed(&creature.id, tick),
+        rng_calls: 0,
+        result: ThinkResult::default(),
+        slice_end: SliceEnd::None,
+    }
+}
+
+/// Invalidate cached WASM stores for this thread (tests bump an epoch; no global drain).
+pub fn clear_vm_cache() {
+    VM_CACHE_EPOCH.with(|e| e.set(e.get().wrapping_add(1)));
+}
+
+/// Drop all cached WASM stores (sandbox reset).
+pub fn clear_all_vm_cache() {
+    VM_CACHE_EPOCH.with(|e| e.set(e.get().wrapping_add(1)));
+    if let Some(cache) = VM_CACHE.get() {
+        let mut cache = cache.lock().unwrap();
+        for (_, mut vm) in cache.drain() {
+            vm.main_run.take();
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run_creature_tick(
     engine: &Engine,
@@ -665,27 +856,53 @@ pub fn run_creature_tick(
         return ThinkResult::default();
     }
 
-    let mut linker: Linker<HostState> = Linker::new(engine);
-    if link_host(&mut linker).is_err() {
-        mark_dead(creature, DeathReason::InvalidProgram);
-        return ThinkResult::default();
+    let key = vm_cache_key(creature, &creature.wasm);
+    let cache = VM_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut cache = cache.lock().unwrap();
+
+    if !cache.contains_key(&key) {
+        let mut linker = Linker::new(engine);
+        if link_host(&mut linker).is_err() {
+            mark_dead(creature, DeathReason::InvalidProgram);
+            return ThinkResult::default();
+        }
+        let host = host_state_for_tick(creature, snapshot, tiles, config, ledger, tick);
+        let mut store = Store::new(engine, host);
+        let Ok(instance) = block_on(linker.instantiate_async(&mut store, module)) else {
+            mark_dead(creature, DeathReason::InvalidProgram);
+            return ThinkResult::default();
+        };
+        let main_fn = match instance.get_typed_func::<(), ()>(&mut store, "main") {
+            Ok(f) => f,
+            Err(_) => {
+                mark_dead(creature, DeathReason::InvalidProgram);
+                return ThinkResult::default();
+            }
+        };
+        cache.insert(
+            key.clone(),
+            CachedVm {
+                store,
+                main_fn,
+                main_run: None,
+            },
+        );
     }
 
-    let host = HostState {
-        creature: creature as *mut Creature,
-        snapshot: snapshot as *const Snapshot,
-        tiles: tiles as *const WorldTiles,
-        config: config as *const SimConfig,
-        ledger: ledger as *mut EnergyLedger,
-        tick,
-        rng_seed: creature_rng_seed(&creature.id, tick),
-        rng_calls: 0,
-        result: ThinkResult::default(),
-    };
+    let cached = cache.get_mut(&key).unwrap();
+    let mut run = cached.main_run.take();
+    let store_ptr = std::ptr::addr_of_mut!(cached.store);
 
-    let mut store = Store::new(engine, host);
+    unsafe {
+        *(*store_ptr).data_mut() =
+            host_state_for_tick(creature, snapshot, tiles, config, ledger, tick);
+    }
+
     let budget = gas_budget(creature, config);
     if budget == 0 {
+        if let Some(run) = run {
+            cached.main_run = Some(stash_main_run(run));
+        }
         mark_dead(
             creature,
             if creature.energy <= config.corpse_energy {
@@ -696,50 +913,80 @@ pub fn run_creature_tick(
         );
         return ThinkResult::default();
     }
-    if store.set_fuel(budget).is_err() {
-        mark_dead(creature, DeathReason::InvalidProgram);
-        return ThinkResult::default();
+
+    unsafe {
+        if let Err(err) = prepare_think_fuel(&mut *store_ptr, budget) {
+            if let Some(run) = run {
+                cached.main_run = Some(stash_main_run(run));
+            }
+            mark_dead(creature, DeathReason::InvalidProgram);
+            let _ = err;
+            return ThinkResult::default();
+        }
+
+        if run.is_none() {
+            run = Some(Box::pin(cached.main_fn.call_async(&mut *store_ptr, ())));
+        }
     }
+    let mut run = run.expect("main fiber started");
 
-    let instance = match linker.instantiate(&mut store, module) {
-        Ok(i) => i,
-        Err(_) => {
-            mark_dead(store.data_mut().creature(), DeathReason::InvalidProgram);
-            return ThinkResult::default();
+    // SAFETY: `run` holds the fiber's `store` borrow; use `store_ptr` only while polling.
+    let chunk = fuel_yield_interval(budget);
+    let mut opcodes_used = 0_u64;
+    let mut gas_trap_suspend = false;
+    let poll = loop {
+        if opcodes_used >= budget {
+            break PollOutcome::Suspended;
+        }
+        let poll = poll_main_slice(run.as_mut());
+        let has_action = unsafe { (*store_ptr).data().slice_end == SliceEnd::Action };
+        match poll {
+            PollOutcome::Suspended if has_action => break poll,
+            PollOutcome::Suspended => {
+                opcodes_used = opcodes_used.saturating_add(chunk).min(budget);
+            }
+            PollOutcome::Trap(err)
+                if err.downcast_ref::<wasmtime::Trap>() == Some(&wasmtime::Trap::OutOfFuel) =>
+            {
+                gas_trap_suspend = true;
+                break PollOutcome::Suspended;
+            }
+            _ => break poll,
         }
     };
-
-    let tick = match instance
-        .get_typed_func::<(), ()>(&mut store, "main")
-        .or_else(|_| instance.get_typed_func::<(), ()>(&mut store, "tick"))
-    {
-        Ok(f) => f,
-        Err(_) => {
-            mark_dead(store.data_mut().creature(), DeathReason::InvalidProgram);
-            return ThinkResult::default();
-        }
-    };
-
-    let trap_err = tick.call(&mut store, ()).err();
-    charge_opcode_gas(&mut store, budget, config);
-    if let Some(err) = trap_err {
-        let fuel_left = store.get_fuel().unwrap_or(0);
-        let c = store.data_mut().creature();
-        if c.death_reason.is_none() {
-            let reason = if fuel_left == 0 {
-                DeathReason::OutOfGas
+    let suspended = matches!(poll, PollOutcome::Suspended);
+    match &poll {
+        PollOutcome::Halted => unsafe {
+            (*store_ptr).data_mut().result.mark_halted();
+        },
+        PollOutcome::Trap(err) => unsafe {
+            let c = (*store_ptr).data_mut().creature();
+            if c.death_reason.is_some() {
+                c.alive = false;
             } else {
-                trap_death_reason(&err)
-            };
-            mark_dead(c, reason);
-        } else {
-            c.alive = false;
-        }
-    } else if !store.data().creature_ref().alive {
-        mark_dead(store.data_mut().creature(), DeathReason::EnergyFloor);
+                mark_dead(c, trap_death_reason(err));
+            }
+        },
+        PollOutcome::Suspended => {}
     }
 
-    store.into_data().result
+    let stash_fiber = suspended && !gas_trap_suspend;
+    if stash_fiber {
+        cached.main_run = Some(stash_main_run(run));
+    } else {
+        drop(run);
+    }
+
+    charge_opcode_gas(&mut cached.store, opcodes_used, config);
+
+    let result = cached.store.data().result.clone();
+    if !cached.store.data().creature_ref().alive
+        && cached.store.data().creature_ref().death_reason.is_none()
+    {
+        mark_dead(cached.store.data_mut().creature(), DeathReason::EnergyFloor);
+    }
+
+    result
 }
 
 pub fn wasm_engine() -> &'static Engine {
@@ -747,7 +994,9 @@ pub fn wasm_engine() -> &'static Engine {
     static ENGINE: OnceLock<Engine> = OnceLock::new();
     ENGINE.get_or_init(|| {
         let mut cfg = Config::new();
+        cfg.async_support(true);
         cfg.consume_fuel(true);
+        cfg.async_stack_size(4 << 20);
         Engine::new(&cfg).expect("wasm engine")
     })
 }
@@ -771,6 +1020,59 @@ pub fn cached_module(engine: &Engine, wasm: &[u8]) -> Option<Module> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::energy_ledger::EnergyLedger;
+    use crate::vm::Creature;
+    use crate::world_tile::WorldTiles;
+
+    #[test]
+    fn fuel_yield_pure_wasm_loop() {
+        const SPIN: &str = r#"
+(module
+  (func (export "main")
+    loop $l
+      i32.const 1
+      drop
+      br $l
+    end)
+)
+"#;
+        let config = SimConfig {
+            opcodes_per_tick: 64,
+            energy_per_opcode: 1,
+            ..SimConfig::default()
+        };
+        let mut creatures = vec![Creature {
+            id: "spin".into(),
+            energy: 10_000_000,
+            wasm: crate::compile_wat(SPIN).unwrap(),
+            code: SPIN.into(),
+            alive: true,
+            health: 100,
+            max_health: 100,
+            owner_uid: "u".into(),
+            parent_id: None,
+            inbox: vec![],
+            death_reason: None,
+            born_tick: 0,
+            facing: 0,
+            x: 0,
+            y: 0,
+        }];
+        clear_vm_cache();
+        crate::vm::run_tick(
+            &mut creatures,
+            &mut WorldTiles::new(),
+            &mut EnergyLedger::default(),
+            &config,
+            1,
+        );
+        assert_eq!(
+            creatures.len(),
+            1,
+            "{:?}",
+            creatures.first().and_then(|c| c.death_reason)
+        );
+    }
 
     #[test]
     fn think_result_single_action_slot() {
@@ -792,6 +1094,7 @@ mod tests {
             rng_seed: creature_rng_seed("creature-a", 99),
             rng_calls: 0,
             result: ThinkResult::default(),
+            slice_end: SliceEnd::None,
         };
         let first = next_random(&mut host);
         let second = next_random(&mut host);
@@ -806,6 +1109,7 @@ mod tests {
             rng_seed: creature_rng_seed("creature-a", 99),
             rng_calls: 0,
             result: ThinkResult::default(),
+            slice_end: SliceEnd::None,
         };
         assert_eq!(first, next_random(&mut again));
         assert_ne!(first, second);

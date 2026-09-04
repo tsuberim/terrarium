@@ -3,32 +3,33 @@ title: Rust SDK
 description: Write creatures in Rust — Creature Studio, compile worker, and CLI sandbox.
 ---
 
-The **Rust SDK** powers [Creature Studio](/getting-started/studio): edit body-only Rust, compile via the isolated worker, test sandbox scenarios, deploy WASM to the live world.
+The **Rust SDK** powers [Creature Studio](/getting-started/studio): edit a full Rust module, compile via the isolated worker, test in the Tests tab, deploy WASM to the live world.
 
 Repo: [sdk/rust/](https://github.com/tsuberim/terrarium/tree/main/sdk/rust)
 
 ## In-game (recommended)
 
 1. Sign in → **Studio** in the HUD
-2. Edit source above the `---` line (default: `let _ = move_forward();`)
-3. Add `#[terrarium::scenario]` blocks below `---` for sandbox tests
-4. **Test** → **Play** → pick map cell → **Deploy**
+2. **Source** tab — lifetime program: `loop { ... }` (or `pub fn main() { ... }`) plus module-level `static mut` for state
+3. **Tests** tab — `#[terrarium::test]` blocks for sandbox checks
+4. **Run test** → preview → pick map cell → **Deploy**
 
 See [Creature Studio](/getting-started/studio).
 
 ## Source shape
 
 ```rust
-let _ = move_forward();
----
-#[terrarium::scenario]
-fn open_field() {}
+use terrarium_sdk::prelude::*;
 
-#[terrarium::scenario(wall_ahead)]
-fn wall_blocked() {}
+loop {
+    let _ = move_forward();
+    let _ = rotate(1);
+}
 ```
 
-The compile worker wraps the body in a template crate (`body_wrap: true` on worker `/health`).
+The compile worker writes Source tab text to `user.rs`, wraps bare `loop { ... }` in `pub fn main()`, and adds `use terrarium_sdk::prelude::*` only if you omit it. Worker health reports `body_wrap: false`.
+
+**One action per tick** — only the first move/eat/rotate call in a tick runs. The host resumes your program each tick until a slice ends.
 
 ## Local compile worker
 

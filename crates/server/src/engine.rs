@@ -311,16 +311,19 @@ mod tests {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "tick")
-    i32.const 0
-    call $move
-    drop
-    call $sleep)
+  (func (export "main")
+    loop $l
+      i32.const 0
+      call $move
+      drop
+      call $sleep
+      br $l
+    end)
 )
 "#;
 
     #[tokio::test]
-    async fn tick_moves_creature_in_memory() {
+    async fn main_moves_creature_in_memory() {
         let engine = test_engine().await;
         seed_creature(&engine, "a", 0, 0, MOVE_EAST, 100_000_000).await;
 

@@ -72,6 +72,7 @@ pub struct SandboxRequest<'a> {
 }
 
 pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
+    host::clear_all_vm_cache();
     if req.wasm.is_empty() || req.wasm.len() > MAX_WASM_BYTES {
         return fail_result("invalid wasm size", 0);
     }

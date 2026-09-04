@@ -326,13 +326,6 @@ fn hunt_step(target: i32, strike: bool) -> bool {
     wander_step()
 }
 
-/// Scan vision for `target` kind; `strike` hits live creatures, else eats.
-pub fn tick(target: i32, strike: bool) {
-    if hunt_step(target, strike) {
-        finish_tick();
-    }
-}
-
 fn flee_from(dq: i32, dr: i32) -> bool {
     if sense_kind(dq, dr) != KIND_CREATURE {
         return false;

@@ -17,7 +17,6 @@ extern "C" {
     pub fn eat(rel: i32) -> i32;
     pub fn hit(rel: i32) -> i32;
     pub fn spawn(rel: i32, energy: i32) -> i32;
-    pub fn suicide();
     pub fn signal_broadcast(byte: i32) -> i32;
     pub fn signal_to(_ptr: i32, _byte: i32) -> i32;
     pub fn recv(_ptr: i32) -> i32;

@@ -60,7 +60,11 @@ COMPILE_BODY="$(mktemp)"
 SOURCE_FILE="$(mktemp)"
 TESTS_FILE="$(mktemp)"
 cat >"$SOURCE_FILE" <<'EOF'
-let _ = move_forward();
+use terrarium_sdk::prelude::*;
+
+loop {
+    let _ = move_forward();
+}
 EOF
 cat >"$TESTS_FILE" <<'EOF'
 #[terrarium::test]

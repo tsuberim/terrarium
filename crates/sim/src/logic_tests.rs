@@ -19,6 +19,9 @@ fn tick_world(
     config: &SimConfig,
     tick: u64,
 ) -> TickResult {
+    if tick == 1 {
+        crate::host::clear_vm_cache();
+    }
     let mut ledger = EnergyLedger::default();
     run_tick(creatures, tiles, &mut ledger, config, tick)
 }
@@ -94,25 +97,13 @@ fn opcode_gas_charges_energy() {
     tick_world(&mut creatures, &mut WorldTiles::new(), &config, 1);
     let spent = before - creatures[0].energy;
     assert!(
-        spent > 0 && spent < 20,
-        "idle should cost a few opcodes, spent={spent}"
+        spent > 0 && spent <= config.opcodes_per_tick as i64,
+        "idle should cost opcodes up to the tick budget, spent={spent}"
     );
 }
 
 #[test]
-fn out_of_gas_kills() {
-    let config = SimConfig {
-        opcodes_per_tick: 2,
-        energy_per_opcode: 1,
-        ..SimConfig::default()
-    };
-    let mut creatures = vec![creature_at(0, 0, PREY)];
-    tick_world(&mut creatures, &mut WorldTiles::new(), &config, 1);
-    assert!(creatures.is_empty(), "prey exceeds 2-opcode budget");
-}
-
-#[test]
-fn out_of_gas_records_reason() {
+fn out_of_gas_suspends_not_kills() {
     let config = SimConfig {
         opcodes_per_tick: 2,
         energy_per_opcode: 1,
@@ -120,31 +111,89 @@ fn out_of_gas_records_reason() {
     };
     let mut creatures = vec![creature_at(0, 0, PREY)];
     let result = tick_world(&mut creatures, &mut WorldTiles::new(), &config, 1);
-    assert!(creatures.is_empty(), "prey exceeds 2-opcode budget");
+    assert_eq!(creatures.len(), 1, "fuel exhaustion suspends the slice");
+    assert!(creatures[0].alive);
+    assert!(!result
+        .events
+        .iter()
+        .any(|e| matches!(e, crate::WorldEvent::Death { .. })));
+}
+
+#[test]
+fn out_of_gas_at_tick_start_still_kills() {
+    let config = SimConfig {
+        opcodes_per_tick: 100,
+        energy_per_opcode: 2_000_000,
+        corpse_energy: 1_000_000,
+        ..SimConfig::default()
+    };
+    let mut creatures = vec![Creature {
+        energy: 1_500_000,
+        wasm: compile_wat(IDLE).unwrap(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    let result = tick_world(&mut creatures, &mut WorldTiles::new(), &config, 1);
+    assert!(
+        creatures.is_empty(),
+        "unaffordable opcode budget at tick start kills"
+    );
     assert_eq!(result.events.len(), 1);
     match &result.events[0] {
-        crate::WorldEvent::Death {
-            creature_id,
-            owner_uid,
-            x,
-            y,
-            reason,
-            facing,
-            health,
-            max_health,
-            ..
-        } => {
-            assert_eq!(creature_id, "c");
-            assert_eq!(owner_uid, "u");
-            assert_eq!(*x, 0);
-            assert_eq!(*y, 0);
+        crate::WorldEvent::Death { reason, .. } => {
             assert_eq!(*reason, crate::DeathReason::OutOfGas);
-            assert_eq!(*facing, 0);
-            assert_eq!(*health, config.max_health);
-            assert_eq!(*max_health, config.max_health);
         }
         other => panic!("expected death, got {other:?}"),
     }
+}
+
+#[test]
+fn main_halt_on_return() {
+    const HALTS: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (func (export "main") (call $sleep))
+)
+"#;
+    let mut creatures = vec![Creature {
+        wasm: compile_wat(HALTS).unwrap(),
+        code: HALTS.into(),
+        ..creature_at(0, 0, IDLE)
+    }];
+    let result = tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert!(creatures.is_empty());
+    assert!(result.events.iter().any(
+        |e| matches!(e, crate::WorldEvent::Death { reason, .. } if *reason == DeathReason::Suicide)
+    ));
+}
+
+#[test]
+fn main_loop_resumes_move_then_rotate() {
+    const ALT: &str = r#"
+(module
+  (import "terrarium" "sleep" (func $sleep))
+  (import "terrarium" "move" (func $move (param i32) (result i32)))
+  (import "terrarium" "rotate" (func $rotate (param i32) (result i32)))
+  (func (export "main")
+    loop $l
+      i32.const 0
+      call $move
+      drop
+      i32.const 1
+      call $rotate
+      drop
+      call $sleep
+      br $l
+    end)
+)
+"#;
+    let mut creatures = vec![creature_at(0, 0, IDLE)];
+    creatures[0].wasm = compile_wat(ALT).unwrap();
+    tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 1);
+    assert_eq!(creatures[0].x, 1);
+    assert_eq!(creatures[0].facing, 0);
+    tick_world(&mut creatures, &mut WorldTiles::new(), &default_config(), 2);
+    assert_eq!(creatures[0].x, 1);
+    assert_eq!(creatures[0].facing, 1);
 }
 
 #[test]
@@ -171,7 +220,7 @@ fn one_action_per_tick_move_blocks_eat() {
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
   (import "terrarium" "eat" (func $eat (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 0
     call $move
     drop
@@ -227,7 +276,7 @@ fn one_action_per_tick_move_blocks_rotate() {
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
   (import "terrarium" "rotate" (func $rotate (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 0
     call $move
     drop
@@ -294,8 +343,10 @@ fn death_leaves_corpse_with_eighty_percent_energy() {
     match tiles.get(&(1, 0)) {
         Some(WorldTile::Corpse { energy, .. }) => {
             use crate::abi::corpse_yield_energy;
+            let max_think = config.opcodes_per_tick as i64 * config.energy_per_opcode;
+            let min_energy = prey_energy.saturating_sub(max_think);
             assert!(*energy <= corpse_yield_energy(prey_energy));
-            assert!(*energy >= corpse_yield_energy(prey_energy) - 10_000);
+            assert!(*energy >= corpse_yield_energy(min_energy).saturating_sub(10_000));
         }
         other => panic!("expected corpse at prey cell, got {other:?}"),
     }
@@ -366,7 +417,7 @@ fn eat_ignores_adjacent_creature() {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "eat" (func $eat (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 0
     call $eat
     drop
@@ -415,18 +466,18 @@ fn prey_flees_east_threat() {
 
 #[test]
 fn suicide_credits_human_owner() {
-    const SUICIDE_NOW: &str = r#"
+    const HALT_PROGRAM: &str = r#"
 (module
-  (import "terrarium" "suicide" (func $suicide))
-  (func (export "tick") (call $suicide))
+  (import "terrarium" "sleep" (func $sleep))
+  (func (export "main") (call $sleep))
 )
 "#;
     let mut tiles = empty_tiles();
     let mut creatures = vec![Creature {
         owner_uid: "human".into(),
         energy: 2_000_000,
-        wasm: compile_wat(SUICIDE_NOW).unwrap(),
-        code: SUICIDE_NOW.into(),
+        wasm: compile_wat(HALT_PROGRAM).unwrap(),
+        code: HALT_PROGRAM.into(),
         ..creature_at(0, 0, IDLE)
     }];
     let result = tick_world(&mut creatures, &mut tiles, &default_config(), 1);
@@ -472,7 +523,7 @@ fn uptime_reports_age_in_ticks() {
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "uptime" (func $uptime (result i32)))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     call $uptime
     i32.const 3
     i32.ne
@@ -504,10 +555,13 @@ fn random_byte_import_works() {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "random_byte" (func $rand (result i32)))
-  (func (export "tick")
-    call $rand
-    drop
-    call $sleep)
+  (func (export "main")
+    loop $l
+      call $rand
+      drop
+      call $sleep
+      br $l
+    end)
 )
 "#;
     let mut creatures = vec![Creature {
@@ -553,7 +607,7 @@ fn eat_food_transfers_energy() {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "eat" (func $eat (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 0
     call $eat
     drop
@@ -582,7 +636,7 @@ fn one_action_per_tick_rotate_blocks_eat() {
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "rotate" (func $rotate (param i32) (result i32)))
   (import "terrarium" "eat" (func $eat (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 3
     call $rotate
     drop

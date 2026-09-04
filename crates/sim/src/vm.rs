@@ -85,6 +85,10 @@ pub fn run_tick(
     config: &SimConfig,
     tick: u64,
 ) -> TickResult {
+    #[cfg(test)]
+    if tick == 1 {
+        host::clear_vm_cache();
+    }
     let destroyed_before = ledger.destroyed;
     let free_before = ledger.free_minted;
     let mut result = TickResult::default();
@@ -624,7 +628,7 @@ mod tests {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 0
     call $move
     drop
@@ -662,7 +666,7 @@ mod tests {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 0
     call $move
     drop
@@ -701,7 +705,7 @@ mod tests {
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     i32.const 1
     call $move
     drop

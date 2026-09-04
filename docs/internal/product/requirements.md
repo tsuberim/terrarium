@@ -86,7 +86,7 @@ From [vision.md](vision.md):
 |----|-------------|--------|
 | CRE-1 | Code immutable after deploy or spawn | **shipped** |
 | CRE-2 | Code private on wire; only owner sees source in Studio | **shipped** |
-| CRE-3 | At most **one action per tick** (move, rotate, eat, hit, dig, place, spawn, signal, suicide) | **shipped** |
+| CRE-3 | At most **one world action per sim tick** (move, rotate, eat, hit, dig, place, spawn, signal). First successful action **suspends** the slice; gas exhaustion suspends with no action. **`main` return / `break` from the program loop** ends the creature (suicide; not a world action). | **shipped** |
 | CRE-4 | `sleep` is free; creature chooses when to run WASM | **shipped** |
 | CRE-5 | Facing 0–5 (E, NE, NW, W, SW, SE) | **shipped** |
 | CRE-6 | Forward actions only on adjacent cell in facing direction | **shipped** |
@@ -102,7 +102,7 @@ From [vision.md](vision.md):
 | Dig / Place | Modify forward cell |
 | Spawn | Bud clone forward (parent pays energy) |
 | Signal | Broadcast or directed byte within `r_sig` |
-| Sleep / Suicide | Sleep free; suicide returns energy to owner |
+| Sleep / Halt | Sleep free; `break` / return from `main` ends the creature (energy payout) |
 
 ### 5.3 Sensing
 
@@ -187,7 +187,7 @@ Display unit: **glims** (◆). Internal scale: `GLIM_SCALE = 100_000` (= sim `EN
 | STU-1 | Slide-in panel from left; resizable width (persisted `studioWidthPct`) | **shipped** |
 | STU-2 | Resizable code/preview split (persisted `studioCodeHeightPct`) | **shipped** |
 | STU-3 | Rust Monaco editor with default example source | **shipped** |
-| STU-4 | Default source: `move_forward` body + `---` + `#[terrarium::scenario]` blocks | **shipped** |
+| STU-4 | Default source: lifetime program (`loop { ... }` or `pub fn main()`) + Tests tab DSL | **shipped** |
 | STU-5 | Live compile diagnostics (debounced) while editing | **shipped** |
 | STU-6 | **Test** — compile all scenarios, sandbox replay loop | **shipped** |
 | STU-7 | Sandbox preview: mini WorldCanvas, play/pause/stop, tick scrubber | **shipped** |
@@ -201,17 +201,20 @@ Display unit: **glims** (◆). Internal scale: `GLIM_SCALE = 100_000` (= sim `EN
 
 ### Default Rust source contract
 
-```rust
-let _ = move_forward();
----
-#[terrarium::scenario]
-fn open_field() {}
+**Source tab** — lifetime program (written to `user.rs`, wrapped in `pub fn main()` when needed):
 
-#[terrarium::scenario(wall_ahead)]
-fn wall_blocked() {}
+```rust
+use terrarium_sdk::prelude::*;
+
+loop {
+    let _ = move_forward();
+    let _ = rotate(1);
+}
 ```
 
-Compile-worker wraps body in SDK template (`body_wrap: true` on worker health).
+**Tests tab** — declarative `#[terrarium::test]` blocks (not compiled into WASM).
+
+Compile-worker injects `use terrarium_sdk::prelude::*` only when missing (`body_wrap: false` on worker health).
 
 ---
 
@@ -238,7 +241,7 @@ Compile-worker wraps body in SDK template (`body_wrap: true` on worker health).
 |----|-------------|--------|
 | CMP-1 | Isolated compile-worker service (`:8081`) | **shipped** |
 | CMP-2 | Server proxies `POST /v1/compile` to worker | **shipped** |
-| CMP-3 | Worker health exposes `body_wrap: true` | **shipped** |
+| CMP-3 | Worker health exposes `body_wrap: false` (full module, no body injection) | **shipped** |
 | CMP-4 | `POST /v1/sandbox/run` — WASM + scenario id + ticks → frames | **shipped** |
 | CMP-5 | Scenarios parsed from `#[terrarium::scenario]` in source | **shipped** |
 | CMP-6 | Compile-worker also deployable to Cloud Run (prod compile path) | **shipped** |

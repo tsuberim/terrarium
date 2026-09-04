@@ -231,7 +231,7 @@ export function CreatureStudio({
         .then((compiled) =>
           setDiagnostics([
             ...normalizeCompileDiagnostics(compiled.diagnostics),
-            ...lintSourceActions(liveSource),
+            ...lintSourceActions(),
           ]),
         )
         .catch(() => {
@@ -280,7 +280,7 @@ export function CreatureStudio({
     const compiled = await postCompile("rust", liveSource, liveTests);
     setDiagnostics([
       ...normalizeCompileDiagnostics(compiled.diagnostics),
-      ...lintSourceActions(liveSource),
+      ...lintSourceActions(),
     ]);
     if (!compiled.wasm_b64) {
       const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";

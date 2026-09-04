@@ -38,7 +38,11 @@ pub const ALL: &[ExampleProgram] = &[
 pub(crate) const IDLE: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
-  (func (export "tick") (call $sleep))
+  (func (export "main")
+    loop $l
+      call $sleep
+      br $l
+    end)
 )
 "#;
 
@@ -47,11 +51,14 @@ pub(crate) const RUNNER: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "tick")
-    i32.const 0
-    call $move
-    drop
-    call $sleep)
+  (func (export "main")
+    loop $l
+      i32.const 0
+      call $move
+      drop
+      call $sleep
+      br $l
+    end)
 )
 "#;
 
@@ -61,14 +68,17 @@ pub(crate) const BEACON: &str = r#"
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
   (import "terrarium" "signal_broadcast" (func $broadcast (param i32) (result i32)))
-  (func (export "tick")
-    i32.const 190
-    call $broadcast
-    drop
-    i32.const 0
-    call $move
-    drop
-    call $sleep)
+  (func (export "main")
+    loop $l
+      i32.const 190
+      call $broadcast
+      drop
+      i32.const 0
+      call $move
+      drop
+      call $sleep
+      br $l
+    end)
 )
 "#;
 
@@ -78,19 +88,18 @@ pub(crate) const KAMIKAZE: &str = r#"
   (import "terrarium" "sleep" (func $sleep))
   (import "terrarium" "energy" (func $energy (result i64)))
   (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (import "terrarium" "suicide" (func $suicide))
-  (func (export "tick")
-    call $energy
-    i64.const 3000000
-    i64.lt_s
-    if
-      call $suicide
-      return
-    end
-    i32.const 0
-    call $move
-    drop
-    call $sleep)
+  (func $main (export "main")
+    loop $run
+      call $energy
+      i64.const 3000000
+      i64.lt_s
+      if (return) end
+      i32.const 0
+      call $move
+      drop
+      call $sleep
+      br $run
+    end)
 )
 "#;
 
@@ -102,7 +111,7 @@ const COLONIST: &str = r#"
   (import "terrarium" "move" (func $move (param i32) (result i32)))
   (import "terrarium" "random_byte" (func $rand (result i32)))
   (import "terrarium" "spawn" (func $spawn (param i32 i32) (result i32)))
-  (func (export "tick")
+  (func (export "main")
     call $energy
     i64.const 10000000
     i64.le_s
@@ -155,12 +164,15 @@ pub(crate) const SCAVENGER: &str = r#"
   (global (;1;) i32 i32.const 1048988)
   (global (;2;) i32 i32.const 1048992)
   (export "memory" (memory 0))
-  (export "tick" (func $tick))
+  (export "main" (func $main))
   (export "__data_end" (global 1))
   (export "__heap_base" (global 2))
   (elem (;0;) (i32.const 1) func $_ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u32$GT$3fmt17hacc3ad28f4de0a4dE)
-  (func $tick (;12;) (type 2)
-    call $_ZN15strategy_hunter14scavenger_tick17haaa34e6990b5ca87E
+  (func $main (;12;) (type 2)
+    loop ;; label = @1
+      call $_ZN15strategy_hunter14scavenger_tick17haaa34e6990b5ca87E
+      br 0 (;@1;)
+    end
   )
   (func $_RNvCsj4CZ6flxxfE_7___rustc17rust_begin_unwind (;13;) (type 6) (param i32)
     call $_ZN15strategy_hunter4host5sleep17h937936acb95e37b2E
@@ -2586,12 +2598,15 @@ pub(crate) const PREY: &str = r#"
   (global (;1;) i32 i32.const 1048952)
   (global (;2;) i32 i32.const 1048960)
   (export "memory" (memory 0))
-  (export "tick" (func $tick))
+  (export "main" (func $main))
   (export "__data_end" (global 1))
   (export "__heap_base" (global 2))
   (elem (;0;) (i32.const 1) func $_ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u32$GT$3fmt17hacc3ad28f4de0a4dE)
-  (func $tick (;10;) (type 2)
-    call $_ZN15strategy_hunter9prey_tick17h74a7446dc3f74c04E
+  (func $main (;10;) (type 2)
+    loop ;; label = @1
+      call $_ZN15strategy_hunter9prey_tick17h74a7446dc3f74c04E
+      br 0 (;@1;)
+    end
   )
   (func $_RNvCsj4CZ6flxxfE_7___rustc17rust_begin_unwind (;11;) (type 6) (param i32)
     call $_ZN15strategy_hunter4host5sleep17h937936acb95e37b2E
@@ -5314,20 +5329,23 @@ pub(crate) const PREDATOR: &str = r#"
   (import "terrarium" "sense" (func $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E (;6;) (type 1)))
   (import "terrarium" "spawn" (func $_ZN15strategy_hunter4host5spawn17h1c054dc162b77db4E (;7;) (type 0)))
   (import "terrarium" "eat" (func $_ZN15strategy_hunter4host3eat17h998f6d8089554deaE (;8;) (type 4)))
-  (import "terrarium" "hit" (func $_ZN15strategy_hunter4host3hit17h862a6806f604c65cE (;9;) (type 4)))
-  (import "terrarium" "signal_broadcast" (func $_ZN15strategy_hunter4host16signal_broadcast17h575c2111c62c1639E (;10;) (type 4)))
+  (import "terrarium" "signal_broadcast" (func $_ZN15strategy_hunter4host16signal_broadcast17h575c2111c62c1639E (;9;) (type 4)))
+  (import "terrarium" "hit" (func $_ZN15strategy_hunter4host3hit17h862a6806f604c65cE (;10;) (type 4)))
   (table (;0;) 2 2 funcref)
   (memory (;0;) 17)
   (global $__stack_pointer (;0;) (mut i32) i32.const 1048576)
   (global (;1;) i32 i32.const 1048952)
   (global (;2;) i32 i32.const 1048960)
   (export "memory" (memory 0))
-  (export "tick" (func $tick))
+  (export "main" (func $main))
   (export "__data_end" (global 1))
   (export "__heap_base" (global 2))
   (elem (;0;) (i32.const 1) func $_ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u32$GT$3fmt17hacc3ad28f4de0a4dE)
-  (func $tick (;11;) (type 2)
-    call $_ZN15strategy_hunter13predator_tick17hdd4a25299cdb0f63E
+  (func $main (;11;) (type 2)
+    loop ;; label = @1
+      call $_ZN15strategy_hunter13predator_tick17hdd4a25299cdb0f63E
+      br 0 (;@1;)
+    end
   )
   (func $_RNvCsj4CZ6flxxfE_7___rustc17rust_begin_unwind (;12;) (type 6) (param i32)
     call $_ZN15strategy_hunter4host5sleep17h937936acb95e37b2E
@@ -6516,365 +6534,331 @@ pub(crate) const PREDATOR: &str = r#"
     end
     local.get 0
   )
-  (func $_ZN15strategy_hunter9hunt_step17h72996c21e679e15eE (;17;) (type 7) (param i32 i32)
-    (local i32 i32 i32 i32 i32)
-    i32.const 1
-    i32.const 0
-    i32.const 1048928
-    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-    drop
-    block ;; label = @1
-      block ;; label = @2
-        block ;; label = @3
-          block ;; label = @4
-            block ;; label = @5
-              block ;; label = @6
-                i32.const 0
-                i32.load offset=1048928
-                local.tee 2
-                local.get 0
-                i32.eq
-                br_if 0 (;@6;)
-                i32.const 1
-                i32.const -1
-                i32.const 1048928
-                call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                drop
-                i32.const 0
-                i32.load offset=1048928
-                local.get 0
-                i32.eq
-                br_if 0 (;@6;)
-                i32.const 0
-                i32.const -1
-                i32.const 1048928
-                call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                drop
-                block ;; label = @7
-                  i32.const 0
-                  i32.load offset=1048928
-                  local.get 0
-                  i32.ne
-                  br_if 0 (;@7;)
-                  i32.const 2
-                  local.set 0
-                  br 2 (;@5;)
-                end
-                i32.const -1
-                i32.const 0
-                i32.const 1048928
-                call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                drop
-                block ;; label = @7
-                  i32.const 0
-                  i32.load offset=1048928
-                  local.get 0
-                  i32.ne
-                  br_if 0 (;@7;)
-                  i32.const 3
-                  local.set 0
-                  br 2 (;@5;)
-                end
-                i32.const -1
-                i32.const 1
-                i32.const 1048928
-                call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                drop
-                block ;; label = @7
-                  i32.const 0
-                  i32.load offset=1048928
-                  local.get 0
-                  i32.ne
-                  br_if 0 (;@7;)
-                  i32.const 4
-                  local.set 0
-                  br 2 (;@5;)
-                end
-                i32.const 0
-                i32.const 1
-                i32.const 1048928
-                call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                drop
-                block ;; label = @7
-                  i32.const 0
-                  i32.load offset=1048928
-                  local.get 0
-                  i32.ne
-                  br_if 0 (;@7;)
-                  i32.const 5
-                  local.set 0
-                  br 2 (;@5;)
-                end
-                i32.const 1
-                local.set 3
-                loop ;; label = @7
-                  i32.const 0
-                  local.set 2
-                  loop ;; label = @8
-                    local.get 3
-                    local.get 2
-                    i32.const 1048928
-                    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                    drop
-                    block ;; label = @9
-                      i32.const 0
-                      i32.load offset=1048928
-                      local.get 0
-                      i32.ne
-                      br_if 0 (;@9;)
-                      local.get 3
-                      local.set 4
-                      br 7 (;@2;)
-                    end
-                    local.get 3
-                    local.get 2
-                    i32.const -1
-                    i32.add
-                    local.tee 2
-                    i32.add
-                    br_if 0 (;@8;)
-                  end
-                  local.get 3
-                  local.set 4
-                  loop ;; label = @8
-                    local.get 4
-                    local.get 2
-                    i32.const 1048928
-                    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                    drop
-                    i32.const 0
-                    i32.load offset=1048928
-                    local.get 0
-                    i32.eq
-                    br_if 6 (;@2;)
-                    local.get 4
-                    i32.const -1
-                    i32.add
-                    local.tee 4
-                    br_if 0 (;@8;)
-                  end
-                  i32.const 0
-                  local.set 5
-                  loop ;; label = @8
-                    local.get 5
-                    local.get 2
-                    i32.const 1048928
-                    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                    drop
-                    i32.const 0
-                    i32.load offset=1048928
-                    local.get 0
-                    i32.eq
-                    br_if 5 (;@3;)
-                    local.get 2
-                    i32.const 1
-                    i32.add
-                    local.set 2
-                    local.get 3
-                    local.get 5
-                    i32.const -1
-                    i32.add
-                    local.tee 5
-                    i32.add
-                    br_if 0 (;@8;)
-                  end
-                  local.get 3
-                  local.set 4
-                  loop ;; label = @8
-                    local.get 5
-                    local.get 2
-                    i32.const 1048928
-                    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                    drop
-                    i32.const 0
-                    i32.load offset=1048928
-                    local.get 0
-                    i32.eq
-                    br_if 5 (;@3;)
-                    local.get 2
-                    i32.const 1
-                    i32.add
-                    local.set 2
-                    local.get 4
-                    i32.const -1
-                    i32.add
-                    local.tee 4
-                    br_if 0 (;@8;)
-                  end
-                  i32.const 0
-                  local.set 6
-                  loop ;; label = @8
-                    local.get 5
-                    local.get 6
-                    i32.add
-                    local.tee 4
-                    local.get 2
-                    i32.const 1048928
-                    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                    drop
-                    i32.const 0
-                    i32.load offset=1048928
-                    local.get 0
-                    i32.eq
-                    br_if 6 (;@2;)
-                    local.get 3
-                    local.get 6
-                    i32.const 1
-                    i32.add
-                    local.tee 6
-                    i32.ne
-                    br_if 0 (;@8;)
-                  end
-                  local.get 5
-                  local.get 6
-                  i32.add
-                  local.set 4
-                  i32.const 0
-                  local.set 6
-                  loop ;; label = @8
-                    local.get 4
-                    local.get 2
-                    local.get 6
-                    i32.add
-                    local.tee 5
-                    i32.const 1048928
-                    call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
-                    drop
-                    i32.const 0
-                    i32.load offset=1048928
-                    local.get 0
-                    i32.eq
-                    br_if 7 (;@1;)
-                    local.get 4
-                    i32.const 1
-                    i32.add
-                    local.set 4
-                    local.get 3
-                    local.get 6
-                    i32.const -1
-                    i32.add
-                    local.tee 6
-                    i32.add
-                    br_if 0 (;@8;)
-                  end
-                  local.get 3
-                  i32.const 1
-                  i32.add
-                  local.tee 3
-                  i32.const 6
-                  i32.ne
-                  br_if 0 (;@7;)
-                end
-                call $_ZN15strategy_hunter11wander_step17ha908672c1f1e31deE
-                br 2 (;@4;)
-              end
-              local.get 2
-              local.get 0
-              i32.ne
-              local.set 0
-            end
-            block ;; label = @5
-              block ;; label = @6
-                call $_ZN15strategy_hunter4host6facing17hf13dd96bc0305814E
-                local.get 0
-                i32.ne
-                br_if 0 (;@6;)
-                local.get 1
-                br_if 1 (;@5;)
-                i32.const 0
-                call $_ZN15strategy_hunter4host3eat17h998f6d8089554deaE
-                drop
-                return
-              end
-              local.get 0
-              call $_ZN15strategy_hunter4host6facing17hf13dd96bc0305814E
-              i32.sub
-              i32.const 6
-              i32.rem_s
-              local.tee 0
-              i32.const 6
-              i32.add
-              local.get 0
-              local.get 0
-              i32.const 0
-              i32.lt_s
-              select
-              local.tee 0
-              i32.eqz
-              br_if 1 (;@4;)
-              local.get 0
-              local.get 0
-              i32.const -6
-              i32.add
-              local.get 0
-              i32.const 4
-              i32.lt_u
-              select
-              call $_ZN15strategy_hunter4host6rotate17h9dd28ac5cb3b3fdcE
-              drop
-              return
-            end
-            i32.const 0
-            call $_ZN15strategy_hunter4host3hit17h862a6806f604c65cE
-            drop
-            return
-          end
-          return
-        end
-        local.get 5
-        local.set 4
-      end
-      local.get 2
-      local.set 5
-    end
-    block ;; label = @1
-      block ;; label = @2
-        local.get 1
-        i32.eqz
-        br_if 0 (;@2;)
-        local.get 0
-        i32.const 2
-        i32.eq
-        br_if 1 (;@1;)
-      end
-      local.get 4
-      local.get 5
-      call $_ZN15strategy_hunter11step_toward17h164826cb30857a9dE
-      return
-    end
-    i32.const 2
-    call $_ZN15strategy_hunter4host16signal_broadcast17h575c2111c62c1639E
-    drop
-    local.get 4
-    local.get 5
-    call $_ZN15strategy_hunter11step_toward17h164826cb30857a9dE
-  )
-  (func $_ZN15strategy_hunter13predator_tick17hdd4a25299cdb0f63E (;18;) (type 2)
+  (func $_ZN15strategy_hunter13predator_tick17hdd4a25299cdb0f63E (;17;) (type 2)
+    (local i32 i32 i32 i32 i32 i32)
     block ;; label = @1
       call $_ZN15strategy_hunter11maybe_clone17h2c98f5d73388d033E
       br_if 0 (;@1;)
-      block ;; label = @2
+      i32.const 1
+      local.set 0
+      loop ;; label = @2
+        block ;; label = @3
+          i32.const 1
+          i32.const 0
+          call $_ZN15strategy_hunter9seek_food17hdc63cb46d6416604E
+          br_if 0 (;@3;)
+          i32.const 0
+          local.set 1
+          i32.const 1
+          i32.const 0
+          i32.const 1048928
+          call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+          drop
+          block ;; label = @4
+            i32.const 0
+            i32.load offset=1048928
+            i32.const 2
+            i32.eq
+            br_if 0 (;@4;)
+            i32.const 1
+            local.set 1
+            i32.const 1
+            i32.const -1
+            i32.const 1048928
+            call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+            drop
+            i32.const 0
+            i32.load offset=1048928
+            i32.const 2
+            i32.eq
+            br_if 0 (;@4;)
+            i32.const 0
+            i32.const -1
+            i32.const 1048928
+            call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+            drop
+            i32.const 2
+            local.set 1
+            i32.const 0
+            i32.load offset=1048928
+            i32.const 2
+            i32.eq
+            br_if 0 (;@4;)
+            i32.const -1
+            i32.const 0
+            i32.const 1048928
+            call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+            drop
+            block ;; label = @5
+              i32.const 0
+              i32.load offset=1048928
+              i32.const 2
+              i32.ne
+              br_if 0 (;@5;)
+              i32.const 3
+              local.set 1
+              br 1 (;@4;)
+            end
+            i32.const -1
+            i32.const 1
+            i32.const 1048928
+            call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+            drop
+            block ;; label = @5
+              i32.const 0
+              i32.load offset=1048928
+              i32.const 2
+              i32.ne
+              br_if 0 (;@5;)
+              i32.const 4
+              local.set 1
+              br 1 (;@4;)
+            end
+            i32.const 0
+            i32.const 1
+            i32.const 1048928
+            call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+            drop
+            block ;; label = @5
+              i32.const 0
+              i32.load offset=1048928
+              i32.const 2
+              i32.ne
+              br_if 0 (;@5;)
+              i32.const 5
+              local.set 1
+              br 1 (;@4;)
+            end
+            i32.const 1
+            local.set 2
+            block ;; label = @5
+              block ;; label = @6
+                block ;; label = @7
+                  loop ;; label = @8
+                    i32.const 0
+                    local.set 1
+                    loop ;; label = @9
+                      local.get 2
+                      local.get 1
+                      i32.const 1048928
+                      call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+                      drop
+                      block ;; label = @10
+                        i32.const 0
+                        i32.load offset=1048928
+                        i32.const 2
+                        i32.ne
+                        br_if 0 (;@10;)
+                        local.get 2
+                        local.set 3
+                        br 4 (;@6;)
+                      end
+                      local.get 2
+                      local.get 1
+                      i32.const -1
+                      i32.add
+                      local.tee 1
+                      i32.add
+                      br_if 0 (;@9;)
+                    end
+                    local.get 2
+                    local.set 3
+                    loop ;; label = @9
+                      local.get 3
+                      local.get 1
+                      i32.const 1048928
+                      call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+                      drop
+                      i32.const 0
+                      i32.load offset=1048928
+                      i32.const 2
+                      i32.eq
+                      br_if 3 (;@6;)
+                      local.get 3
+                      i32.const -1
+                      i32.add
+                      local.tee 3
+                      br_if 0 (;@9;)
+                    end
+                    i32.const 0
+                    local.set 4
+                    loop ;; label = @9
+                      local.get 4
+                      local.get 1
+                      i32.const 1048928
+                      call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+                      drop
+                      i32.const 0
+                      i32.load offset=1048928
+                      i32.const 2
+                      i32.eq
+                      br_if 2 (;@7;)
+                      local.get 1
+                      i32.const 1
+                      i32.add
+                      local.set 1
+                      local.get 2
+                      local.get 4
+                      i32.const -1
+                      i32.add
+                      local.tee 4
+                      i32.add
+                      br_if 0 (;@9;)
+                    end
+                    local.get 2
+                    local.set 3
+                    loop ;; label = @9
+                      local.get 4
+                      local.get 1
+                      i32.const 1048928
+                      call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+                      drop
+                      i32.const 0
+                      i32.load offset=1048928
+                      i32.const 2
+                      i32.eq
+                      br_if 2 (;@7;)
+                      local.get 1
+                      i32.const 1
+                      i32.add
+                      local.set 1
+                      local.get 3
+                      i32.const -1
+                      i32.add
+                      local.tee 3
+                      br_if 0 (;@9;)
+                    end
+                    i32.const 0
+                    local.set 5
+                    loop ;; label = @9
+                      local.get 4
+                      local.get 5
+                      i32.add
+                      local.tee 3
+                      local.get 1
+                      i32.const 1048928
+                      call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+                      drop
+                      i32.const 0
+                      i32.load offset=1048928
+                      i32.const 2
+                      i32.eq
+                      br_if 3 (;@6;)
+                      local.get 2
+                      local.get 5
+                      i32.const 1
+                      i32.add
+                      local.tee 5
+                      i32.ne
+                      br_if 0 (;@9;)
+                    end
+                    local.get 4
+                    local.get 5
+                    i32.add
+                    local.set 3
+                    i32.const 0
+                    local.set 5
+                    loop ;; label = @9
+                      local.get 3
+                      local.get 1
+                      local.get 5
+                      i32.add
+                      local.tee 4
+                      i32.const 1048928
+                      call $_ZN15strategy_hunter4host5sense17hc58ae7581ba11934E
+                      drop
+                      i32.const 0
+                      i32.load offset=1048928
+                      i32.const 2
+                      i32.eq
+                      br_if 4 (;@5;)
+                      local.get 3
+                      i32.const 1
+                      i32.add
+                      local.set 3
+                      local.get 2
+                      local.get 5
+                      i32.const -1
+                      i32.add
+                      local.tee 5
+                      i32.add
+                      br_if 0 (;@9;)
+                    end
+                    local.get 2
+                    i32.const 1
+                    i32.add
+                    local.tee 2
+                    i32.const 6
+                    i32.ne
+                    br_if 0 (;@8;)
+                  end
+                  call $_ZN15strategy_hunter11wander_step17ha908672c1f1e31deE
+                  br 4 (;@3;)
+                end
+                local.get 4
+                local.set 3
+              end
+              local.get 1
+              local.set 4
+            end
+            i32.const 2
+            call $_ZN15strategy_hunter4host16signal_broadcast17h575c2111c62c1639E
+            drop
+            local.get 3
+            local.get 4
+            call $_ZN15strategy_hunter11step_toward17h164826cb30857a9dE
+            br 1 (;@3;)
+          end
+          block ;; label = @4
+            call $_ZN15strategy_hunter4host6facing17hf13dd96bc0305814E
+            local.get 1
+            i32.ne
+            br_if 0 (;@4;)
+            i32.const 0
+            call $_ZN15strategy_hunter4host3hit17h862a6806f604c65cE
+            drop
+            br 1 (;@3;)
+          end
+          local.get 1
+          call $_ZN15strategy_hunter4host6facing17hf13dd96bc0305814E
+          i32.sub
+          i32.const 6
+          i32.rem_s
+          local.tee 1
+          i32.const 6
+          i32.add
+          local.get 1
+          local.get 1
+          i32.const 0
+          i32.lt_s
+          select
+          local.tee 1
+          i32.eqz
+          br_if 0 (;@3;)
+          local.get 1
+          local.get 1
+          i32.const -6
+          i32.add
+          local.get 1
+          i32.const 4
+          i32.lt_u
+          select
+          call $_ZN15strategy_hunter4host6rotate17h9dd28ac5cb3b3fdcE
+          drop
+        end
+        local.get 0
         i32.const 1
+        i32.and
+        local.set 1
         i32.const 0
-        call $_ZN15strategy_hunter9seek_food17hdc63cb46d6416604E
+        local.set 0
+        local.get 1
         br_if 0 (;@2;)
-        i32.const 2
-        i32.const 1
-        call $_ZN15strategy_hunter9hunt_step17h72996c21e679e15eE
-      end
-      block ;; label = @2
-        i32.const 1
-        i32.const 0
-        call $_ZN15strategy_hunter9seek_food17hdc63cb46d6416604E
-        br_if 0 (;@2;)
-        i32.const 2
-        i32.const 1
-        call $_ZN15strategy_hunter9hunt_step17h72996c21e679e15eE
       end
       call $_ZN15strategy_hunter4host5sleep17h937936acb95e37b2E
     end
   )
-  (func $_ZN4core9panicking18panic_bounds_check17hf4028f296c44236fE (;19;) (type 8) (param i32 i32 i32)
+  (func $_ZN4core9panicking18panic_bounds_check17hf4028f296c44236fE (;18;) (type 8) (param i32 i32 i32)
     (local i32 i64)
     global.get $__stack_pointer
     i32.const 48
@@ -6926,7 +6910,7 @@ pub(crate) const PREDATOR: &str = r#"
     call $_ZN4core9panicking9panic_fmt17h808dbde205a89691E
     unreachable
   )
-  (func $_ZN4core9panicking9panic_fmt17h808dbde205a89691E (;20;) (type 7) (param i32 i32)
+  (func $_ZN4core9panicking9panic_fmt17h808dbde205a89691E (;19;) (type 7) (param i32 i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 16
@@ -6948,7 +6932,7 @@ pub(crate) const PREDATOR: &str = r#"
     call $_RNvCsj4CZ6flxxfE_7___rustc17rust_begin_unwind
     unreachable
   )
-  (func $_ZN4core3str5count14do_count_chars17haa2c4f188ad8cef2E (;21;) (type 0) (param i32 i32) (result i32)
+  (func $_ZN4core3str5count14do_count_chars17haa2c4f188ad8cef2E (;20;) (type 0) (param i32 i32) (result i32)
     (local i32 i32 i32 i32 i32 i32 i32 i32)
     block ;; label = @1
       block ;; label = @2
@@ -7433,7 +7417,7 @@ pub(crate) const PREDATOR: &str = r#"
     end
     local.get 3
   )
-  (func $_ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u32$GT$3fmt17hacc3ad28f4de0a4dE (;22;) (type 0) (param i32 i32) (result i32)
+  (func $_ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u32$GT$3fmt17hacc3ad28f4de0a4dE (;21;) (type 0) (param i32 i32) (result i32)
     (local i32)
     global.get $__stack_pointer
     i32.const 32
@@ -7466,7 +7450,7 @@ pub(crate) const PREDATOR: &str = r#"
     global.set $__stack_pointer
     local.get 0
   )
-  (func $_ZN4core3fmt9Formatter12pad_integral17hc6b3558773c79a2cE (;23;) (type 9) (param i32 i32 i32 i32 i32 i32) (result i32)
+  (func $_ZN4core3fmt9Formatter12pad_integral17hc6b3558773c79a2cE (;22;) (type 9) (param i32 i32 i32 i32 i32 i32) (result i32)
     (local i32 i32 i32 i32 i32 i32 i32 i32 i64)
     block ;; label = @1
       block ;; label = @2
@@ -7846,7 +7830,7 @@ pub(crate) const PREDATOR: &str = r#"
     end
     local.get 12
   )
-  (func $_ZN4core3fmt9Formatter12pad_integral12write_prefix17he51f5cf01766db4eE (;24;) (type 10) (param i32 i32 i32 i32 i32) (result i32)
+  (func $_ZN4core3fmt9Formatter12pad_integral12write_prefix17he51f5cf01766db4eE (;23;) (type 10) (param i32 i32 i32 i32 i32) (result i32)
     block ;; label = @1
       local.get 2
       i32.const 1114112
@@ -7875,7 +7859,7 @@ pub(crate) const PREDATOR: &str = r#"
     i32.load offset=12
     call_indirect (type 1)
   )
-  (func $_ZN4core3fmt3num3imp21_$LT$impl$u20$u32$GT$4_fmt17hb4e91fd13b3ed913E (;25;) (type 11) (param i32 i32 i32 i32)
+  (func $_ZN4core3fmt3num3imp21_$LT$impl$u20$u32$GT$4_fmt17hb4e91fd13b3ed913E (;24;) (type 11) (param i32 i32 i32 i32)
     (local i32 i32 i32 i32 i32 i32 i32 i32)
     local.get 1
     local.set 4
@@ -8091,12 +8075,15 @@ pub(crate) const HAWK: &str = r#"
   (global (;1;) i32 i32.const 1048988)
   (global (;2;) i32 i32.const 1048992)
   (export "memory" (memory 0))
-  (export "tick" (func $tick))
+  (export "main" (func $main))
   (export "__data_end" (global 1))
   (export "__heap_base" (global 2))
   (elem (;0;) (i32.const 1) func $_ZN4core3fmt3num3imp52_$LT$impl$u20$core..fmt..Display$u20$for$u20$u32$GT$3fmt17hacc3ad28f4de0a4dE)
-  (func $tick (;12;) (type 2)
-    call $_ZN15strategy_hunter14scavenger_tick17haaa34e6990b5ca87E
+  (func $main (;12;) (type 2)
+    loop ;; label = @1
+      call $_ZN15strategy_hunter14scavenger_tick17haaa34e6990b5ca87E
+      br 0 (;@1;)
+    end
   )
   (func $_RNvCsj4CZ6flxxfE_7___rustc17rust_begin_unwind (;13;) (type 6) (param i32)
     call $_ZN15strategy_hunter4host5sleep17h937936acb95e37b2E

@@ -5,7 +5,7 @@ Rust strategies compiled to WASM for **Predator** and **Scavenger** ecosystem ex
 ## Layout
 
 - `hunter/` — shared hunt logic (scan vision, step toward, eat adjacent)
-- `predator/` / `scavenger/` — thin WASM exports (`tick`)
+- `predator/` / `scavenger/` / `prey/` / `hawk/` — thin WASM exports (`main` lifetime loop)
 - `tools/` — sync compiled WASM → WAT in sim examples
 
 ## Build

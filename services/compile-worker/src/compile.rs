@@ -150,7 +150,7 @@ async fn compile_rust(source: &str, tests: &str) -> Result<CompileResponse, Comp
         });
     }
 
-    let mut diagnostics = validate_tests(tests);
+    let diagnostics = validate_tests(tests);
     let test_errors = diagnostics.iter().any(|d| d.level == "error");
 
     Ok(CompileResponse {
@@ -169,11 +169,15 @@ async fn run_compile(
     copy_template(template_dir, work).map_err(|err| compile_error(err.to_string()))?;
     patch_manifest(work, sdk_path).map_err(|err| compile_error(err.to_string()))?;
     fs::write(work.join("src/lib.rs"), CRATE_LIB_RS).map_err(|err| compile_error(err.to_string()))?;
-    fs::write(
-        work.join("src/user.rs"),
-        wrap_user_source(&creature_body(source)),
-    )
-    .map_err(|err| compile_error(err.to_string()))?;
+    let (user_module, line_offset) = prepare_user_module(source);
+    if let Err(diags) = validate_user_module(source) {
+        return Err(CompileResponse {
+            ok: false,
+            wasm_b64: None,
+            diagnostics: diags,
+        });
+    }
+    fs::write(work.join("src/user.rs"), user_module).map_err(|err| compile_error(err.to_string()))?;
 
     let mut cmd = Command::new("cargo");
     cmd.current_dir(work)
@@ -208,7 +212,7 @@ async fn run_compile(
                 area: Some("source".into()),
             });
         }
-        remap_user_diagnostics(&mut diagnostics);
+        remap_user_diagnostics(&mut diagnostics, line_offset);
         return Err(CompileResponse {
             ok: false,
             wasm_b64: None,
@@ -219,16 +223,16 @@ async fn run_compile(
     Ok(())
 }
 
-/// Editor body starts inside `tick()` — offset past prelude + fn line.
-const USER_BODY_LINE_OFFSET: u32 = 3;
+/// Lines prepended when the editor source omits `use terrarium_sdk::…`.
+const PRELUDE_LINE_OFFSET: u32 = 2;
 
 const CRATE_LIB_RS: &str = r#"#![no_std]
 
 mod user;
 
 #[no_mangle]
-pub extern "C" fn tick() {
-    user::tick();
+pub extern "C" fn main() {
+    user::main();
 }
 
 #[panic_handler]
@@ -266,19 +270,58 @@ fn validate_tests(tests: &str) -> Vec<Diagnostic> {
         .collect()
 }
 
-fn wrap_user_source(source: &str) -> String {
+fn validate_user_module(source: &str) -> Result<(), Vec<Diagnostic>> {
+    let body = creature_body(source);
+    if body.contains("fn main") {
+        return Ok(());
+    }
+    if body.contains("loop") {
+        return Ok(());
+    }
+    Err(vec![Diagnostic {
+        level: "error".into(),
+        message: "Write a loop { ... } or pub fn main() { ... }.".into(),
+        line: Some(1),
+        column: None,
+        area: Some("source".into()),
+    }])
+}
+
+fn wrap_as_main(body: &str) -> String {
+    if body.contains("fn main") {
+        return body.to_string();
+    }
+    if body.contains("loop") {
+        return format!("pub fn main() {{\n{body}\n}}");
+    }
     format!(
-        "use terrarium_sdk::prelude::*;\n\npub fn tick() {{\n{}\n}}\n",
-        source.trim_end()
+        "pub fn main() {{\nloop {{\n{body}\n}}\n}}",
     )
 }
 
-fn remap_user_diagnostics(diagnostics: &mut [Diagnostic]) {
+fn prepare_user_module(source: &str) -> (String, u32) {
+    let body = creature_body(source);
+    if body.contains("terrarium_sdk") {
+        return (format!("{}\n", wrap_as_main(&body)), 0);
+    }
+    (
+        format!(
+            "use terrarium_sdk::prelude::*;\n\n{}\n",
+            wrap_as_main(&body)
+        ),
+        PRELUDE_LINE_OFFSET,
+    )
+}
+
+fn remap_user_diagnostics(diagnostics: &mut [Diagnostic], line_offset: u32) {
     for d in diagnostics {
         d.area = Some("source".into());
+        if line_offset == 0 {
+            continue;
+        }
         if let Some(line) = d.line {
-            if line > USER_BODY_LINE_OFFSET {
-                d.line = Some(line - USER_BODY_LINE_OFFSET);
+            if line > line_offset {
+                d.line = Some(line - line_offset);
             } else {
                 d.line = None;
             }
@@ -387,17 +430,26 @@ mod tests {
     }
 
     #[test]
-    fn wrap_user_source_exports_tick_once() {
-        let wrapped = wrap_user_source("let _ = move_forward();");
-        assert!(wrapped.contains("use terrarium_sdk::prelude::*;"));
-        assert!(wrapped.contains("pub fn tick()"));
-        assert!(!wrapped.contains("loop {"));
-        assert!(wrapped.contains("let _ = move_forward();"));
-        assert!(CRATE_LIB_RS.contains("user::tick()"));
+    fn prepare_user_module_wraps_loop_as_main() {
+        let src = "loop {\n    move_forward();\n    rotate(1);\n}\n";
+        let (module, offset) = prepare_user_module(src);
+        assert!(module.contains("pub fn main()"));
+        assert!(module.contains("loop {"));
+        assert!(module.contains("move_forward()"));
+        assert!(!module.contains("__terrarium_pc"));
+        assert_eq!(offset, PRELUDE_LINE_OFFSET);
+        assert!(CRATE_LIB_RS.contains("user::main()"));
     }
 
     #[test]
-    fn remap_user_diagnostics_shifts_line_numbers() {
+    fn validate_user_module_requires_loop_or_main() {
+        assert!(validate_user_module("let _ = move_forward();").is_err());
+        assert!(validate_user_module("pub fn main() {}").is_ok());
+        assert!(validate_user_module("loop { move_forward(); }").is_ok());
+    }
+
+    #[test]
+    fn remap_user_diagnostics_shifts_prelude_only() {
         let mut diags = vec![Diagnostic {
             level: "error".into(),
             message: "x".into(),
@@ -405,7 +457,7 @@ mod tests {
             column: Some(1),
             area: None,
         }];
-        remap_user_diagnostics(&mut diags);
-        assert_eq!(diags[0].line, Some(1));
+        remap_user_diagnostics(&mut diags, PRELUDE_LINE_OFFSET);
+        assert_eq!(diags[0].line, Some(2));
     }
 }

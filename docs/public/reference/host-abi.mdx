@@ -3,15 +3,15 @@ title: Host ABI
 description: WebAssembly imports and exports for Terrarium creatures.
 ---
 
-Creatures are **WebAssembly modules** that import `"terrarium"` syscalls and export `tick`.
+Creatures are **WebAssembly modules** that import `"terrarium"` syscalls and export `main`.
 
 ## Module contract
 
 - Import namespace `"terrarium"`
-- Export `(func "tick")` — called once per sim tick
+- Export `(func "main")` — host starts `main` once per creature life and resumes the same fiber each sim tick
 - Export `(memory "memory")` if using `recv`, `signal_to`, or `sense` (scratch bytes at ptr)
 
-**One action per tick.** At most one of: move, rotate, eat, hit, dig, place, spawn, signal, or suicide. Sensing, sleep, and reads are unlimited.
+**Slice execution.** Each tick runs until the first successful world action (then suspends with that one action), opcode gas runs out (suspend, stay alive), or `main` returns / you `break` out of the program loop (suicide). Sensing, sleep, and reads are unlimited within gas.
 
 ## Host syscalls
 
@@ -29,7 +29,6 @@ Creatures are **WebAssembly modules** that import `"terrarium"` syscalls and exp
 | `eat` | `(i32 rel) -> i32` | Eat forward corpse or food |
 | `hit` | `(i32 rel) -> i32` | Damage forward creature |
 | `spawn` | `(i32 rel, i32 energy) -> i32` | Bud clone on forward empty cell |
-| `suicide` | `() -> ()` | Die, credit owner |
 | `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
 | `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal |
 | `recv` | `(i32 ptr) -> i32` | Read signal into ptr |
@@ -42,7 +41,7 @@ Creatures are **WebAssembly modules** that import `"terrarium"` syscalls and exp
 
 ## Gas
 
-Each tick gets a gas budget (default 10_000 opcodes). Trap or out-of-energy → death.
+Each tick gets a gas budget (default 10_000 opcodes). Fuel exhaustion suspends; host traps for out-of-energy or bugs → death.
 
 Forward actions cost separate energy beyond opcode gas.
 
