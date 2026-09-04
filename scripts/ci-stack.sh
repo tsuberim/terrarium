@@ -45,13 +45,31 @@ ci_stack_build() {
   cargo build --release -q --manifest-path services/compile-worker/Cargo.toml
 }
 
+ci_stack_wait_auth() {
+  # shellcheck source=health-check.sh
+  source "$ROOT/scripts/health-check.sh"
+  echo "==> Wait for auth emulator"
+  for _ in $(seq 1 90); do
+    if health_check_auth_emulator "$FIREBASE_AUTH_EMULATOR_HOST"; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "auth emulator not ready at ${FIREBASE_AUTH_EMULATOR_HOST}" >&2
+  return 1
+}
+
 ci_stack_start_api() {
   mkdir -p data
   trap ci_stack_cleanup EXIT
 
+  echo "==> Ensure firebase-tools (avoid npm lock with npm ci)"
+  npx --yes firebase-tools --version >/dev/null
+
   echo "==> Start auth emulator"
   npx --yes firebase-tools emulators:start --only auth --project "$FIREBASE_PROJECT_ID" &
   CI_STACK_PIDS+=($!)
+  ci_stack_wait_auth
 
   echo "==> Start compile-worker"
   (
