@@ -169,7 +169,6 @@ async fn run_compile(
     copy_template(template_dir, work).map_err(|err| compile_error(err.to_string()))?;
     patch_manifest(work, sdk_path).map_err(|err| compile_error(err.to_string()))?;
     fs::write(work.join("src/lib.rs"), CRATE_LIB_RS).map_err(|err| compile_error(err.to_string()))?;
-    let (user_module, line_offset) = prepare_user_module(source);
     if let Err(diags) = validate_user_module(source) {
         return Err(CompileResponse {
             ok: false,
@@ -177,6 +176,7 @@ async fn run_compile(
             diagnostics: diags,
         });
     }
+    let (user_module, line_offset) = prepare_user_module(source);
     fs::write(work.join("src/user.rs"), user_module).map_err(|err| compile_error(err.to_string()))?;
 
     let mut cmd = Command::new("cargo");

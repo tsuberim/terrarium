@@ -3,6 +3,6 @@
 
 pub fn main() {
     loop {
-        let _ = move_forward();
+        move_forward();
     }
 }

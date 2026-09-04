@@ -130,7 +130,6 @@ export function normalizeCompileDiagnostics(
   }));
 }
 
-
 /** @deprecated Slice model suspends after first action; lint removed. */
 export function lintSourceActions(): CompileDiagnostic[] {
   return [];
