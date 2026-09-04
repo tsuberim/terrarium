@@ -65,7 +65,7 @@ gh pr create --fill
 gh pr merge --auto
 ```
 
-Auto-merge waits for the `ci.yml` gate (rust, frontend, docker, smoke, e2e) to pass.
+Auto-merge waits for all required checks on `main` (rust, frontend, docker, smoke, e2e). Sync branch protection with `./scripts/sync-branch-protection.sh` if checks change.
 
 ---
 
