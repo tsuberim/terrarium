@@ -3,6 +3,7 @@ export type E2ePlayback = "idle" | "playing" | "paused";
 export type StudioE2eSlice = {
   testing: boolean;
   wasmReady: boolean;
+  allTestsPassed: boolean;
   playback: E2ePlayback;
   error: string | null;
 };
@@ -16,6 +17,7 @@ export type E2eState = {
   credits: number | null;
   testing: boolean;
   wasmReady: boolean;
+  allTestsPassed: boolean;
   playback: E2ePlayback;
   error: string | null;
   busy: boolean;

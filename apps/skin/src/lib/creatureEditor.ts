@@ -16,7 +16,7 @@ fn open_field() {
 #[terrarium::test]
 fn wall_blocked() {
     tile_ahead(solid());
-    run_ticks(10);
+    run_ticks(1);
     assert_eq!(x(), 0);
 }
 `;

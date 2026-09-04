@@ -94,20 +94,21 @@ async function waitForE2eStateMatch(page: Page, expected: E2eStateExpect, timeou
 }
 
 async function runWaitFor(page: Page, expected: E2eStateExpect, timeoutMs: number) {
-  if (expected.testing === false && expected.wasmReady === true) {
-    await waitForWasmReady(page, timeoutMs);
-    return;
-  }
-  if (expected.playback === "playing" || expected.playback === "paused" || expected.playback === "idle") {
+  const keys = Object.keys(expected);
+  if (keys.length === 1 && expected.playback) {
     await waitForPlayback(page, expected.playback, timeoutMs);
     return;
   }
-  if (expected.deployDialogOpen === false) {
+  if (keys.length === 1 && expected.deployDialogOpen === false) {
     await waitForDeployDialog(page, false, timeoutMs);
     return;
   }
-  if (expected.deployCell === "not_null") {
+  if (keys.length === 1 && expected.deployCell === "not_null") {
     await waitForDeployCell(page, timeoutMs);
+    return;
+  }
+  if (keys.length === 2 && expected.testing === false && expected.wasmReady === true) {
+    await waitForWasmReady(page, timeoutMs);
     return;
   }
   await waitForE2eStateMatch(page, expected, timeoutMs);
