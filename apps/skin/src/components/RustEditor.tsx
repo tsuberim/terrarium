@@ -1,8 +1,12 @@
 import Editor, { type Monaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { CompileDiagnostic } from "../lib/creatureEditor";
 import { diagnosticMarkers, setupRustLanguageService } from "../lib/rustLanguageService";
+
+export type RustEditorHandle = {
+  getValue: () => string;
+};
 
 type Props = {
   value: string;
@@ -12,11 +16,18 @@ type Props = {
   height?: string | number;
 };
 
-export function RustEditor({ value, onChange, diagnostics, readOnly, height = "220px" }: Props) {
+export const RustEditor = forwardRef<RustEditorHandle, Props>(function RustEditor(
+  { value, onChange, diagnostics, readOnly, height = "220px" },
+  ref,
+) {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const diagnosticsRef = useRef(diagnostics);
   diagnosticsRef.current = diagnostics;
+
+  useImperativeHandle(ref, () => ({
+    getValue: () => editorRef.current?.getValue() ?? value,
+  }));
 
   useEffect(() => {
     const ed = editorRef.current;
@@ -75,4 +86,4 @@ export function RustEditor({ value, onChange, diagnostics, readOnly, height = "2
       loading={<div className="p-3 text-[11px] text-white/40">Loading editor…</div>}
     />
   );
-}
+});

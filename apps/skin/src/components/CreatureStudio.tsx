@@ -14,7 +14,7 @@ import { formatGlimString, GLIM_SCALE } from "../lib/glim";
 import { postCompile, postSandboxRun } from "../lib/api";
 import { authorLinks } from "../lib/authoringLinks";
 import { GlimAmount } from "./GlimAmount";
-import { RustEditor } from "./RustEditor";
+import { RustEditor, type RustEditorHandle } from "./RustEditor";
 import { WorldCanvas } from "./WorldCanvas";
 import { useSandboxPlayback } from "../hooks/useSandboxPlayback";
 import { clampStudioWidthPct, clampStudioCodeHeightPct } from "../lib/viewerPrefs";
@@ -94,6 +94,11 @@ export function CreatureStudio({
   const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
   const [testResults, setTestResults] = useState<Record<string, TestRunResult>>({});
   const [previewGen, setPreviewGen] = useState(0);
+  const editorRef = useRef<RustEditorHandle | null>(null);
+  const sourceRef = useRef(source);
+  const testsSourceRef = useRef(testsSource);
+  sourceRef.current = source;
+  testsSourceRef.current = testsSource;
   const [testing, setTesting] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -210,25 +215,49 @@ export function CreatureStudio({
     });
   }, [testing, wasmB64, playback, error, onE2eSliceChange]);
 
+  const locked = busy || testing;
+
+  const snapshotEditorSources = useCallback((): { source: string; testsSource: string } => {
+    let liveSource = sourceRef.current;
+    let liveTests = testsSourceRef.current;
+    const editorValue = editorRef.current?.getValue();
+    if (editorValue != null) {
+      if (editorTab === "source") liveSource = editorValue;
+      else liveTests = editorValue;
+    }
+    sourceRef.current = liveSource;
+    testsSourceRef.current = liveTests;
+    if (liveSource !== source) setSource(liveSource);
+    if (liveTests !== testsSource) setTestsSource(liveTests);
+    return { source: liveSource, testsSource: liveTests };
+  }, [editorTab, source, testsSource]);
+
+  const switchEditorTab = useCallback(
+    (tab: "source" | "tests") => {
+      snapshotEditorSources();
+      setEditorTab(tab);
+    },
+    [snapshotEditorSources],
+  );
+
   useEffect(() => {
     if (!open || !canCheck || busy || testing) return;
     const t = window.setTimeout(() => {
-      void postCompile("rust", source, testsSource)
+      const { source: liveSource, testsSource: liveTests } = snapshotEditorSources();
+      void postCompile("rust", liveSource, liveTests)
         .then((compiled) => setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics)))
         .catch(() => {
           /* offline / auth */
         });
     }, 900);
     return () => window.clearTimeout(t);
-  }, [source, testsSource, open, canCheck, busy, testing]);
+  }, [source, testsSource, open, canCheck, busy, testing, snapshotEditorSources]);
 
   useEffect(() => {
     if (selectedTestIndex >= tests.length) {
       setSelectedTestIndex(Math.max(0, tests.length - 1));
     }
   }, [tests.length, selectedTestIndex]);
-
-  const locked = busy || testing;
 
   const applyWasm = async (file: File) => {
     try {
@@ -256,7 +285,8 @@ export function CreatureStudio({
 
   const ensureWasm = useCallback(async (): Promise<string | null> => {
     if (wasmB64) return wasmB64;
-    const compiled = await postCompile("rust", source, testsSource);
+    const { source: liveSource, testsSource: liveTests } = snapshotEditorSources();
+    const compiled = await postCompile("rust", liveSource, liveTests);
     setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
     if (!compiled.wasm_b64) {
       const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
@@ -272,10 +302,11 @@ export function CreatureStudio({
     setWasmB64(compiled.wasm_b64);
     setWasmLabel("creature.wasm");
     return compiled.wasm_b64;
-  }, [source, testsSource, wasmB64]);
+  }, [snapshotEditorSources, wasmB64]);
 
   const compileForTest = useCallback(async (): Promise<string | null> => {
-    const compiled = await postCompile("rust", source, testsSource);
+    const { source: liveSource, testsSource: liveTests } = snapshotEditorSources();
+    const compiled = await postCompile("rust", liveSource, liveTests);
     setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
     if (!compiled.wasm_b64) {
       const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
@@ -292,7 +323,7 @@ export function CreatureStudio({
     setWasmLabel("creature.wasm");
     setError(null);
     return compiled.wasm_b64;
-  }, [source, testsSource]);
+  }, [snapshotEditorSources]);
 
   const recordTestResult = useCallback((test: ParsedTest, result: SandboxResult) => {
     const passed = result.test_passed;
@@ -476,24 +507,30 @@ export function CreatureStudio({
               <button
                 type="button"
                 className={`studio-tab${editorTab === "source" ? " studio-tab-active" : ""}`}
-                onClick={() => setEditorTab("source")}
+                onClick={() => switchEditorTab("source")}
               >
                 Source
               </button>
               <button
                 type="button"
                 className={`studio-tab${editorTab === "tests" ? " studio-tab-active" : ""}`}
-                onClick={() => setEditorTab("tests")}
+                onClick={() => switchEditorTab("tests")}
               >
                 Tests
               </button>
             </div>
             <RustEditor
+              ref={editorRef}
               value={editorTab === "source" ? source : testsSource}
               height="100%"
               onChange={(v) => {
-                if (editorTab === "source") setSource(v);
-                else setTestsSource(v);
+                if (editorTab === "source") {
+                  setSource(v);
+                  sourceRef.current = v;
+                } else {
+                  setTestsSource(v);
+                  testsSourceRef.current = v;
+                }
                 invalidateWasm();
               }}
               diagnostics={shownDiagnostics}
