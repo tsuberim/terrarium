@@ -6,6 +6,7 @@ import {
   DEFAULT_TESTS_SOURCE,
   parseTests,
   normalizeCompileDiagnostics,
+  lintSourceActions,
   type CompileDiagnostic,
   type ParsedTest,
   type SandboxResult,
@@ -227,7 +228,12 @@ export function CreatureStudio({
     const t = window.setTimeout(() => {
       const { source: liveSource, testsSource: liveTests } = readEditorSources();
       void postCompile("rust", liveSource, liveTests)
-        .then((compiled) => setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics)))
+        .then((compiled) =>
+          setDiagnostics([
+            ...normalizeCompileDiagnostics(compiled.diagnostics),
+            ...lintSourceActions(liveSource),
+          ]),
+        )
         .catch(() => {
           /* offline / auth */
         });
@@ -272,7 +278,10 @@ export function CreatureStudio({
     if (liveTests !== testsSource) setTestsSource(liveTests);
 
     const compiled = await postCompile("rust", liveSource, liveTests);
-    setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
+    setDiagnostics([
+      ...normalizeCompileDiagnostics(compiled.diagnostics),
+      ...lintSourceActions(liveSource),
+    ]);
     if (!compiled.wasm_b64) {
       const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
       setError(msg);

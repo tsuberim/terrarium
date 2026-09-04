@@ -1,6 +1,7 @@
 import type { CreatureAction, WorldEvent } from "./api";
 
-export const DEFAULT_RUST_SOURCE = `let _ = move_forward();
+export const DEFAULT_RUST_SOURCE = `// One action per tick — move OR rotate, not both.
+let _ = move_forward();
 `;
 
 export const DEFAULT_TESTS_SOURCE = `#[terrarium::test]
@@ -125,6 +126,24 @@ export function normalizeCompileDiagnostics(
     column: d.column,
     area: d.area === "tests" ? "tests" : d.area === "source" ? "source" : undefined,
   }));
+}
+
+const ACTION_CALL_RE = /\b(move_forward|eat_forward|rotate)\s*\(/g;
+
+export function lintSourceActions(source: string): CompileDiagnostic[] {
+  const matches = [...source.matchAll(ACTION_CALL_RE)];
+  if (matches.length <= 1) return [];
+  const second = matches[1]!;
+  const line = source.slice(0, second.index!).split("\n").length;
+  return [
+    {
+      level: "warning",
+      message:
+        "Only one action (move, eat, rotate, …) runs per tick — the first call wins; later calls are ignored.",
+      line,
+      area: "source",
+    },
+  ];
 }
 
 export function parseTests(source: string): { tests: ParsedTest[]; diagnostics: CompileDiagnostic[] } {

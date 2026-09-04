@@ -60,6 +60,10 @@ pub fn random_byte() -> u8 {
     unsafe { host::random_byte() as u8 }
 }
 
+pub fn uptime() -> i32 {
+    unsafe { host::uptime() }
+}
+
 pub mod prelude {
-    pub use crate::{eat_forward, energy, move_forward, rotate, sense_kind, sleep, tile};
+    pub use crate::{eat_forward, energy, move_forward, rotate, sense_kind, sleep, tile, uptime};
 }

@@ -11,9 +11,10 @@ export type SdkSymbol = {
 };
 
 export const SDK_SYMBOLS: SdkSymbol[] = [
-  { name: "move_forward", kind: "fn", signature: "move_forward()", returns: "i32", doc: "Step forward one hex. Returns `0` on success." },
-  { name: "eat_forward", kind: "fn", signature: "eat_forward()", returns: "i32", doc: "Eat food or corpse in front." },
-  { name: "rotate", kind: "fn", signature: "rotate(delta: i32)", returns: "i32", doc: "Turn by `delta` hex directions (±1 = 60°)." },
+  { name: "move_forward", kind: "fn", signature: "move_forward()", returns: "i32", doc: "Step forward one hex. Uses your **one action** for this tick." },
+  { name: "eat_forward", kind: "fn", signature: "eat_forward()", returns: "i32", doc: "Eat food or corpse in front. Uses your one action for this tick." },
+  { name: "rotate", kind: "fn", signature: "rotate(delta: i32)", returns: "i32", doc: "Turn by `delta` hex directions (±1 = 60°). Uses your one action for this tick." },
+  { name: "uptime", kind: "fn", signature: "uptime()", returns: "i32", doc: "Ticks alive since spawn — useful to alternate actions across ticks." },
   { name: "sense_kind", kind: "fn", signature: "sense_kind(dq: i32, dr: i32)", returns: "i32", doc: "Tile kind at relative hex, or `-1` out of vision." },
   { name: "energy", kind: "fn", signature: "energy()", returns: "i64", doc: "Current glim balance." },
   { name: "sleep", kind: "fn", signature: "sleep()", returns: "()", doc: "Yield remaining gas this step (optional)." },
