@@ -60,12 +60,16 @@ COMPILE_BODY="$(mktemp)"
 SOURCE_FILE="$(mktemp)"
 TESTS_FILE="$(mktemp)"
 cat >"$SOURCE_FILE" <<'EOF'
-move_forward();
+loop {
+    move_forward();
+    rotate(1);
+}
 EOF
 cat >"$TESTS_FILE" <<'EOF'
 #[terrarium::test]
 fn open_field() {
-    run_ticks(20);
+    energy(15000000);
+    run_ticks(100);
     assert!(alive());
 }
 EOF
@@ -85,7 +89,7 @@ print('wasm ok:', len(w), 'bytes')
 
 echo "==> POST /v1/sandbox/run (open_field test)"
 SANDBOX_BODY="$(mktemp)"
-python3 -c "import json; print(json.dumps({'wasm_b64':'${WASM}','test':{'name':'open_field','ticks':20,'facing':0,'start_energy':4000000,'tiles':[],'assertions':[{'Alive':{'expected':True,'line':1}}]}}))" >"$SANDBOX_BODY"
+python3 -c "import json; print(json.dumps({'wasm_b64':'${WASM}','test':{'name':'open_field','ticks':100,'facing':0,'start_energy':15000000,'tiles':[],'assertions':[{'Alive':{'expected':True,'line':1}}]}}))" >"$SANDBOX_BODY"
 SANDBOX="$(curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -d @"$SANDBOX_BODY" "${API}/v1/sandbox/run")"
 rm -f "$SANDBOX_BODY"
 echo "$SANDBOX" | python3 -c "
