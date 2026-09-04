@@ -3,14 +3,18 @@ import { createPortal } from "react-dom";
 import { formatWasmLimit, MAX_WASM_BYTES } from "../lib/deployLimits";
 import {
   DEFAULT_RUST_SOURCE,
-  parseScenarios,
+  DEFAULT_TESTS_SOURCE,
+  parseTests,
+  normalizeCompileDiagnostics,
   type CompileDiagnostic,
+  type ParsedTest,
+  type SandboxResult,
 } from "../lib/creatureEditor";
 import { formatGlimString, GLIM_SCALE } from "../lib/glim";
 import { postCompile, postSandboxRun } from "../lib/api";
 import { authorLinks } from "../lib/authoringLinks";
 import { GlimAmount } from "./GlimAmount";
-import { RustEditor } from "./RustEditor";
+import { RustEditor, type RustEditorHandle } from "./RustEditor";
 import { WorldCanvas } from "./WorldCanvas";
 import { useSandboxPlayback } from "../hooks/useSandboxPlayback";
 import { clampStudioWidthPct, clampStudioCodeHeightPct } from "../lib/viewerPrefs";
@@ -35,6 +39,17 @@ type Props = {
   onE2eSliceChange?: (slice: StudioE2eSlice) => void;
   onClose: () => void;
 };
+
+type TestRunResult = { passed: boolean; message?: string };
+
+function testFailureMessage(result: SandboxResult): string {
+  const failed = result.assertions.find((a) => !a.passed);
+  if (failed) return failed.message;
+  if (!result.alive && result.death_reason) {
+    return `died at tick ${result.ticks_run} (${result.death_reason.replace(/_/g, " ")})`;
+  }
+  return "assertion failed";
+}
 
 async function readWasmFile(file: File): Promise<{ b64: string; name: string }> {
   if (!file.name.toLowerCase().endsWith(".wasm")) {
@@ -69,17 +84,26 @@ export function CreatureStudio({
   onClose,
 }: Props) {
   const [source, setSource] = useState(DEFAULT_RUST_SOURCE);
+  const [testsSource, setTestsSource] = useState(DEFAULT_TESTS_SOURCE);
+  const [editorTab, setEditorTab] = useState<"source" | "tests">("source");
+  const [selectedTestIndex, setSelectedTestIndex] = useState(0);
+  const [activeTestName, setActiveTestName] = useState<string | null>(null);
   const [wasmB64, setWasmB64] = useState<string | undefined>();
   const [wasmLabel, setWasmLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
+  const [testResults, setTestResults] = useState<Record<string, TestRunResult>>({});
+  const [previewGen, setPreviewGen] = useState(0);
+  const sourceEditorRef = useRef<RustEditorHandle | null>(null);
+  const testsEditorRef = useRef<RustEditorHandle | null>(null);
+  const sourceRef = useRef(source);
+  const testsSourceRef = useRef(testsSource);
+  sourceRef.current = source;
+  testsSourceRef.current = testsSource;
   const [testing, setTesting] = useState(false);
-  const [testLoopActive, setTestLoopActive] = useState(false);
-  const [testLoopIndex, setTestLoopIndex] = useState(0);
   const [deployOpen, setDeployOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const wasmForLoopRef = useRef<string | undefined>(undefined);
   const resizingRef = useRef(false);
   const splitResizingRef = useRef(false);
   const deployDialogPrevRef = useRef<boolean | null>(null);
@@ -123,8 +147,35 @@ export function CreatureStudio({
     window.addEventListener("pointerup", onUp);
   };
 
-  const scenarios = useMemo(() => parseScenarios(source), [source]);
-  const activeScenario = scenarios[testLoopIndex] ?? scenarios[0];
+  const parsedTests = useMemo(() => parseTests(testsSource), [testsSource]);
+  const tests = parsedTests.tests;
+  const selectedTest = tests[selectedTestIndex] ?? tests[0];
+  const sourceShownDiagnostics = useMemo(
+    () => diagnostics.filter((d) => (d.area ?? "source") === "source"),
+    [diagnostics],
+  );
+  const testsShownDiagnostics = useMemo(
+    () => [
+      ...diagnostics.filter((d) => d.area === "tests"),
+      ...parsedTests.diagnostics,
+    ],
+    [diagnostics, parsedTests.diagnostics],
+  );
+  const compileBlocked = diagnostics.some((d) => d.level === "error") || parsedTests.diagnostics.some((d) => d.level === "error");
+  const allTestsPassed = useMemo(
+    () => tests.length > 0 && !compileBlocked && tests.every((t) => testResults[t.name]?.passed === true),
+    [tests, testResults, compileBlocked],
+  );
+  const selectedTestResult = selectedTest ? testResults[selectedTest.name] : undefined;
+  const deployBlockedReason = !wasmB64
+    ? null
+    : compileBlocked
+      ? "Fix compile errors first"
+      : tests.length === 0
+        ? "Add at least one test"
+        : !allTestsPassed
+          ? "All tests must pass"
+          : null;
 
   const {
     result: sandbox,
@@ -164,19 +215,31 @@ export function CreatureStudio({
     });
   }, [testing, wasmB64, playback, error, onE2eSliceChange]);
 
+  const locked = busy || testing;
+
+  const readEditorSources = useCallback((): { source: string; testsSource: string } => ({
+    source: sourceEditorRef.current?.getValue() ?? sourceRef.current,
+    testsSource: testsEditorRef.current?.getValue() ?? testsSourceRef.current,
+  }), []);
+
   useEffect(() => {
     if (!open || !canCheck || busy || testing) return;
     const t = window.setTimeout(() => {
-      void postCompile("rust", source)
-        .then((compiled) => setDiagnostics(compiled.diagnostics))
+      const { source: liveSource, testsSource: liveTests } = readEditorSources();
+      void postCompile("rust", liveSource, liveTests)
+        .then((compiled) => setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics)))
         .catch(() => {
           /* offline / auth */
         });
     }, 900);
     return () => window.clearTimeout(t);
-  }, [source, open, canCheck, busy, testing]);
+  }, [source, testsSource, open, canCheck, busy, testing, readEditorSources]);
 
-  const locked = busy || testing;
+  useEffect(() => {
+    if (selectedTestIndex >= tests.length) {
+      setSelectedTestIndex(Math.max(0, tests.length - 1));
+    }
+  }, [tests.length, selectedTestIndex]);
 
   const applyWasm = async (file: File) => {
     try {
@@ -184,6 +247,7 @@ export function CreatureStudio({
       setWasmB64(b64);
       setWasmLabel(name);
       loadResult(null);
+      setTestResults({});
       setError(null);
     } catch (err) {
       setWasmB64(undefined);
@@ -192,79 +256,135 @@ export function CreatureStudio({
     }
   };
 
-  const ensureWasm = useCallback(async (): Promise<string | null> => {
-    if (wasmB64) return wasmB64;
-    const compiled = await postCompile("rust", source);
-    setDiagnostics(compiled.diagnostics);
-    if (!compiled.ok || !compiled.wasm_b64) {
+  const invalidateWasm = () => {
+    setWasmB64(undefined);
+    setWasmLabel(null);
+    loadResult(null);
+    setActiveTestName(null);
+    setTestResults({});
+    if (error) setError(null);
+  };
+
+  const compileSources = useCallback(async (liveSource: string, liveTests: string): Promise<string | null> => {
+    sourceRef.current = liveSource;
+    testsSourceRef.current = liveTests;
+    if (liveSource !== source) setSource(liveSource);
+    if (liveTests !== testsSource) setTestsSource(liveTests);
+
+    const compiled = await postCompile("rust", liveSource, liveTests);
+    setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
+    if (!compiled.wasm_b64) {
+      const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
+      setError(msg);
+      return null;
+    }
+    if (!compiled.ok) {
+      const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Fix compile errors first";
+      setError(msg);
+      if (compiled.diagnostics.some((d) => d.area === "tests")) setEditorTab("tests");
       return null;
     }
     setWasmB64(compiled.wasm_b64);
     setWasmLabel("creature.wasm");
+    setError(null);
     return compiled.wasm_b64;
-  }, [source, wasmB64]);
+  }, [source, testsSource]);
 
-  const runScenario = useCallback(
-    async (b64: string, index: number) => {
-      const sc = scenarios[index];
-      if (!sc) return;
-      setTestLoopIndex(index);
-      const result = await postSandboxRun(b64, sc.id, 100);
-      loadResult(result);
-      if (!result.alive && result.death_reason) {
-        setError(`${sc.label}: died at tick ${result.ticks_run} (${result.death_reason.replace(/_/g, " ")})`);
-      } else {
-        setError(null);
+  const ensureWasm = useCallback(async (): Promise<string | null> => {
+    if (wasmB64) return wasmB64;
+    const snap = readEditorSources();
+    return compileSources(snap.source, snap.testsSource);
+  }, [compileSources, readEditorSources, wasmB64]);
+
+  const recordTestResult = useCallback((test: ParsedTest, result: SandboxResult) => {
+    const passed = result.test_passed;
+    const message = passed ? undefined : testFailureMessage(result);
+    setTestResults((prev) => ({ ...prev, [test.name]: { passed, message } }));
+    return passed;
+  }, []);
+
+  const runSandboxTest = useCallback(
+    async (test: ParsedTest, b64: string, preview: boolean) => {
+      const result = await postSandboxRun(b64, test.spec);
+      recordTestResult(test, result);
+      if (preview) {
+        setActiveTestName(test.name);
+        loadResult(result);
+        setPreviewGen((g) => g + 1);
+        if (result.frames.length > 0) {
+          window.requestAnimationFrame(() => play());
+        } else if (result.error) setError(result.error);
       }
-      play();
+      return result;
     },
-    [loadResult, play, scenarios],
+    [loadResult, play, recordTestResult],
   );
 
-  const startTestLoop = async () => {
+  const runSelectedTest = async () => {
+    const snap = readEditorSources();
+    const liveTests = parseTests(snap.testsSource).tests;
+    const test = liveTests[selectedTestIndex] ?? liveTests[0];
+    if (!test) {
+      setError("Add at least one #[terrarium::test] in the Tests tab");
+      setEditorTab("tests");
+      return;
+    }
     setTesting(true);
     setError(null);
-    setDiagnostics([]);
     stop();
-    setTestLoopActive(true);
-    setTestLoopIndex(0);
     try {
-      const b64 = await ensureWasm();
+      const b64 = await compileSources(snap.source, snap.testsSource);
       if (!b64) {
-        setTestLoopActive(false);
         return;
       }
-      wasmForLoopRef.current = b64;
-      await runScenario(b64, 0);
+      await runSandboxTest(test, b64, true);
     } catch (err) {
-      setTestLoopActive(false);
       setError(err instanceof Error ? err.message : "Test failed");
     } finally {
       setTesting(false);
     }
   };
 
-  const stopTestLoop = () => {
-    setTestLoopActive(false);
-    stop();
-  };
-
-  useEffect(() => {
-    if (!testLoopActive || !sandbox?.frames.length || playback !== "paused") return;
-    if (frameIndex < sandbox.frames.length - 1) return;
-
-    const b64 = wasmForLoopRef.current;
-    if (!b64 || !scenarios.length) return;
-
-    const next = (testLoopIndex + 1) % scenarios.length;
-    if (next === testLoopIndex) {
-      setTestLoopActive(false);
+  const runAllTests = async () => {
+    const snap = readEditorSources();
+    const liveTests = parseTests(snap.testsSource).tests;
+    if (liveTests.length === 0) {
+      setError("Add at least one #[terrarium::test] in the Tests tab");
+      setEditorTab("tests");
       return;
     }
-    void runScenario(b64, next);
-  }, [testLoopActive, sandbox, playback, frameIndex, testLoopIndex, scenarios, runScenario]);
+    setTesting(true);
+    setError(null);
+    stop();
+    try {
+      const b64 = await compileSources(snap.source, snap.testsSource);
+      if (!b64) {
+        return;
+      }
+      let preview: { test: ParsedTest; result: SandboxResult } | null = null;
+      let firstFail: { test: ParsedTest; result: SandboxResult } | null = null;
+      for (const test of liveTests) {
+        const result = await postSandboxRun(b64, test.spec);
+        recordTestResult(test, result);
+        if (!result.test_passed && !firstFail) firstFail = { test, result };
+        preview = { test, result };
+      }
+      const show = firstFail ?? preview!;
+      setSelectedTestIndex(liveTests.indexOf(show.test));
+      setActiveTestName(show.test.name);
+      loadResult(show.result);
+      setPreviewGen((g) => g + 1);
+      if (show.result.frames.length > 0) {
+        window.requestAnimationFrame(() => play());
+      } else if (show.result.error) setError(show.result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Test failed");
+    } finally {
+      setTesting(false);
+    }
+  };
 
-  const canDeploy = !!wasmB64 || source.trim().length > 0;
+  const canDeploy = !!wasmB64 && allTestsPassed;
   const worldTick = sandbox?.frames[frameIndex]?.tick ?? 0;
 
   return (
@@ -314,7 +434,7 @@ export function CreatureStudio({
             className="deploy-btn deploy-btn-primary flex items-center gap-1 px-2.5"
             disabled={locked || !canDeploy}
             onClick={() => setDeployOpen(true)}
-            title="Deploy creature"
+            title={deployBlockedReason ?? "Deploy creature"}
             data-testid="e2e-studio-deploy"
           >
             <DeployIcon />
@@ -344,7 +464,7 @@ export function CreatureStudio({
             onClose={() => setDeployOpen(false)}
             onConfirm={async (x, y, extra) => {
               if (!canDeploy) {
-                setError("Write code and Test, or upload a .wasm file");
+                setError(deployBlockedReason ?? "All tests must pass before deploy");
                 return;
               }
               setError(null);
@@ -360,33 +480,167 @@ export function CreatureStudio({
       <div className="studio-body" ref={bodyRef}>
         <div className="studio-code-pane" style={{ flex: `0 0 ${codeHeightPct}%` }}>
           <div className="studio-editor-wrap">
-            <RustEditor
-              value={source}
-              height="100%"
-              onChange={(v) => {
-                setSource(v);
-                setWasmB64(undefined);
-                setWasmLabel(null);
-                loadResult(null);
-                setTestLoopActive(false);
-                if (error) setError(null);
-              }}
-              diagnostics={diagnostics}
-              readOnly={locked}
-            />
+            <div className="studio-tabs studio-tabs-corner">
+              <button
+                type="button"
+                className={`studio-tab${editorTab === "source" ? " studio-tab-active" : ""}`}
+                onClick={() => setEditorTab("source")}
+              >
+                Source
+              </button>
+              <button
+                type="button"
+                className={`studio-tab${editorTab === "tests" ? " studio-tab-active" : ""}`}
+                onClick={() => setEditorTab("tests")}
+              >
+                Tests
+              </button>
+            </div>
+            <div className={editorTab === "source" ? "studio-editor-panel" : "studio-editor-panel studio-editor-panel-hidden"}>
+              <RustEditor
+                ref={sourceEditorRef}
+                value={source}
+                height="100%"
+                onChange={(v) => {
+                  setSource(v);
+                  sourceRef.current = v;
+                  invalidateWasm();
+                }}
+                diagnostics={sourceShownDiagnostics}
+                readOnly={locked}
+              />
+            </div>
+            <div className={editorTab === "tests" ? "studio-editor-panel" : "studio-editor-panel studio-editor-panel-hidden"}>
+              <RustEditor
+                ref={testsEditorRef}
+                value={testsSource}
+                height="100%"
+                onChange={(v) => {
+                  setTestsSource(v);
+                  testsSourceRef.current = v;
+                  invalidateWasm();
+                }}
+                diagnostics={testsShownDiagnostics}
+                readOnly={locked}
+              />
+            </div>
           </div>
 
           <div className="studio-controls">
+            <select
+              className="studio-test-select"
+              value={selectedTest?.name ?? ""}
+              disabled={locked || tests.length === 0}
+              onChange={(e) => {
+                const idx = tests.findIndex((t) => t.name === e.target.value);
+                if (idx >= 0) setSelectedTestIndex(idx);
+              }}
+              data-testid="e2e-studio-test-select"
+            >
+              {tests.length === 0 ? (
+                <option value="">No tests</option>
+              ) : (
+                tests.map((t) => {
+                  const run = testResults[t.name];
+                  const mark = run?.passed ? "✓ " : run?.passed === false ? "✗ " : "";
+                  return (
+                    <option key={t.name} value={t.name}>
+                      {mark}
+                      {t.label}
+                    </option>
+                  );
+                })
+              )}
+            </select>
             <button
               type="button"
               className="deploy-btn"
-              disabled={locked || testLoopActive}
-              onClick={() => void startTestLoop()}
-              title="Run all scenarios"
+              disabled={locked || !selectedTest}
+              onClick={() => void runSelectedTest()}
+              title="Run selected test in preview"
               data-testid="e2e-studio-test"
             >
-              {testing ? "Testing…" : "Test"}
+              {testing ? "Running…" : "Run test"}
             </button>
+            <button
+              type="button"
+              className="deploy-btn"
+              disabled={locked || tests.length === 0}
+              onClick={() => void runAllTests()}
+              title="Run all tests (required before deploy)"
+            >
+              Run all
+            </button>
+            {selectedTestResult && (
+              <span
+                className={
+                  selectedTestResult.passed ? "studio-test-status studio-test-status-pass" : "studio-test-status studio-test-status-fail"
+                }
+                data-testid="e2e-studio-test-status"
+              >
+                {selectedTestResult.passed
+                  ? "Passed"
+                  : selectedTestResult.message ?? "Failed"}
+              </span>
+            )}
+            {error && (
+              <span className="studio-test-err" title={error}>
+                {error}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div
+          className="studio-split-handle"
+          onPointerDown={startSplitResize}
+          title="Drag to resize"
+          aria-hidden
+        />
+
+        <div className="studio-preview-pane">
+          {activeTestName && selectedTest && (
+            <div className="absolute left-2 top-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-2">
+              <div className="rounded-md border border-white/[0.08] bg-black/60 px-2 py-1 text-[10px] text-white/70 backdrop-blur-sm">
+                Test: <span className="text-biolume/90">{selectedTest.label}</span>
+              </div>
+              {selectedTestResult && (
+                <div
+                  className={
+                    selectedTestResult.passed
+                      ? "studio-preview-badge studio-preview-badge-pass"
+                      : "studio-preview-badge studio-preview-badge-fail"
+                  }
+                >
+                  {selectedTestResult.passed ? "Passed" : selectedTestResult.message ?? "Failed"}
+                </div>
+              )}
+            </div>
+          )}
+          {!sandbox || !sandbox.frames.length ? (
+            <div className="flex h-full items-center justify-center pb-16 px-4 text-center text-[11px] text-white/30">
+              {sandbox?.error ?? (testing ? "Running test…" : "Pick a test and run it to preview")}
+            </div>
+          ) : (
+            <WorldCanvas
+              key={previewGen}
+              creaturesLiveRef={creaturesLiveRef}
+              tilesLiveRef={tilesLiveRef}
+              canDeploy={false}
+              userUid="sandbox"
+              corpseEnergy={corpseEnergy}
+              senseRange={senseRange}
+              view="follow"
+              followId="sandbox"
+              initialZoom={1.2}
+              onCellSelect={() => {}}
+              runtimeRef={runtimeRef}
+              worldTick={worldTick}
+              tickHz={tickHz}
+            />
+          )}
+
+          <div className="studio-preview-controls">
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
@@ -406,82 +660,34 @@ export function CreatureStudio({
                 title="Stop"
                 aria-label="Stop"
                 data-testid="e2e-studio-stop"
-                onClick={testLoopActive ? stopTestLoop : stop}
+                onClick={stop}
               >
                 <StopIcon />
               </button>
             </div>
-            {wasmLabel && (
-              <span className="truncate font-mono text-[9px] text-biolume/70" title={wasmLabel}>
-                {wasmLabel}
-              </span>
+            {sandbox && (
+              <>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, sandbox.frames.length - 1)}
+                  value={frameIndex}
+                  disabled={playback === "playing"}
+                  onChange={(e) => seek(Number(e.target.value))}
+                  className="min-w-0 flex-1 accent-biolume"
+                />
+                <div className="hidden shrink-0 grid-cols-2 gap-x-3 font-mono text-[9px] text-white/45 sm:grid">
+                  <span>Tick {sandbox.frames[frameIndex]?.tick ?? 0}</span>
+                  <GlimAmount
+                    label="Energy"
+                    amount={sandbox.frames[frameIndex]?.energy ?? 0}
+                    compact
+                    className="justify-end text-[9px]"
+                  />
+                </div>
+              </>
             )}
           </div>
-
-          {sandbox && (
-            <div className="studio-scrub">
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, sandbox.frames.length - 1)}
-                value={frameIndex}
-                disabled={playback === "playing"}
-                onChange={(e) => seek(Number(e.target.value))}
-                className="w-full accent-biolume"
-              />
-              <div className="grid grid-cols-2 gap-2 font-mono text-[9px] text-white/45">
-                <span>Tick {sandbox.frames[frameIndex]?.tick ?? 0}</span>
-                <span>
-                  Energy <GlimAmount amount={sandbox.frames[frameIndex]?.energy ?? 0} compact className="inline text-[9px]" />
-                </span>
-                <span>
-                  Spent <GlimAmount amount={sandbox.bench.total_spent} compact className="inline text-[9px]" />
-                </span>
-                <span>
-                  / tick <GlimAmount amount={sandbox.bench.per_tick_avg} compact className="inline text-[9px]" />
-                </span>
-              </div>
-            </div>
-          )}
-
-          {error && !diagnostics.some((d) => d.level === "error") && (
-            <p className="font-mono text-[10px] text-red-400/80">{error}</p>
-          )}
-        </div>
-
-        <div
-          className="studio-split-handle"
-          onPointerDown={startSplitResize}
-          title="Drag to resize"
-          aria-hidden
-        />
-
-        <div className="studio-preview-pane">
-          {testLoopActive && activeScenario && (
-            <div className="absolute left-2 top-2 z-10 rounded-md border border-white/[0.08] bg-black/60 px-2 py-1 text-[10px] text-white/70 backdrop-blur-sm">
-              Running: <span className="text-biolume/90">{activeScenario.label}</span>
-            </div>
-          )}
-          {!sandbox ? (
-            <div className="flex h-full items-center justify-center text-[11px] text-white/30">
-              Run Test to preview scenarios
-            </div>
-          ) : (
-            <WorldCanvas
-              creaturesLiveRef={creaturesLiveRef}
-              tilesLiveRef={tilesLiveRef}
-              canDeploy={false}
-              userUid="sandbox"
-              senseRange={senseRange}
-              view="god"
-              followId={null}
-              initialZoom={1.2}
-              onCellSelect={() => {}}
-              runtimeRef={runtimeRef}
-              worldTick={worldTick}
-              tickHz={tickHz}
-            />
-          )}
         </div>
       </div>
       <div

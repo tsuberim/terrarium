@@ -5,6 +5,7 @@ import { WorldRuntime } from "../lib/worldRuntime";
 import type { FxEvent } from "../lib/worldTypes";
 
 const SANDBOX_ID = "sandbox";
+const SANDBOX_MAX_HEALTH = 100;
 
 export type PlaybackState = "stopped" | "playing" | "paused";
 
@@ -12,6 +13,7 @@ export function useSandboxPlayback(tickHz: number) {
   const [result, setResult] = useState<SandboxResult | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playback, setPlayback] = useState<PlaybackState>("stopped");
+  const resultRef = useRef<SandboxResult | null>(null);
 
   const creaturesLiveRef = useRef<Creature[]>([]);
   const tilesLiveRef = useRef<WorldTile[]>([]);
@@ -21,7 +23,6 @@ export function useSandboxPlayback(tickHz: number) {
     const frame = res.frames[Math.min(index, res.frames.length - 1)];
     if (!frame) return;
 
-    const maxHealth = frame.health > 0 ? Math.max(frame.health, 100) : 100;
     creaturesLiveRef.current = [
       {
         id: SANDBOX_ID,
@@ -29,7 +30,7 @@ export function useSandboxPlayback(tickHz: number) {
         y: frame.y,
         energy: frame.energy,
         health: frame.health,
-        max_health: maxHealth,
+        max_health: SANDBOX_MAX_HEALTH,
         owner_uid: "sandbox",
         facing: frame.facing,
       },
@@ -46,27 +47,25 @@ export function useSandboxPlayback(tickHz: number) {
     rt.reset(frame.tick, creaturesLiveRef.current);
     rt.setTickHz(tickHz);
     const fxNow = performance.now();
-    for (let i = 0; i <= index; i++) {
-      const f = res.frames[i]!;
-      rt.push(
-        {
-          tick: f.tick,
-          actions: f.actions ?? [],
-          events: (f.events ?? []).map((e) => ({ ...e, at: fxNow, simTick: f.tick }) as FxEvent),
-          removed: [],
-          removedTiles: [],
-        },
-        fxNow,
-      );
-    }
+    rt.push(
+      {
+        tick: frame.tick,
+        actions: frame.actions ?? [],
+        events: (frame.events ?? []).map((e) => ({ ...e, at: fxNow, simTick: frame.tick }) as FxEvent),
+        removed: [],
+        removedTiles: [],
+      },
+      fxNow,
+    );
   }, [tickHz]);
 
   const loadResult = useCallback(
     (res: SandboxResult | null) => {
+      resultRef.current = res;
       setResult(res);
       setFrameIndex(0);
       setPlayback("stopped");
-      if (!res || !res.frames.length) {
+      if (!res?.frames.length) {
         creaturesLiveRef.current = [];
         tilesLiveRef.current = [];
         runtimeRef.current.reset(0, []);
@@ -79,25 +78,26 @@ export function useSandboxPlayback(tickHz: number) {
 
   const seek = useCallback(
     (index: number) => {
-      if (!result) return;
-      const next = Math.max(0, Math.min(index, result.frames.length - 1));
+      const res = resultRef.current;
+      if (!res) return;
+      const next = Math.max(0, Math.min(index, res.frames.length - 1));
       setFrameIndex(next);
-      applyFrame(result, next);
+      applyFrame(res, next);
     },
-    [applyFrame, result],
+    [applyFrame],
   );
 
   const play = useCallback(() => {
-    if (!result?.frames.length) return;
+    const res = resultRef.current;
+    if (!res?.frames.length) return;
     setFrameIndex((prev) => {
-      if (result && prev >= result.frames.length - 1) {
-        applyFrame(result, 0);
-        return 0;
-      }
-      return prev;
+      const last = res.frames.length - 1;
+      const next = prev >= last ? 0 : prev;
+      applyFrame(res, next);
+      return next;
     });
     setPlayback("playing");
-  }, [applyFrame, result]);
+  }, [applyFrame]);
 
   const pause = useCallback(() => setPlayback("paused"), []);
 
@@ -107,21 +107,26 @@ export function useSandboxPlayback(tickHz: number) {
   }, [seek]);
 
   useEffect(() => {
-    if (playback !== "playing" || !result?.frames.length) return;
-    const ms = 1000 / tickHz;
+    if (playback !== "playing") return;
+    const ms = Math.max(50, 1000 / tickHz);
     const id = window.setInterval(() => {
+      const res = resultRef.current;
+      if (!res?.frames.length) {
+        setPlayback("paused");
+        return;
+      }
       setFrameIndex((prev) => {
-        const next = prev + 1;
-        if (next >= result.frames.length) {
+        if (prev >= res.frames.length - 1) {
           setPlayback("paused");
           return prev;
         }
-        applyFrame(result, next);
+        const next = prev + 1;
+        applyFrame(res, next);
         return next;
       });
     }, ms);
     return () => window.clearInterval(id);
-  }, [playback, result, tickHz, applyFrame]);
+  }, [playback, tickHz, applyFrame]);
 
   return {
     result,

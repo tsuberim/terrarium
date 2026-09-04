@@ -12,6 +12,7 @@ use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::validate::validate_wasm;
+use terrarium_test_spec::parse_tests;
 
 const MAX_SOURCE_LEN: usize = 32_768;
 const MAX_WASM_BYTES: usize = 64 * 1024;
@@ -21,6 +22,8 @@ const COMPILE_TIMEOUT: Duration = Duration::from_secs(90);
 pub struct CompileRequest {
     pub language: String,
     pub source: String,
+    #[serde(default)]
+    pub tests: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -31,6 +34,8 @@ pub struct Diagnostic {
     pub line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub area: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -63,7 +68,7 @@ pub async fn compile(
         ));
     }
 
-    match compile_rust(&body.source).await {
+    match compile_rust(&body.source, &body.tests).await {
         Ok(res) => Ok(Json(res)),
         Err(res) => Err((StatusCode::BAD_REQUEST, Json(res))),
     }
@@ -80,12 +85,13 @@ fn err_response(status: StatusCode, message: &str) -> (StatusCode, Json<CompileR
                 message: message.into(),
                 line: None,
                 column: None,
+                area: None,
             }],
         }),
     )
 }
 
-async fn compile_rust(source: &str) -> Result<CompileResponse, CompileResponse> {
+async fn compile_rust(source: &str, tests: &str) -> Result<CompileResponse, CompileResponse> {
     let template_dir = template_root();
     let sdk_path = sdk_root();
     let job_id = Uuid::new_v4();
@@ -109,6 +115,7 @@ async fn compile_rust(source: &str) -> Result<CompileResponse, CompileResponse> 
                     message: "build succeeded but WASM artifact missing".into(),
                     line: None,
                     column: None,
+                    area: Some("source".into()),
                 }],
             });
         }
@@ -124,6 +131,7 @@ async fn compile_rust(source: &str) -> Result<CompileResponse, CompileResponse> 
                 message: format!("WASM too large (max {} bytes)", MAX_WASM_BYTES),
                 line: None,
                 column: None,
+                area: Some("source".into()),
             }],
         });
     }
@@ -137,14 +145,18 @@ async fn compile_rust(source: &str) -> Result<CompileResponse, CompileResponse> 
                 message: msg,
                 line: None,
                 column: None,
+                area: Some("source".into()),
             }],
         });
     }
 
+    let mut diagnostics = validate_tests(tests);
+    let test_errors = diagnostics.iter().any(|d| d.level == "error");
+
     Ok(CompileResponse {
-        ok: true,
+        ok: !test_errors,
         wasm_b64: Some(STANDARD.encode(wasm)),
-        diagnostics: vec![],
+        diagnostics,
     })
 }
 
@@ -156,6 +168,7 @@ async fn run_compile(
 ) -> Result<(), CompileResponse> {
     copy_template(template_dir, work).map_err(|err| compile_error(err.to_string()))?;
     patch_manifest(work, sdk_path).map_err(|err| compile_error(err.to_string()))?;
+    fs::write(work.join("src/lib.rs"), CRATE_LIB_RS).map_err(|err| compile_error(err.to_string()))?;
     fs::write(
         work.join("src/user.rs"),
         wrap_user_source(&creature_body(source)),
@@ -192,6 +205,7 @@ async fn run_compile(
                 message: stderr.trim().to_string(),
                 line: None,
                 column: None,
+                area: Some("source".into()),
             });
         }
         remap_user_diagnostics(&mut diagnostics);
@@ -205,29 +219,63 @@ async fn run_compile(
     Ok(())
 }
 
-/// Editor body starts inside `loop {` — offset past prelude + main + loop lines.
-const USER_BODY_LINE_OFFSET: u32 = 4;
+/// Editor body starts inside `tick()` — offset past prelude + fn line.
+const USER_BODY_LINE_OFFSET: u32 = 3;
+
+const CRATE_LIB_RS: &str = r#"#![no_std]
+
+mod user;
+
+#[no_mangle]
+pub extern "C" fn tick() {
+    user::tick();
+}
+
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    terrarium_sdk::sleep();
+    loop {}
+}
+"#;
 
 fn creature_body(source: &str) -> String {
-    let normalized = source.replace("\r\n", "\n");
-    normalized
-        .split("\n---\n")
-        .next()
-        .or_else(|| normalized.split("\n---").next())
-        .unwrap_or(normalized.as_str())
-        .trim()
-        .to_string()
+    source.replace("\r\n", "\n").trim().to_string()
+}
+
+fn validate_tests(tests: &str) -> Vec<Diagnostic> {
+    if tests.trim().is_empty() {
+        return vec![Diagnostic {
+            level: "error".into(),
+            message: "tests tab is empty — add at least one #[terrarium::test]".into(),
+            line: Some(1),
+            column: None,
+            area: Some("tests".into()),
+        }];
+    }
+    let parsed = parse_tests(tests);
+    parsed
+        .diagnostics
+        .into_iter()
+        .map(|d| Diagnostic {
+            level: d.level,
+            message: d.message,
+            line: d.line,
+            column: d.column,
+            area: d.area.or(Some("tests".into())),
+        })
+        .collect()
 }
 
 fn wrap_user_source(source: &str) -> String {
     format!(
-        "use terrarium_sdk::prelude::*;\n\npub fn main() {{\n    loop {{\n{}\n    }}\n}}\n",
+        "use terrarium_sdk::prelude::*;\n\npub fn tick() {{\n{}\n}}\n",
         source.trim_end()
     )
 }
 
 fn remap_user_diagnostics(diagnostics: &mut [Diagnostic]) {
     for d in diagnostics {
+        d.area = Some("source".into());
         if let Some(line) = d.line {
             if line > USER_BODY_LINE_OFFSET {
                 d.line = Some(line - USER_BODY_LINE_OFFSET);
@@ -247,6 +295,7 @@ fn compile_error(message: String) -> CompileResponse {
             message,
             line: None,
             column: None,
+            area: Some("source".into()),
         }],
     }
 }
@@ -266,7 +315,6 @@ fn sdk_root() -> PathBuf {
 fn copy_template(from: &Path, to: &Path) -> anyhow::Result<()> {
     fs::create_dir_all(to.join("src"))?;
     fs::copy(from.join("Cargo.toml"), to.join("Cargo.toml"))?;
-    fs::copy(from.join("src/lib.rs"), to.join("src/lib.rs"))?;
     Ok(())
 }
 
@@ -314,6 +362,7 @@ fn parse_cargo_diagnostics(stdout: &str) -> Vec<Diagnostic> {
             message,
             line: line_no,
             column: col,
+            area: Some("source".into()),
         });
     }
     out
@@ -332,17 +381,19 @@ mod tests {
     }
 
     #[test]
-    fn creature_body_splits_on_delimiter() {
-        let src = "let x = 1;\n---\n#[terrarium::scenario]\nfn s() {}";
+    fn creature_body_trims_source() {
+        let src = "let x = 1;\n";
         assert_eq!(creature_body(src), "let x = 1;");
     }
 
     #[test]
-    fn wrap_user_source_injects_prelude_and_main() {
+    fn wrap_user_source_exports_tick_once() {
         let wrapped = wrap_user_source("let _ = move_forward();");
         assert!(wrapped.contains("use terrarium_sdk::prelude::*;"));
-        assert!(wrapped.contains("pub fn main()"));
+        assert!(wrapped.contains("pub fn tick()"));
+        assert!(!wrapped.contains("loop {"));
         assert!(wrapped.contains("let _ = move_forward();"));
+        assert!(CRATE_LIB_RS.contains("user::tick()"));
     }
 
     #[test]
@@ -350,8 +401,9 @@ mod tests {
         let mut diags = vec![Diagnostic {
             level: "error".into(),
             message: "x".into(),
-            line: Some(5),
+            line: Some(4),
             column: Some(1),
+            area: None,
         }];
         remap_user_diagnostics(&mut diags);
         assert_eq!(diags[0].line, Some(1));

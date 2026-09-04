@@ -58,17 +58,19 @@ echo "$ME" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('
 echo "==> POST /v1/compile (default creature source)"
 COMPILE_BODY="$(mktemp)"
 SOURCE_FILE="$(mktemp)"
+TESTS_FILE="$(mktemp)"
 cat >"$SOURCE_FILE" <<'EOF'
 let _ = move_forward();
----
-#[terrarium::scenario]
-fn open_field() {}
-
-#[terrarium::scenario(wall_ahead)]
-fn wall_blocked() {}
 EOF
-python3 -c "import json, pathlib; print(json.dumps({'language':'rust','source': pathlib.Path('$SOURCE_FILE').read_text()}))" >"$COMPILE_BODY"
-rm -f "$SOURCE_FILE"
+cat >"$TESTS_FILE" <<'EOF'
+#[terrarium::test]
+fn open_field() {
+    run_ticks(20);
+    assert!(alive());
+}
+EOF
+python3 -c "import json, pathlib; print(json.dumps({'language':'rust','source': pathlib.Path('$SOURCE_FILE').read_text(), 'tests': pathlib.Path('$TESTS_FILE').read_text()}))" >"$COMPILE_BODY"
+rm -f "$SOURCE_FILE" "$TESTS_FILE"
 COMPILE_RESP="$(curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -d @"$COMPILE_BODY" "${API}/v1/compile")"
 rm -f "$COMPILE_BODY"
 WASM="$(echo "$COMPILE_RESP" | json_get "['wasm_b64']")"
@@ -81,9 +83,9 @@ assert w[:4] == b'\\x00asm', w[:8]
 print('wasm ok:', len(w), 'bytes')
 "
 
-echo "==> POST /v1/sandbox/run (open_field)"
+echo "==> POST /v1/sandbox/run (open_field test)"
 SANDBOX_BODY="$(mktemp)"
-python3 -c "import json; print(json.dumps({'wasm_b64':'${WASM}','scenario':'open_field','ticks':20}))" >"$SANDBOX_BODY"
+python3 -c "import json; print(json.dumps({'wasm_b64':'${WASM}','test':{'name':'open_field','ticks':20,'facing':0,'start_energy':4000000,'tiles':[],'assertions':[{'Alive':{'expected':True,'line':1}}]}}))" >"$SANDBOX_BODY"
 SANDBOX="$(curl -sf "${AUTH[@]}" -H 'Content-Type: application/json' -d @"$SANDBOX_BODY" "${API}/v1/sandbox/run")"
 rm -f "$SANDBOX_BODY"
 echo "$SANDBOX" | python3 -c "
@@ -92,6 +94,7 @@ d = json.load(sys.stdin)
 assert d.get('ok') is True, d
 frames = d.get('frames') or []
 assert len(frames) >= 1, d
+assert d.get('test_passed') is True, d
 print('sandbox ok:', len(frames), 'frames, alive=', d.get('alive'))
 "
 

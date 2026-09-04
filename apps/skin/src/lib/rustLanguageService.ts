@@ -24,7 +24,7 @@ export const SDK_SYMBOLS: SdkSymbol[] = [
   { name: "tile::CREATURE", kind: "const", signature: "tile::CREATURE", returns: "i32", doc: "Another creature." },
   { name: "tile::CORPSE", kind: "const", signature: "tile::CORPSE", returns: "i32", doc: "Corpse tile." },
   { name: "tile::FOOD", kind: "const", signature: "tile::FOOD", returns: "i32", doc: "Food pellet." },
-  { name: "terrarium::scenario", kind: "macro", signature: "#[terrarium::scenario]", doc: "Mark a sandbox scenario. Optional arg: `#[terrarium::scenario(wall_ahead)]`." },
+  { name: "terrarium::test", kind: "macro", signature: "#[terrarium::test]", doc: "Sandbox test with setup (tile, run_ticks) and assertions." },
 ];
 
 const SYMBOL_MAP = new Map(SDK_SYMBOLS.flatMap((s) => {
@@ -49,7 +49,7 @@ function lookupSymbol(word: string, lineText: string): SdkSymbol | undefined {
   if (lineText.includes("tile::") && word === "CREATURE") return SYMBOL_MAP.get("tile::CREATURE");
   if (lineText.includes("tile::") && word === "CORPSE") return SYMBOL_MAP.get("tile::CORPSE");
   if (lineText.includes("tile::") && word === "FOOD") return SYMBOL_MAP.get("tile::FOOD");
-  if (lineText.includes("terrarium::scenario")) return SYMBOL_MAP.get("terrarium::scenario");
+  if (lineText.includes("terrarium::test")) return SYMBOL_MAP.get("terrarium::test");
   return SYMBOL_MAP.get(word);
 }
 
@@ -111,7 +111,7 @@ export function setupRustLanguageService(monaco: Monaco, getDiagnostics: () => C
               : s.kind === "macro"
                 ? monaco.languages.CompletionItemKind.Snippet
                 : monaco.languages.CompletionItemKind.Module,
-        insertText: s.kind === "macro" ? "#[terrarium::scenario]\nfn ${1:name}() {}" : s.name,
+        insertText: s.kind === "macro" ? "#[terrarium::test]\nfn ${1:name}() {\n    run_ticks(${2:100});\n}" : s.name,
         insertTextRules:
           s.kind === "macro" ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
         detail: s.signature,

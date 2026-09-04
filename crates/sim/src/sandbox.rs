@@ -1,6 +1,9 @@
 //! Ephemeral in-memory sim runs for preview / test harness.
 
 use serde::{Deserialize, Serialize};
+use terrarium_test_spec::{
+    evaluate_assertions, AssertionResult, FrameSnapshot, TestSpec, TileKind, TilePlacement,
+};
 
 use crate::energy_ledger::EnergyLedger;
 use crate::events::{CreatureAction, DeathReason, WorldEvent};
@@ -10,34 +13,8 @@ use crate::sim_config::SimConfig;
 use crate::vm::{run_tick, Creature};
 use crate::world_tile::{WorldTile, WorldTiles};
 
-const DEFAULT_START_ENERGY: i64 = 4_000_000;
 const MAX_TICKS: u64 = 500;
 const MAX_WASM_BYTES: usize = 64 * 1024;
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SandboxScenario {
-    Open,
-    FoodAhead,
-    WallAhead,
-    CorpseAhead,
-}
-
-impl SandboxScenario {
-    pub fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "open" | "open_field" => Self::Open,
-            "food_ahead" | "food" => Self::FoodAhead,
-            "wall_ahead" | "wall" | "wall_blocked" => Self::WallAhead,
-            "corpse_ahead" | "corpse" => Self::CorpseAhead,
-            _ => return None,
-        })
-    }
-
-    pub fn parse_or_open(s: &str) -> Self {
-        Self::parse(s).unwrap_or(Self::Open)
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SandboxTile {
@@ -82,49 +59,31 @@ pub struct SandboxResult {
     pub frames: Vec<SandboxFrame>,
     pub tiles: Vec<SandboxTile>,
     pub bench: SandboxBench,
+    pub test_passed: bool,
+    pub assertions: Vec<AssertionResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
 pub struct SandboxRequest<'a> {
     pub wasm: &'a [u8],
-    pub scenario: SandboxScenario,
-    pub ticks: u64,
+    pub spec: TestSpec,
     pub config: Option<SimConfig>,
-    pub start_energy: Option<i64>,
 }
 
 pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
     if req.wasm.is_empty() || req.wasm.len() > MAX_WASM_BYTES {
-        return SandboxResult {
-            ok: false,
-            alive: false,
-            ticks_run: 0,
-            death_reason: Some(DeathReason::InvalidProgram),
-            frames: vec![],
-            tiles: vec![],
-            bench: empty_bench(0, 0),
-            error: Some("invalid wasm size".into()),
-        };
+        return fail_result("invalid wasm size", 0);
     }
 
     if host::load_module(host::wasm_engine(), req.wasm).is_none() {
-        return SandboxResult {
-            ok: false,
-            alive: false,
-            ticks_run: 0,
-            death_reason: Some(DeathReason::InvalidProgram),
-            frames: vec![],
-            tiles: vec![],
-            bench: empty_bench(0, 0),
-            error: Some("invalid wasm module".into()),
-        };
+        return fail_result("invalid wasm module", 0);
     }
 
-    let ticks = req.ticks.clamp(1, MAX_TICKS);
-    let start_energy = req.start_energy.unwrap_or(DEFAULT_START_ENERGY);
+    let ticks = req.spec.ticks.clamp(1, MAX_TICKS);
+    let start_energy = req.spec.start_energy;
     let config = req.config.clone().unwrap_or_else(sandbox_config);
-    let mut tiles = scenario_tiles(req.scenario, &config);
+    let mut tiles = spec_tiles(&req.spec, &config);
     let mut creatures = vec![Creature {
         id: "sandbox".into(),
         x: 0,
@@ -140,7 +99,7 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
         inbox: vec![],
         death_reason: None,
         born_tick: 0,
-        facing: 0,
+        facing: req.spec.facing,
     }];
 
     let mut frames = Vec::with_capacity(ticks as usize);
@@ -154,23 +113,7 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
             .iter()
             .find(|c| c.id == "sandbox")
             .cloned()
-            .unwrap_or_else(|| Creature {
-                id: "sandbox".into(),
-                x: 0,
-                y: 0,
-                energy: 0,
-                health: 0,
-                max_health: config.max_health,
-                owner_uid: "sandbox".into(),
-                parent_id: None,
-                wasm: vec![],
-                code: String::new(),
-                alive: false,
-                inbox: vec![],
-                death_reason: Some(DeathReason::EnergyFloor),
-                born_tick: 0,
-                facing: 0,
-            });
+            .unwrap_or_else(|| dead_creature(&config));
 
         frames.push(SandboxFrame {
             tick,
@@ -200,6 +143,20 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
         0
     };
 
+    let snapshots: Vec<FrameSnapshot> = frames
+        .iter()
+        .map(|f| FrameSnapshot {
+            tick: f.tick,
+            x: f.x,
+            y: f.y,
+            facing: f.facing,
+            energy: f.energy,
+            alive: f.alive,
+        })
+        .collect();
+    let assertions = evaluate_assertions(&req.spec.assertions, &snapshots);
+    let test_passed = assertions.iter().all(|a| a.passed);
+
     SandboxResult {
         ok: true,
         alive,
@@ -214,7 +171,44 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
             per_tick_avg,
         },
         frames,
+        test_passed,
+        assertions,
         error: None,
+    }
+}
+
+fn fail_result(msg: &str, start_energy: i64) -> SandboxResult {
+    SandboxResult {
+        ok: false,
+        alive: false,
+        ticks_run: 0,
+        death_reason: Some(DeathReason::InvalidProgram),
+        frames: vec![],
+        tiles: vec![],
+        bench: empty_bench(start_energy, 0),
+        test_passed: false,
+        assertions: vec![],
+        error: Some(msg.into()),
+    }
+}
+
+fn dead_creature(config: &SimConfig) -> Creature {
+    Creature {
+        id: "sandbox".into(),
+        x: 0,
+        y: 0,
+        energy: 0,
+        health: 0,
+        max_health: config.max_health,
+        owner_uid: "sandbox".into(),
+        parent_id: None,
+        wasm: vec![],
+        code: String::new(),
+        alive: false,
+        inbox: vec![],
+        death_reason: Some(DeathReason::EnergyFloor),
+        born_tick: 0,
+        facing: 0,
     }
 }
 
@@ -226,33 +220,33 @@ fn sandbox_config() -> SimConfig {
     }
 }
 
-fn scenario_tiles(scenario: SandboxScenario, config: &SimConfig) -> WorldTiles {
+fn spec_tiles(spec: &TestSpec, config: &SimConfig) -> WorldTiles {
     let mut tiles = WorldTiles::new();
-    let ahead = hex::neighbor(0, 0, 0).expect("dir 0");
-    match scenario {
-        SandboxScenario::Open => {}
-        SandboxScenario::FoodAhead => {
-            tiles.insert(
-                ahead,
-                WorldTile::Food {
-                    energy: config.food_nominal_energy,
-                },
-            );
-        }
-        SandboxScenario::WallAhead => {
-            tiles.insert((ahead.0, ahead.1), WorldTile::Solid);
-        }
-        SandboxScenario::CorpseAhead => {
-            tiles.insert(
-                ahead,
-                WorldTile::Corpse {
-                    energy: config.corpse_energy,
-                    death_reason: DeathReason::EnergyFloor,
-                },
-            );
-        }
+    for placement in &spec.tiles {
+        let (x, y) = match placement {
+            TilePlacement::At { x, y, .. } => (*x, *y),
+            TilePlacement::Ahead { facing, .. } => hex::neighbor(0, 0, *facing).unwrap_or((1, 0)),
+        };
+        let kind = match placement {
+            TilePlacement::At { kind, .. } | TilePlacement::Ahead { kind, .. } => kind,
+        };
+        insert_tile(&mut tiles, x, y, kind, config);
     }
     tiles
+}
+
+fn insert_tile(tiles: &mut WorldTiles, x: i32, y: i32, kind: &TileKind, config: &SimConfig) {
+    let tile = match kind {
+        TileKind::Solid => WorldTile::Solid,
+        TileKind::Food { energy } => WorldTile::Food {
+            energy: energy.unwrap_or(config.food_nominal_energy),
+        },
+        TileKind::Corpse { energy } => WorldTile::Corpse {
+            energy: energy.unwrap_or(config.corpse_energy),
+            death_reason: DeathReason::EnergyFloor,
+        },
+    };
+    tiles.insert((x, y), tile);
 }
 
 fn tiles_public(tiles: &WorldTiles) -> Vec<SandboxTile> {
@@ -298,19 +292,52 @@ mod tests {
     use super::*;
     use crate::compile_wat;
     use crate::examples::RUNNER;
+    use terrarium_test_spec::parse_tests;
+
+    fn runner_open_spec() -> TestSpec {
+        parse_tests(
+            r#"
+#[terrarium::test]
+fn open_field() {
+    run_ticks(5);
+    assert!(alive());
+}
+"#,
+        )
+        .tests
+        .into_iter()
+        .next()
+        .unwrap()
+    }
+
+    fn runner_wall_spec() -> TestSpec {
+        parse_tests(
+            r#"
+#[terrarium::test]
+fn wall_blocked() {
+    tile_ahead(solid());
+    run_ticks(3);
+    assert_eq!(x(), 0);
+}
+"#,
+        )
+        .tests
+        .into_iter()
+        .next()
+        .unwrap()
+    }
 
     #[test]
     fn runner_moves_in_open_sandbox() {
         let wasm = compile_wat(RUNNER).unwrap();
         let res = run_sandbox(SandboxRequest {
             wasm: &wasm,
-            scenario: SandboxScenario::Open,
-            ticks: 5,
+            spec: runner_open_spec(),
             config: None,
-            start_energy: None,
         });
         assert!(res.ok);
         assert!(res.alive);
+        assert!(res.test_passed);
         assert!(res.frames.last().unwrap().x > 0);
         assert!(res.bench.total_spent > 0);
     }
@@ -320,11 +347,10 @@ mod tests {
         let wasm = compile_wat(RUNNER).unwrap();
         let res = run_sandbox(SandboxRequest {
             wasm: &wasm,
-            scenario: SandboxScenario::WallAhead,
-            ticks: 3,
+            spec: runner_wall_spec(),
             config: None,
-            start_energy: None,
         });
+        assert!(res.test_passed);
         assert!(res.frames.iter().all(|f| f.x == 0));
     }
 }

@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use terrarium_sim::{run_sandbox, SandboxRequest, SandboxResult, SandboxScenario, SimConfig};
+use terrarium_sim::{run_sandbox, SandboxRequest, SandboxResult, SimConfig, TestSpec};
 
 const MAX_WASM_B64_LEN: usize = 96 * 1024;
 
@@ -18,15 +18,8 @@ pub fn decode_wasm(b64: &str) -> Result<Vec<u8>, String> {
 
 pub fn run_creature_sandbox(
     wasm: &[u8],
-    scenario: SandboxScenario,
-    ticks: u64,
+    spec: TestSpec,
     config: Option<SimConfig>,
 ) -> SandboxResult {
-    run_sandbox(SandboxRequest {
-        wasm,
-        scenario,
-        ticks,
-        config,
-        start_energy: None,
-    })
+    run_sandbox(SandboxRequest { wasm, spec, config })
 }

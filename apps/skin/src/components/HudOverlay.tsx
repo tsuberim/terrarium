@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Creature } from "../lib/api";
 import { GlimAmount } from "./GlimAmount";
-import { formatGlimString } from "../lib/glim";
 
 type Props = {
   online: boolean;
@@ -46,11 +45,25 @@ export function HudOverlay({
   onApiKeysOpen,
   onCodeOpen,
 }: Props) {
+  const [lastCell, setLastCell] = useState(cell);
+  const [statusBarHover, setStatusBarHover] = useState(false);
+
+  useEffect(() => {
+    if (cell) setLastCell(cell);
+  }, [cell]);
+
+  useEffect(() => {
+    if (cell || statusBarHover) return;
+    const t = window.setTimeout(() => setLastCell(null), 400);
+    return () => window.clearTimeout(t);
+  }, [cell, statusBarHover]);
+
+  const activeCell = cell ?? lastCell;
   const followLabel = followId ? `${followId.slice(0, 8)}…` : null;
   const statusText = error
     ? { kind: "error" as const, text: error }
-    : cell
-      ? { kind: "cell" as const, cell }
+    : activeCell
+      ? { kind: "cell" as const, cell: activeCell }
       : deathNotice
         ? { kind: "death" as const, text: deathNotice }
     : view === "follow" && followLabel
@@ -147,7 +160,7 @@ export function HudOverlay({
                 disabled={busy}
                 data-testid="e2e-hud-faucet"
               >
-                +{formatGlimString(10_000_000)}
+                <GlimAmount amount={10_000_000} prefix="+" compact className="text-[10px]" />
               </button>
               <button
                 type="button"
@@ -174,17 +187,24 @@ export function HudOverlay({
       </div>
 
       {statusText && (
-        <div className="status-bar">
+        <div
+          className={`status-bar${statusText.kind === "cell" ? " status-bar-interactive" : ""}`}
+          onMouseEnter={statusText.kind === "cell" ? () => setStatusBarHover(true) : undefined}
+          onMouseLeave={
+            statusText.kind === "cell"
+              ? () => {
+                  setStatusBarHover(false);
+                }
+              : undefined
+          }
+        >
           {statusText.kind === "error" ? (
             <span className="truncate text-red-400/80">{statusText.text}</span>
           ) : statusText.kind === "death" ? (
             <span className="truncate text-amber-300/75">{statusText.text}</span>
           ) : statusText.kind === "cell" ? (
             <>
-              <span className="shrink-0 tabular-nums text-white/35">
-                {statusText.cell.x}, {statusText.cell.y}
-              </span>
-              <CopyCoordsButton x={statusText.cell.x} y={statusText.cell.y} />
+              <CopyableCoords x={statusText.cell.x} y={statusText.cell.y} />
               <span className="text-white/15">·</span>
               <span className="truncate text-white/55">{statusText.cell.label}</span>
             </>
@@ -197,13 +217,12 @@ export function HudOverlay({
   );
 }
 
-function CopyCoordsButton({ x, y }: { x: number; y: number }) {
+function CopyableCoords({ x, y }: { x: number; y: number }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    const text = `${x}, ${y}`;
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(`${x}, ${y}`);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
@@ -214,30 +233,12 @@ function CopyCoordsButton({ x, y }: { x: number; y: number }) {
   return (
     <button
       type="button"
-      className="pointer-events-auto -my-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white/30 transition-colors hover:bg-white/[0.06] hover:text-white/60"
+      className="shrink-0 rounded px-1 tabular-nums text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white/60"
       onClick={() => void copy()}
       title={copied ? "Copied" : "Copy coordinates"}
-      aria-label={copied ? "Copied coordinates" : "Copy coordinates"}
     >
-      {copied ? <CheckIcon /> : <CopyIcon />}
+      {copied ? "Copied" : `${x}, ${y}`}
     </button>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="9" y="9" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.75" />
-      <path d="M6 15H5a2 2 0 01-2-2V5a2 2 0 012-2h8a2 2 0 012 2v1" stroke="currentColor" strokeWidth="1.75" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M5 12l5 5L19 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
