@@ -94,7 +94,8 @@ export function CreatureStudio({
   const [diagnostics, setDiagnostics] = useState<CompileDiagnostic[]>([]);
   const [testResults, setTestResults] = useState<Record<string, TestRunResult>>({});
   const [previewGen, setPreviewGen] = useState(0);
-  const editorRef = useRef<RustEditorHandle | null>(null);
+  const sourceEditorRef = useRef<RustEditorHandle | null>(null);
+  const testsEditorRef = useRef<RustEditorHandle | null>(null);
   const sourceRef = useRef(source);
   const testsSourceRef = useRef(testsSource);
   sourceRef.current = source;
@@ -149,17 +150,16 @@ export function CreatureStudio({
   const parsedTests = useMemo(() => parseTests(testsSource), [testsSource]);
   const tests = parsedTests.tests;
   const selectedTest = tests[selectedTestIndex] ?? tests[0];
-  const editorDiagnostics = useMemo(
-    () => diagnostics.filter((d) => (d.area ?? "source") === editorTab),
-    [diagnostics, editorTab],
+  const sourceShownDiagnostics = useMemo(
+    () => diagnostics.filter((d) => (d.area ?? "source") === "source"),
+    [diagnostics],
   );
-  const localTestDiagnostics = useMemo(
-    () => (editorTab === "tests" ? parsedTests.diagnostics : []),
-    [editorTab, parsedTests.diagnostics],
-  );
-  const shownDiagnostics = useMemo(
-    () => [...editorDiagnostics, ...localTestDiagnostics],
-    [editorDiagnostics, localTestDiagnostics],
+  const testsShownDiagnostics = useMemo(
+    () => [
+      ...diagnostics.filter((d) => d.area === "tests"),
+      ...parsedTests.diagnostics,
+    ],
+    [diagnostics, parsedTests.diagnostics],
   );
   const compileBlocked = diagnostics.some((d) => d.level === "error") || parsedTests.diagnostics.some((d) => d.level === "error");
   const allTestsPassed = useMemo(
@@ -217,33 +217,15 @@ export function CreatureStudio({
 
   const locked = busy || testing;
 
-  const snapshotEditorSources = useCallback((): { source: string; testsSource: string } => {
-    let liveSource = sourceRef.current;
-    let liveTests = testsSourceRef.current;
-    const editorValue = editorRef.current?.getValue();
-    if (editorValue != null) {
-      if (editorTab === "source") liveSource = editorValue;
-      else liveTests = editorValue;
-    }
-    sourceRef.current = liveSource;
-    testsSourceRef.current = liveTests;
-    if (liveSource !== source) setSource(liveSource);
-    if (liveTests !== testsSource) setTestsSource(liveTests);
-    return { source: liveSource, testsSource: liveTests };
-  }, [editorTab, source, testsSource]);
-
-  const switchEditorTab = useCallback(
-    (tab: "source" | "tests") => {
-      snapshotEditorSources();
-      setEditorTab(tab);
-    },
-    [snapshotEditorSources],
-  );
+  const readEditorSources = useCallback((): { source: string; testsSource: string } => ({
+    source: sourceEditorRef.current?.getValue() ?? sourceRef.current,
+    testsSource: testsEditorRef.current?.getValue() ?? testsSourceRef.current,
+  }), []);
 
   useEffect(() => {
     if (!open || !canCheck || busy || testing) return;
     const t = window.setTimeout(() => {
-      const { source: liveSource, testsSource: liveTests } = snapshotEditorSources();
+      const { source: liveSource, testsSource: liveTests } = readEditorSources();
       void postCompile("rust", liveSource, liveTests)
         .then((compiled) => setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics)))
         .catch(() => {
@@ -251,7 +233,7 @@ export function CreatureStudio({
         });
     }, 900);
     return () => window.clearTimeout(t);
-  }, [source, testsSource, open, canCheck, busy, testing, snapshotEditorSources]);
+  }, [source, testsSource, open, canCheck, busy, testing, readEditorSources]);
 
   useEffect(() => {
     if (selectedTestIndex >= tests.length) {
@@ -283,29 +265,12 @@ export function CreatureStudio({
     if (error) setError(null);
   };
 
-  const ensureWasm = useCallback(async (): Promise<string | null> => {
-    if (wasmB64) return wasmB64;
-    const { source: liveSource, testsSource: liveTests } = snapshotEditorSources();
-    const compiled = await postCompile("rust", liveSource, liveTests);
-    setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
-    if (!compiled.wasm_b64) {
-      const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Compile failed";
-      setError(msg);
-      return null;
-    }
-    if (!compiled.ok) {
-      const msg = compiled.diagnostics.find((d) => d.level === "error")?.message ?? "Fix compile errors first";
-      setError(msg);
-      if (compiled.diagnostics.some((d) => d.area === "tests")) setEditorTab("tests");
-      return null;
-    }
-    setWasmB64(compiled.wasm_b64);
-    setWasmLabel("creature.wasm");
-    return compiled.wasm_b64;
-  }, [snapshotEditorSources, wasmB64]);
+  const compileSources = useCallback(async (liveSource: string, liveTests: string): Promise<string | null> => {
+    sourceRef.current = liveSource;
+    testsSourceRef.current = liveTests;
+    if (liveSource !== source) setSource(liveSource);
+    if (liveTests !== testsSource) setTestsSource(liveTests);
 
-  const compileForTest = useCallback(async (): Promise<string | null> => {
-    const { source: liveSource, testsSource: liveTests } = snapshotEditorSources();
     const compiled = await postCompile("rust", liveSource, liveTests);
     setDiagnostics(normalizeCompileDiagnostics(compiled.diagnostics));
     if (!compiled.wasm_b64) {
@@ -323,7 +288,13 @@ export function CreatureStudio({
     setWasmLabel("creature.wasm");
     setError(null);
     return compiled.wasm_b64;
-  }, [snapshotEditorSources]);
+  }, [source, testsSource]);
+
+  const ensureWasm = useCallback(async (): Promise<string | null> => {
+    if (wasmB64) return wasmB64;
+    const snap = readEditorSources();
+    return compileSources(snap.source, snap.testsSource);
+  }, [compileSources, readEditorSources, wasmB64]);
 
   const recordTestResult = useCallback((test: ParsedTest, result: SandboxResult) => {
     const passed = result.test_passed;
@@ -340,8 +311,9 @@ export function CreatureStudio({
         setActiveTestName(test.name);
         loadResult(result);
         setPreviewGen((g) => g + 1);
-        if (result.frames.length > 0) play();
-        else if (result.error) setError(result.error);
+        if (result.frames.length > 0) {
+          window.requestAnimationFrame(() => play());
+        } else if (result.error) setError(result.error);
       }
       return result;
     },
@@ -349,7 +321,9 @@ export function CreatureStudio({
   );
 
   const runSelectedTest = async () => {
-    const test = selectedTest;
+    const snap = readEditorSources();
+    const liveTests = parseTests(snap.testsSource).tests;
+    const test = liveTests[selectedTestIndex] ?? liveTests[0];
     if (!test) {
       setError("Add at least one #[terrarium::test] in the Tests tab");
       setEditorTab("tests");
@@ -359,7 +333,7 @@ export function CreatureStudio({
     setError(null);
     stop();
     try {
-      const b64 = await compileForTest();
+      const b64 = await compileSources(snap.source, snap.testsSource);
       if (!b64) {
         return;
       }
@@ -372,7 +346,9 @@ export function CreatureStudio({
   };
 
   const runAllTests = async () => {
-    if (tests.length === 0) {
+    const snap = readEditorSources();
+    const liveTests = parseTests(snap.testsSource).tests;
+    if (liveTests.length === 0) {
       setError("Add at least one #[terrarium::test] in the Tests tab");
       setEditorTab("tests");
       return;
@@ -381,25 +357,26 @@ export function CreatureStudio({
     setError(null);
     stop();
     try {
-      const b64 = await compileForTest();
+      const b64 = await compileSources(snap.source, snap.testsSource);
       if (!b64) {
         return;
       }
       let preview: { test: ParsedTest; result: SandboxResult } | null = null;
       let firstFail: { test: ParsedTest; result: SandboxResult } | null = null;
-      for (const test of tests) {
+      for (const test of liveTests) {
         const result = await postSandboxRun(b64, test.spec);
         recordTestResult(test, result);
         if (!result.test_passed && !firstFail) firstFail = { test, result };
         preview = { test, result };
       }
       const show = firstFail ?? preview!;
-      setSelectedTestIndex(tests.indexOf(show.test));
+      setSelectedTestIndex(liveTests.indexOf(show.test));
       setActiveTestName(show.test.name);
       loadResult(show.result);
       setPreviewGen((g) => g + 1);
-      if (show.result.frames.length > 0) play();
-      else if (show.result.error) setError(show.result.error);
+      if (show.result.frames.length > 0) {
+        window.requestAnimationFrame(() => play());
+      } else if (show.result.error) setError(show.result.error);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Test failed");
     } finally {
@@ -507,35 +484,46 @@ export function CreatureStudio({
               <button
                 type="button"
                 className={`studio-tab${editorTab === "source" ? " studio-tab-active" : ""}`}
-                onClick={() => switchEditorTab("source")}
+                onClick={() => setEditorTab("source")}
               >
                 Source
               </button>
               <button
                 type="button"
                 className={`studio-tab${editorTab === "tests" ? " studio-tab-active" : ""}`}
-                onClick={() => switchEditorTab("tests")}
+                onClick={() => setEditorTab("tests")}
               >
                 Tests
               </button>
             </div>
-            <RustEditor
-              ref={editorRef}
-              value={editorTab === "source" ? source : testsSource}
-              height="100%"
-              onChange={(v) => {
-                if (editorTab === "source") {
+            <div className={editorTab === "source" ? "studio-editor-panel" : "studio-editor-panel studio-editor-panel-hidden"}>
+              <RustEditor
+                ref={sourceEditorRef}
+                value={source}
+                height="100%"
+                onChange={(v) => {
                   setSource(v);
                   sourceRef.current = v;
-                } else {
+                  invalidateWasm();
+                }}
+                diagnostics={sourceShownDiagnostics}
+                readOnly={locked}
+              />
+            </div>
+            <div className={editorTab === "tests" ? "studio-editor-panel" : "studio-editor-panel studio-editor-panel-hidden"}>
+              <RustEditor
+                ref={testsEditorRef}
+                value={testsSource}
+                height="100%"
+                onChange={(v) => {
                   setTestsSource(v);
                   testsSourceRef.current = v;
-                }
-                invalidateWasm();
-              }}
-              diagnostics={shownDiagnostics}
-              readOnly={locked}
-            />
+                  invalidateWasm();
+                }}
+                diagnostics={testsShownDiagnostics}
+                readOnly={locked}
+              />
+            </div>
           </div>
 
           <div className="studio-controls">
