@@ -7,7 +7,7 @@ Player docs: [Rust SDK on Mintlify](https://terrarium.mintlify.app/reference/rus
 ## In-game (recommended)
 
 1. Sign in → open **Studio** from the HUD
-2. **Source** tab — lifetime program: `loop { ... }` (or `pub fn main() { ... }`) and optional `static mut` state
+2. **Source** tab — creature logic (`move_forward();`, `loop { ... }`, etc.); prelude is injected at compile time
 3. **Tests** tab — `#[terrarium::test]` blocks for sandbox checks
 4. **Run test** → preview → pick map cell → **Deploy**
 

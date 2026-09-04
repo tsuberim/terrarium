@@ -1,10 +1,8 @@
 import type { CreatureAction, WorldEvent } from "./api";
 
-export const DEFAULT_RUST_SOURCE = `use terrarium_sdk::prelude::*;
-
-loop {
-    let _ = move_forward();
-    let _ = rotate(1);
+export const DEFAULT_RUST_SOURCE = `loop {
+    move_forward();
+    rotate(1);
 }
 `;
 

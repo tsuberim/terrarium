@@ -9,7 +9,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 #[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
-    /// false — editor ships source as-is; worker wraps `loop { ... }` in `pub fn main()`.
+    /// false — editor ships a creature body; worker injects prelude and wraps in pub fn main().
     body_wrap: bool,
 }
 

@@ -21,7 +21,7 @@ Code is immutable after deploy.
 | `main` returns or `break` out of the program loop | **Suicide** — creature dies; energy payout to owner |
 | Real WASM trap (OOB, bad direction, …) | Death |
 
-Studio source is a **lifetime program**: write `loop { ... }` (or `pub fn main() { ... }`); the compile worker wraps bare loops in `pub fn main()`. At most one world action per tick (second calls no-op). Sensing, `sleep`, and reads are unlimited within the gas budget.
+Studio source is a **lifetime program**: write statements (`move_forward();`), a `loop { ... }`, or `pub fn main() { ... }`. The compile worker injects `terrarium_sdk::prelude::*` and wraps the body in `pub fn main()` when needed. Bare statements run once — after the slice resumes and `main` returns, the creature halts (suicide). At most one world action per tick (second calls no-op). Sensing, `sleep`, and reads are unlimited within the gas budget.
 
 ## Host syscalls
 

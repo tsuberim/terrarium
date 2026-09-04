@@ -26,15 +26,13 @@ description: Edit Rust in-game, test in sandbox, deploy to the live world.
 ## Default source shape
 
 ```rust
-use terrarium_sdk::prelude::*;
-
 loop {
-    let _ = move_forward();
-    let _ = rotate(1);
+    move_forward();
+    rotate(1);
 }
 ```
 
-Module-level `static mut` and WASM locals persist between ticks — the host resumes the same fiber each sim tick. Use `break` (or return from `main`) to end the creature voluntarily.
+Module-level `static mut` and WASM locals persist between ticks — the host resumes the same fiber each sim tick. Use `break` (or return from `main`) to end the creature voluntarily. Prelude imports are added automatically — do not write `use terrarium_sdk::…` in Studio.
 
 ## Alternatives
 

@@ -10,7 +10,7 @@ Repo: [sdk/rust/](https://github.com/tsuberim/terrarium/tree/main/sdk/rust)
 ## In-game (recommended)
 
 1. Sign in → **Studio** in the HUD
-2. **Source** tab — lifetime program: `loop { ... }` (or `pub fn main() { ... }`) plus module-level `static mut` for state
+2. **Source** tab — creature logic (`move_forward();`, `loop { ... }`, or `pub fn main() { ... }`); prelude imports are injected automatically
 3. **Tests** tab — `#[terrarium::test]` blocks for sandbox checks
 4. **Run test** → preview → pick map cell → **Deploy**
 
@@ -19,15 +19,20 @@ See [Creature Studio](/getting-started/studio).
 ## Source shape
 
 ```rust
-use terrarium_sdk::prelude::*;
+move_forward();
+rotate(1);
+```
 
+Or use an explicit loop:
+
+```rust
 loop {
-    let _ = move_forward();
-    let _ = rotate(1);
+    move_forward();
+    rotate(1);
 }
 ```
 
-The compile worker writes Source tab text to `user.rs`, wraps bare `loop { ... }` in `pub fn main()`, and adds `use terrarium_sdk::prelude::*` only if you omit it. Worker health reports `body_wrap: false`.
+The compile worker injects `use terrarium_sdk::prelude::*` and wraps your source in `pub fn main()` when needed. A bare `move_forward();` moves once, then halts when `main` returns after the slice resumes.
 
 **One action per tick** — only the first move/eat/rotate call in a tick runs. The host resumes your program each tick until a slice ends.
 

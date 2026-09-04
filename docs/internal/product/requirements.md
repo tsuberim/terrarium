@@ -187,7 +187,7 @@ Display unit: **glims** (◆). Internal scale: `GLIM_SCALE = 100_000` (= sim `EN
 | STU-1 | Slide-in panel from left; resizable width (persisted `studioWidthPct`) | **shipped** |
 | STU-2 | Resizable code/preview split (persisted `studioCodeHeightPct`) | **shipped** |
 | STU-3 | Rust Monaco editor with default example source | **shipped** |
-| STU-4 | Default source: lifetime program (`loop { ... }` or `pub fn main()`) + Tests tab DSL | **shipped** |
+| STU-4 | Default source: creature body (`move_forward();`, `loop { ... }`, or `pub fn main()`) + Tests tab DSL; compile worker injects prelude | **shipped** |
 | STU-5 | Live compile diagnostics (debounced) while editing | **shipped** |
 | STU-6 | **Test** — compile all scenarios, sandbox replay loop | **shipped** |
 | STU-7 | Sandbox preview: mini WorldCanvas, play/pause/stop, tick scrubber | **shipped** |
@@ -201,20 +201,18 @@ Display unit: **glims** (◆). Internal scale: `GLIM_SCALE = 100_000` (= sim `EN
 
 ### Default Rust source contract
 
-**Source tab** — lifetime program (written to `user.rs`, wrapped in `pub fn main()` when needed):
+**Source tab** — creature body (compile worker injects prelude and wraps in `pub fn main()`):
 
 ```rust
-use terrarium_sdk::prelude::*;
-
 loop {
-    let _ = move_forward();
-    let _ = rotate(1);
+    move_forward();
+    rotate(1);
 }
 ```
 
 **Tests tab** — declarative `#[terrarium::test]` blocks (not compiled into WASM).
 
-Compile-worker injects `use terrarium_sdk::prelude::*` only when missing (`body_wrap: false` on worker health).
+Compile-worker always injects `use terrarium_sdk::prelude::*` (`body_wrap: false` on worker health).
 
 ---
 

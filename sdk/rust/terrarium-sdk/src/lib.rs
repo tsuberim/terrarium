@@ -1,6 +1,7 @@
 //! Terrarium creature SDK for `wasm32-unknown-unknown`.
 //!
-//! Player code is a lifetime program in Studio (`loop { ... }` or `pub fn main()`).
+//! Player code in Studio is a creature body (`move_forward();`, `loop { ... }`, etc.).
+//! The compile worker injects `terrarium_sdk::prelude::*` and wraps the body in `pub fn main()`.
 
 #![no_std]
 

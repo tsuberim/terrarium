@@ -272,38 +272,49 @@ fn validate_tests(tests: &str) -> Vec<Diagnostic> {
 
 fn validate_user_module(source: &str) -> Result<(), Vec<Diagnostic>> {
     let body = creature_body(source);
-    if body.contains("fn main") {
-        return Ok(());
+    if body.is_empty() {
+        return Err(vec![Diagnostic {
+            level: "error".into(),
+            message: "Write creature logic — e.g. move_forward(); or loop { ... }.".into(),
+            line: Some(1),
+            column: None,
+            area: Some("source".into()),
+        }]);
     }
-    if body.contains("loop") {
-        return Ok(());
+    if body.contains("fn tick") {
+        return Err(vec![Diagnostic {
+            level: "error".into(),
+            message: "Use a lifetime program (statements or loop { ... }), not pub fn tick().".into(),
+            line: Some(1),
+            column: None,
+            area: Some("source".into()),
+        }]);
     }
-    Err(vec![Diagnostic {
-        level: "error".into(),
-        message: "Write a loop { ... } or pub fn main() { ... }.".into(),
-        line: Some(1),
-        column: None,
-        area: Some("source".into()),
-    }])
+    Ok(())
+}
+
+fn strip_prelude_import(body: &str) -> String {
+    body.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !(trimmed.starts_with("use terrarium_sdk")
+                || trimmed.starts_with("pub use terrarium_sdk"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 fn wrap_as_main(body: &str) -> String {
     if body.contains("fn main") {
         return body.to_string();
     }
-    if body.contains("loop") {
-        return format!("pub fn main() {{\n{body}\n}}");
-    }
-    format!(
-        "pub fn main() {{\nloop {{\n{body}\n}}\n}}",
-    )
+    format!("pub fn main() {{\n{body}\n}}")
 }
 
 fn prepare_user_module(source: &str) -> (String, u32) {
-    let body = creature_body(source);
-    if body.contains("terrarium_sdk") {
-        return (format!("{}\n", wrap_as_main(&body)), 0);
-    }
+    let body = strip_prelude_import(&creature_body(source));
     (
         format!(
             "use terrarium_sdk::prelude::*;\n\n{}\n",
@@ -442,10 +453,30 @@ mod tests {
     }
 
     #[test]
-    fn validate_user_module_requires_loop_or_main() {
-        assert!(validate_user_module("let _ = move_forward();").is_err());
+    fn validate_user_module_accepts_bare_statements() {
+        assert!(validate_user_module("move_forward();").is_ok());
         assert!(validate_user_module("pub fn main() {}").is_ok());
         assert!(validate_user_module("loop { move_forward(); }").is_ok());
+        assert!(validate_user_module("   ").is_err());
+        assert!(validate_user_module("pub fn tick() {}").is_err());
+    }
+
+    #[test]
+    fn prepare_user_module_wraps_bare_statement() {
+        let (module, offset) = prepare_user_module("move_forward();");
+        assert!(module.contains("use terrarium_sdk::prelude::*"));
+        assert!(module.contains("pub fn main()"));
+        assert!(!module.contains("loop {"));
+        assert!(module.contains("move_forward();"));
+        assert_eq!(offset, PRELUDE_LINE_OFFSET);
+    }
+
+    #[test]
+    fn prepare_user_module_strips_user_prelude() {
+        let (module, offset) = prepare_user_module("use terrarium_sdk::prelude::*;\n\nmove_forward();");
+        assert_eq!(module.matches("use terrarium_sdk::prelude::*;").count(), 1);
+        assert!(module.contains("move_forward();"));
+        assert_eq!(offset, PRELUDE_LINE_OFFSET);
     }
 
     #[test]
