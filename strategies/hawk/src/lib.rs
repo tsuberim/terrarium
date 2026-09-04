@@ -3,8 +3,10 @@
 use strategy_hunter::{host, hawk_tick};
 
 #[no_mangle]
-pub extern "C" fn tick() {
-    hawk_tick();
+pub extern "C" fn main() {
+    loop {
+        hawk_tick();
+    }
 }
 
 #[panic_handler]

@@ -16,7 +16,7 @@ health_check_compile() {
   curl -sf "${compile}/health" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-assert d.get('status') == 'ok' and d.get('body_wrap') is True, d
+assert d.get('status') == 'ok' and d.get('body_wrap') is False, d
 "
 }
 

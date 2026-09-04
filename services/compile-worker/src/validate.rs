@@ -7,7 +7,7 @@ pub fn validate_wasm(wasm: &[u8]) -> Result<(), String> {
         return Err("invalid WASM magic".into());
     }
 
-    let mut has_tick_export = false;
+    let mut has_main_export = false;
     let parser = Parser::new(0);
     for payload in parser.parse_all(wasm) {
         let payload = payload.map_err(|e| format!("wasm parse error: {e}"))?;
@@ -26,8 +26,11 @@ pub fn validate_wasm(wasm: &[u8]) -> Result<(), String> {
             Payload::ExportSection(reader) => {
                 for export in reader {
                     let export = export.map_err(|e| format!("export error: {e}"))?;
-                    if export.name == "main" || export.name == "tick" {
-                        has_tick_export = true;
+                    if export.name == "main" {
+                        has_main_export = true;
+                    }
+                    if export.name == "tick" {
+                        return Err("WASM must export `main`, not `tick`".into());
                     }
                 }
             }
@@ -35,7 +38,7 @@ pub fn validate_wasm(wasm: &[u8]) -> Result<(), String> {
         }
     }
 
-    if !has_tick_export {
+    if !has_main_export {
         return Err("WASM must export `main`".into());
     }
     Ok(())

@@ -8,7 +8,7 @@
 |---------|-----|
 | `:5173` refused | `./scripts/dev.sh` |
 | Compile fails `expected item, found keyword let` | `./scripts/dev-stop.sh && ./scripts/dev.sh` (stale worker) |
-| `body_wrap: false` on worker health | Restart dev |
+| `body_wrap: true` on worker health | Restart dev — worker should report `body_wrap: false` |
 | Sign-in fails | `VITE_USE_AUTH_EMULATOR=true`; check `:9099` |
 | Studio clicks do nothing | Open Studio first (`e2e-hud-studio`) |
 | `UNIQUE constraint failed: creatures.x,y` | `rm data/terrarium.db && ./scripts/dev.sh` |

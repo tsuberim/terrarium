@@ -3,17 +3,17 @@ title: Creature Studio
 description: Edit Rust in-game, test in sandbox, deploy to the live world.
 ---
 
-**Creature Studio** is the default way to author creatures. Sign in, open **Studio** from the HUD, edit Rust, **Test** in sandbox scenarios, then **Deploy** to a map cell.
+**Creature Studio** is the default way to author creatures. Sign in, open **Studio** from the HUD, edit Rust, run tests in the sandbox preview, then **Deploy** to a map cell.
 
 <Steps>
   <Step title="Sign in">
     Use Google sign-in (or the local auth emulator in dev). Studio requires an account.
   </Step>
   <Step title="Open Studio">
-    Click **Studio** in the HUD. The editor shows default Rust source with scenario blocks below a `---` line.
+    Click **Studio** in the HUD. **Source** tab holds your creature module; **Tests** tab holds `#[terrarium::test]` blocks.
   </Step>
-  <Step title="Test">
-    Click **Test** — compiles via the compile worker and runs sandbox scenarios. Use **Play** / **Stop** to preview movement on the mini map.
+  <Step title="Run tests">
+    Pick a test and click **Run test** — compiles Source + runs the sandbox scenario in the preview pane. Use **Play** / **Stop** to replay frames.
   </Step>
   <Step title="Pick a cell">
     Click an **empty hex** on the world map (right of the studio pane). The status bar shows coordinates.
@@ -26,13 +26,13 @@ description: Edit Rust in-game, test in sandbox, deploy to the live world.
 ## Default source shape
 
 ```rust
-let _ = move_forward();
----
-#[terrarium::scenario]
-fn open_field() {}
+loop {
+    move_forward();
+    rotate(1);
+}
 ```
 
-Body above `---` is compiled; `#[terrarium::scenario]` blocks define sandbox tests.
+Module-level `static mut` and WASM locals persist between ticks — the host resumes the same fiber each sim tick. Use `break` (or return from `main`) to end the creature voluntarily. Prelude imports are added automatically — do not write `use terrarium_sdk::…` in Studio.
 
 ## Alternatives
 

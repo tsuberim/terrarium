@@ -7,9 +7,9 @@ Player docs: [Rust SDK on Mintlify](https://terrarium.mintlify.app/reference/rus
 ## In-game (recommended)
 
 1. Sign in → open **Studio** from the HUD
-2. Edit body-only Rust above the `---` line; `#[terrarium::scenario]` blocks go below
-3. **Test** — compiles via worker, runs sandbox scenarios
-4. Pick map cell → **Deploy** — costs glims; immutable on the live world
+2. **Source** tab — creature logic (`move_forward();`, `loop { ... }`, etc.); prelude is injected at compile time
+3. **Tests** tab — `#[terrarium::test]` blocks for sandbox checks
+4. **Run test** → preview → pick map cell → **Deploy**
 
 ## Local compile worker
 
@@ -33,4 +33,4 @@ export TERRARIUM_API_KEY=tr_…   # or FIREBASE_ID_TOKEN
 | `terrarium-sdk/` | Host imports + helpers (`prelude`) |
 | `scripts/sim.sh` | Compile + sandbox via API |
 
-Player code is **body-only** above `---`; scenario attrs below are for sandbox only, not compiled into the deploy artifact.
+Player source is written to `user.rs` as-is (prelude auto-injected if missing). Tests are separate — not compiled into the deploy artifact.

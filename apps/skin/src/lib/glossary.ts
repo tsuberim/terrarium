@@ -13,7 +13,7 @@ export const GAME_TERMS = [
   },
   {
     term: "Cash out",
-    def: "Call suicide in your creature's program — its energy returns to your credits.",
+    def: "Break out of your creature's program loop — its energy returns to your credits.",
   },
   {
     term: "Deploy",

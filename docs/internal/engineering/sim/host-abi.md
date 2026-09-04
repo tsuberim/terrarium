@@ -9,10 +9,19 @@ Code is immutable after deploy.
 ## Module contract
 
 - Import namespace `"terrarium"` (see host syscalls below)
-- Export `(func "tick")` — called once per sim tick
+- Export `(func "main")` — host **starts `main` once** per creature life and **resumes** the same WASM fiber each sim tick (heap + call stack preserved)
 - Export `(memory "memory")` if using `recv`, `signal_to`, or `sense` (needs scratch bytes at ptr)
 
-**One action per tick.** Each creature gets a single `action` slot per tick — at most one of: `move`, `rotate`, `eat`, `hit`, `dig`, `place`, `spawn`, `signal_broadcast`, `signal_to`, or `suicide`. There is no action queue; further calls are no-ops (return `0`). Sensing, `sleep`, and reads are unlimited.
+**Slice execution.** Each sim tick the host refills opcode gas and resumes WASM until the slice ends:
+
+| Slice end | World effect |
+|-----------|--------------|
+| First successful world action (`move`, `rotate`, `eat`, …) | One action applied; execution **suspends** (async yield) |
+| Opcode gas exhausted, no action taken | **Suspend** — creature stays alive; resumes next tick |
+| `main` returns or `break` out of the program loop | **Suicide** — creature dies; energy payout to owner |
+| Real WASM trap (OOB, bad direction, …) | Death |
+
+Studio source is a **lifetime program**: write statements (`move_forward();`), a `loop { ... }`, or `pub fn main() { ... }`. The compile worker injects `terrarium_sdk::prelude::*` and wraps the body in `pub fn main()` when needed. Bare statements run once — after the slice resumes and `main` returns, the creature halts (suicide). At most one world action per tick (second calls no-op). Sensing, `sleep`, and reads are unlimited within the gas budget.
 
 ## Host syscalls
 
@@ -30,7 +39,6 @@ Code is immutable after deploy.
 | `eat` | `(i32 rel) -> i32` | Eat corpse or food on **forward** cell only (`rel=0`) |
 | `hit` | `(i32 rel) -> i32` | Hit creature on **forward** cell only (`rel=0`; costs energy) |
 | `spawn` | `(i32 rel, i32 energy) -> i32` | Bud clone on **forward** empty cell only (`rel=0`) |
-| `suicide` | `() -> ()` | Die, credit owner |
 | `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
 | `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal (16-byte UUID at ptr) |
 | `recv` | `(i32 ptr) -> i32` | 1 if message, else 0; writes 36-byte struct |
@@ -62,12 +70,12 @@ Code is immutable after deploy.
 | 16 | broadcast (0 or 1) |
 | 20 | from_id (16-byte UUID) |
 
-Trap or out-of-energy → creature dies.
+Host import traps for out-of-energy, energy floor, bad direction, etc. → creature dies. Opcode **fuel exhaustion** during a slice → **suspend** (next sim tick resumes), not death.
 
 ## Gas (EVM-style)
 
-Each creature tick gets a **gas budget** of `opcodes_per_tick` (default 10_000). Every WASM instruction and every `call` to a host import consumes 1 opcode. Used opcodes cost `energy_per_opcode` energy (default **1** — cheap at million-scale units).
+Each sim tick gets a **gas budget** of `opcodes_per_tick` (default 10_000). Every WASM instruction and every `call` to a host import consumes 1 opcode. Used opcodes cost `energy_per_opcode` energy (default **1** — cheap at million-scale units).
 
-Gas budget is also capped by affordable energy: `floor(energy / energy_per_opcode)`. Out of gas traps → death.
+Gas budget is also capped by affordable energy: `floor(energy / energy_per_opcode)`. Running out of fuel mid-slice suspends; zero affordable budget at tick start still kills (`out_of_gas`).
 
 Move/dig/place still cost separate action energy (`move_extra`, etc.) beyond gas.

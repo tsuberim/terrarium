@@ -46,13 +46,30 @@ pub async fn compile_creature(
         source: source.to_string(),
         tests: tests.to_string(),
     };
+    let token = gcp_identity_token(worker_url).await?;
 
-    let mut req = client.post(&url).json(&body);
-    if let Some(token) = gcp_identity_token(worker_url).await? {
-        req = req.bearer_auth(token);
-    }
-
-    let res = req.send().await.map_err(|e| e.to_string())?;
+    let mut last_err = String::new();
+    let res = {
+        let mut attempt_res = None;
+        for _ in 0..8 {
+            let mut attempt = client.post(&url).json(&body);
+            if let Some(ref t) = token {
+                attempt = attempt.bearer_auth(t);
+            }
+            match attempt.send().await {
+                Ok(res) => {
+                    attempt_res = Some(res);
+                    break;
+                }
+                Err(err) if err.is_connect() || err.is_timeout() => {
+                    last_err = err.to_string();
+                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                }
+                Err(err) => return Err(err.to_string()),
+            }
+        }
+        attempt_res.ok_or(last_err)?
+    };
     let status = res.status();
     let text = res.text().await.map_err(|e| e.to_string())?;
     let parsed: CompileResponse = serde_json::from_str(&text).map_err(|_| text.clone())?;

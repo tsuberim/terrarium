@@ -23,7 +23,7 @@ mod tests {
     const IDLE: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
-  (func (export "tick") (call $sleep))
+  (func (export "main") (call $sleep))
 )
 "#;
 

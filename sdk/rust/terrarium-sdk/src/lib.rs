@@ -1,6 +1,7 @@
 //! Terrarium creature SDK for `wasm32-unknown-unknown`.
 //!
-//! Player code is body-only in the editor; the compile worker wraps it in `main` with prelude imported.
+//! Player code in Studio is a creature body (`move_forward();`, `loop { ... }`, etc.).
+//! The compile worker injects `terrarium_sdk::prelude::*` and wraps the body in `pub fn main()`.
 
 #![no_std]
 
@@ -56,10 +57,16 @@ pub fn sense_kind(dq: i32, dr: i32) -> i32 {
     }
 }
 
-pub fn random_byte() -> u8 {
-    unsafe { host::random_byte() as u8 }
+pub fn random_byte() -> i32 {
+    unsafe { host::random_byte() }
+}
+
+pub fn uptime() -> i32 {
+    unsafe { host::uptime() }
 }
 
 pub mod prelude {
-    pub use crate::{eat_forward, energy, move_forward, rotate, sense_kind, sleep, tile};
+    pub use crate::{
+        eat_forward, energy, move_forward, random_byte, rotate, sense_kind, sleep, tile, uptime,
+    };
 }

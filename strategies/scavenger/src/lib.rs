@@ -3,8 +3,10 @@
 use strategy_hunter::{host, scavenger_tick};
 
 #[no_mangle]
-pub extern "C" fn tick() {
-    scavenger_tick();
+pub extern "C" fn main() {
+    loop {
+        scavenger_tick();
+    }
 }
 
 #[panic_handler]

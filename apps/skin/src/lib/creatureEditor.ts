@@ -1,6 +1,9 @@
 import type { CreatureAction, WorldEvent } from "./api";
 
-export const DEFAULT_RUST_SOURCE = `let _ = move_forward();
+export const DEFAULT_RUST_SOURCE = `loop {
+    move_forward();
+    rotate(1);
+}
 `;
 
 export const DEFAULT_TESTS_SOURCE = `#[terrarium::test]
@@ -125,6 +128,11 @@ export function normalizeCompileDiagnostics(
     column: d.column,
     area: d.area === "tests" ? "tests" : d.area === "source" ? "source" : undefined,
   }));
+}
+
+/** @deprecated Slice model suspends after first action; lint removed. */
+export function lintSourceActions(): CompileDiagnostic[] {
+  return [];
 }
 
 export function parseTests(source: string): { tests: ParsedTest[]; diagnostics: CompileDiagnostic[] } {

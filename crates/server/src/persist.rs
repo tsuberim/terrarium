@@ -8,7 +8,11 @@ use terrarium_sim::{compile_wat, vm::Creature, DeathReason, EnergyLedger, WorldT
 const IDLE_WAT: &str = r#"
 (module
   (import "terrarium" "sleep" (func $sleep))
-  (func (export "tick") (call $sleep))
+  (func (export "main")
+    loop $l
+      call $sleep
+      br $l
+    end)
 )
 "#;
 

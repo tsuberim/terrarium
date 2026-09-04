@@ -9,7 +9,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 #[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
-    /// Present on workers that wrap editor body in `main` + `loop`.
+    /// false — editor ships a creature body; worker injects prelude and wraps in pub fn main().
     body_wrap: bool,
 }
 
@@ -37,6 +37,6 @@ async fn main() -> anyhow::Result<()> {
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
-        body_wrap: true,
+        body_wrap: false,
     })
 }
