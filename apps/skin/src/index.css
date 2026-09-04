@@ -189,7 +189,7 @@
   }
 
   .studio-code-pane {
-    @apply flex min-h-0 flex-col gap-2 overflow-y-auto p-3;
+    @apply flex min-h-0 shrink-0 flex-col gap-2 overflow-hidden p-3;
   }
 
   .studio-split-handle {
@@ -202,15 +202,71 @@
   }
 
   .studio-editor-wrap {
-    @apply flex min-h-[8rem] flex-1 flex-col overflow-hidden rounded-lg border border-white/[0.08];
+    @apply relative flex min-h-[8rem] min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-white/[0.08];
   }
 
   .studio-preview-pane {
-    @apply relative min-h-0 flex-1 overflow-hidden;
+    @apply relative flex min-h-0 flex-1 flex-col overflow-hidden;
+  }
+
+  .studio-preview-controls {
+    @apply absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 border-t border-white/[0.06] bg-black/50 px-2 py-2 backdrop-blur-sm;
+  }
+
+  .studio-tabs {
+    @apply flex shrink-0 gap-0.5 rounded-md border border-white/[0.06] bg-black/20 p-0.5;
+  }
+
+  .studio-tabs-corner {
+    @apply pointer-events-auto absolute right-5 top-1.5 z-10 border-white/[0.08] bg-black/55 backdrop-blur-sm;
+  }
+
+  .studio-tab {
+    @apply rounded px-2 py-0.5 text-[9px] text-white/45 transition-colors hover:text-white/70;
+  }
+
+  .studio-tab-active {
+    @apply bg-white/[0.08] text-white/85;
+  }
+
+  .studio-test-select {
+    @apply max-w-[9rem] truncate rounded-md border border-white/[0.08] bg-black/30 px-2 py-1 font-mono text-[10px] text-white/70 outline-none focus:border-biolume/25;
   }
 
   .studio-controls {
-    @apply flex flex-wrap items-center gap-2;
+    @apply flex shrink-0 flex-wrap items-center gap-2;
+  }
+
+  .studio-test-err {
+    @apply min-w-0 flex-1 truncate font-mono text-[10px] text-red-400/80;
+  }
+
+  .studio-test-hint {
+    @apply font-mono text-[10px] text-white/35;
+  }
+
+  .studio-test-status {
+    @apply shrink-0 rounded-md px-2 py-0.5 font-mono text-[10px];
+  }
+
+  .studio-test-status-pass {
+    @apply border border-biolume/25 bg-biolume/10 text-biolume/90;
+  }
+
+  .studio-test-status-fail {
+    @apply max-w-[12rem] truncate border border-red-400/25 bg-red-400/10 text-red-300/90;
+  }
+
+  .studio-preview-badge {
+    @apply rounded-md px-2 py-1 font-mono text-[10px] backdrop-blur-sm;
+  }
+
+  .studio-preview-badge-pass {
+    @apply border border-biolume/30 bg-biolume/15 text-biolume/90;
+  }
+
+  .studio-preview-badge-fail {
+    @apply max-w-[min(16rem,calc(100%-1rem))] truncate border border-red-400/30 bg-red-400/15 text-red-300/90;
   }
 
   .studio-icon-btn {
@@ -244,5 +300,9 @@
   .status-bar {
     @apply pointer-events-none absolute bottom-3 left-1/2 flex max-w-[min(24rem,calc(100%-1.5rem))] -translate-x-1/2 items-center gap-2 rounded-full border border-white/[0.06] bg-black/30 px-3 py-1 backdrop-blur-md;
     @apply font-mono text-[10px];
+  }
+
+  .status-bar-interactive {
+    @apply pointer-events-auto;
   }
 }

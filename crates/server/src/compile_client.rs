@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct CompileRequest {
     pub language: String,
     pub source: String,
+    #[serde(default)]
+    pub tests: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,6 +16,8 @@ pub struct Diagnostic {
     pub line: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,6 +33,7 @@ pub async fn compile_creature(
     worker_url: &str,
     language: &str,
     source: &str,
+    tests: &str,
 ) -> Result<CompileResponse, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -39,6 +44,7 @@ pub async fn compile_creature(
     let body = CompileRequest {
         language: language.to_string(),
         source: source.to_string(),
+        tests: tests.to_string(),
     };
 
     let mut req = client.post(&url).json(&body);

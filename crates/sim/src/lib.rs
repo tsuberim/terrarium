@@ -21,10 +21,12 @@ pub use energy_ledger::EnergyLedger;
 pub use events::{CreatureAction, DeathReason, TickResult, WorldEvent};
 pub use examples::{ExampleProgram, ALL as EXAMPLE_PROGRAMS};
 pub use sandbox::{
-    run_sandbox, SandboxBench, SandboxFrame, SandboxRequest, SandboxResult, SandboxScenario,
-    SandboxTile,
+    run_sandbox, SandboxBench, SandboxFrame, SandboxRequest, SandboxResult, SandboxTile,
 };
 pub use sim_config::SimConfig;
+pub use terrarium_test_spec::{
+    parse_tests, AssertionResult, Diagnostic as TestDiagnostic, ParsedTests, TestSpec,
+};
 pub use vm::{run_tick, Creature, Signal};
 pub use wat::{compile_wat, WatError};
 pub use world_tile::{WorldTile, WorldTiles};

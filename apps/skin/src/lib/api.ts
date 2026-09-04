@@ -188,10 +188,10 @@ export const postDeploy = (
 export type CompileResult = {
   ok: boolean;
   wasm_b64?: string;
-  diagnostics: { level: string; message: string; line?: number; column?: number }[];
+  diagnostics: { level: string; message: string; line?: number; column?: number; area?: string }[];
 };
 
-export async function postCompile(language: string, source: string): Promise<CompileResult> {
+export async function postCompile(language: string, source: string, tests: string): Promise<CompileResult> {
   const headers = new Headers({ "Content-Type": "application/json" });
   const user = auth.currentUser;
   if (user) {
@@ -200,7 +200,7 @@ export async function postCompile(language: string, source: string): Promise<Com
   const res = await fetch(`${apiRoot()}/v1/compile`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ language, source }),
+    body: JSON.stringify({ language, source, tests }),
   });
   const text = await res.text().catch(() => "");
   let body: CompileResult & { error?: string };
@@ -216,10 +216,10 @@ export async function postCompile(language: string, source: string): Promise<Com
   throw new Error(msg);
 }
 
-export const postSandboxRun = (wasmB64: string, scenario: string, ticks: number) =>
+export const postSandboxRun = (wasmB64: string, test: import("./creatureEditor").TestSpec) =>
   api<import("./creatureEditor").SandboxResult>("/v1/sandbox/run", {
     method: "POST",
-    body: JSON.stringify({ wasm_b64: wasmB64, scenario, ticks }),
+    body: JSON.stringify({ wasm_b64: wasmB64, test }),
   });
 
 export const postClearWorld = () =>

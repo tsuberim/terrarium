@@ -68,23 +68,14 @@ struct DeployRequest {
 struct CompileBody {
     language: String,
     source: String,
+    #[serde(default)]
+    tests: String,
 }
 
 #[derive(Deserialize)]
 struct SandboxRunBody {
     wasm_b64: String,
-    #[serde(default = "default_scenario")]
-    scenario: String,
-    #[serde(default = "default_sandbox_ticks")]
-    ticks: u64,
-}
-
-fn default_scenario() -> String {
-    "open".into()
-}
-
-fn default_sandbox_ticks() -> u64 {
-    100
+    test: terrarium_sim::TestSpec,
 }
 
 #[derive(Serialize)]
@@ -290,7 +281,9 @@ async fn compile(
             .into_response();
     };
 
-    match compile_client::compile_creature(worker_url, &body.language, &body.source).await {
+    match compile_client::compile_creature(worker_url, &body.language, &body.source, &body.tests)
+        .await
+    {
         Ok(res) => {
             if res.ok {
                 Json(res).into_response()
@@ -321,12 +314,10 @@ async fn sandbox_run(
         }
     };
 
-    let scenario = terrarium_sim::SandboxScenario::parse_or_open(&body.scenario);
-
     let mut config = state.engine.sim_config();
     config.max_active_food = 0;
     config.food_spawn_interval = u64::MAX;
-    let result = sandbox::run_creature_sandbox(&wasm, scenario, body.ticks, Some(config));
+    let result = sandbox::run_creature_sandbox(&wasm, body.test, Some(config));
     Json(result).into_response()
 }
 

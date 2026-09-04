@@ -304,7 +304,7 @@ export default function App() {
         />
         <div
           className="hud-shell"
-          style={studioVisible ? { left: `${studioWidthPct}%` } : undefined}
+          style={{ left: studioVisible ? `${studioWidthPct}%` : 0 }}
         >
           <HudOverlay
             online={connected}

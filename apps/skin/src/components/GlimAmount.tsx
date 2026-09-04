@@ -1,4 +1,4 @@
-import { formatGlimValue, glimCount, GLIM_NAME, GLIM_NAME_PLURAL } from "../lib/glim";
+import { formatGlimValue, glimCount, GLIM_NAME, GLIM_NAME_PLURAL, GLIM_VALUE_WIDTH_CH } from "../lib/glim";
 
 type IconProps = {
   className?: string;
@@ -16,16 +16,25 @@ type Props = {
   amount: number;
   className?: string;
   iconClassName?: string;
+  /** Optional label before the icon, e.g. "Energy". */
+  label?: string;
+  /** Text before the amount, e.g. "+". */
+  prefix?: string;
   /** Hide the unit word — icon + number only. */
   compact?: boolean;
 };
 
-export function GlimAmount({ amount, className, iconClassName, compact }: Props) {
+export function GlimAmount({ amount, className, iconClassName, label, prefix, compact }: Props) {
   const unit = Math.abs(glimCount(amount)) === 1 ? GLIM_NAME : GLIM_NAME_PLURAL;
   return (
     <span className={`inline-flex items-center gap-0.5 tabular-nums ${className ?? ""}`}>
+      {label && <span className="shrink-0">{label}</span>}
       <GlimIcon className={iconClassName} />
-      <span>
+      <span
+        className="inline-block text-right"
+        style={{ minWidth: `${GLIM_VALUE_WIDTH_CH}ch` }}
+      >
+        {prefix}
         {formatGlimValue(amount)}
         {!compact && `\u00a0${unit}`}
       </span>
