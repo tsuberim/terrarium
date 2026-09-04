@@ -26,7 +26,8 @@ export function formatDeathReason(reason: DeathReason): string {
   return REASON_LABELS[reason] ?? reason.replaceAll("_", " ");
 }
 
+import { shortId } from "./wireIds";
+
 export function formatDeathNotice(event: DeathEvent): string {
-  const id = event.creature_id.slice(0, 8);
-  return `${id} died — ${formatDeathReason(event.reason)}`;
+  return `${shortId(event.creature_id)} died — ${formatDeathReason(event.reason)}`;
 }

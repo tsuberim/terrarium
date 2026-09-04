@@ -26,7 +26,7 @@ Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 
 | Layer | What it catches | Command |
 |-------|-----------------|---------|
-| **Sim unit** | Assembler bugs, VM semantics, example programs | `cargo test -p terrarium-sim` |
+| **Sim unit** | Assembler bugs, VM semantics, sandbox replay | `cargo test -p terrarium-sim` |
 | **Server sim** | DB persistence, tick loop, UNIQUE position updates | `cargo test -p terrarium-server` |
 | **Manual dev** | Auth, Studio, deploy flow | `./scripts/dev.sh` → http://localhost:5173 |
 | **QA (local)** | API smoke + Playwright e2e | `npm run test:integration` (requires dev stack) |
@@ -34,35 +34,11 @@ Hooks: `cargo fmt`, `cargo clippy -D warnings`, `eslint` (skin `src/` only).
 
 ## Sim tests
 
-- Example WAT programs live in `crates/sim/src/examples.rs` (used by sim unit tests).
-- Predator/scavenger examples are authored in Rust under `strategies/` and synced via `./scripts/build-strategies.sh` → committed WAT in `examples.rs`. CI runs `./scripts/check-strategies-sync.sh` (compile-only; WAT sync is manual).
+- VM and sandbox tests use minimal inline WAT in test modules — no bundled example programs.
 - Default Studio source is `apps/skin/src/lib/creatureEditor.ts` (`DEFAULT_RUST_SOURCE`) — compile path tested by `npm run smoke` / Playwright.
 - VM tests run creatures for N ticks in memory — no DB, fast.
 
-## Logic tests
-
-Sim semantic tests live in `crates/sim/src/logic_tests.rs`. They cover:
-
-- Stack underflow stalls (does not kill)
-- `eq` / `sub` pop order
-- Blocked move still costs energy
-- Example program behavior (wall north)
-- `sense` sees creatures
-- Energy zero → death
-- One action per tick; rotate-then-eat ordering; frontal vision cone
-
-Run: `cargo test -p terrarium-sim logic_tests`
-
-When fixing a logic bug, add a test there first.
-
-```rust
-#[test]
-fn my_program_does_x() {
-    let mut creatures = vec![/* ... */];
-    run_tick(&mut creatures, &mut HashMap::new());
-    assert_eq!(creatures[0].x, expected);
-}
-```
+Gas and action energy constants: [sim/host-abi.md](sim/host-abi.md) § Gas & energy costs.
 
 ## Server sim tests
 

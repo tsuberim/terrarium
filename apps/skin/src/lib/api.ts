@@ -3,7 +3,7 @@ import { apiRoot } from "./config";
 
 export type Health = { status: string; tick_hz: number };
 
-export type Me = { uid: string; credits: number };
+export type Me = { uid: string; credits: number; account_creature_id: string };
 
 export type ApiKey = {
   id: string;
@@ -48,11 +48,10 @@ export type SimConfig = {
 export type WorldEvent =
   | {
       type: "signal";
-      from_id: string;
+      from_id: string | number;
       from_x: number;
       from_y: number;
-      to_id?: string;
-      byte: number;
+      to_id?: string | number;
       broadcast: boolean;
     }
   | {

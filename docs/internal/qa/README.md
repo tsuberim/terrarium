@@ -29,6 +29,8 @@ Auto sign-in as `qa@terrarium.dev` when auth emulator + `VITE_E2E_HOOKS` are on.
 Runners:  smoke (curl) · e2e (Playwright) · browser MCP (agent skill)
 Contract: data-testid="e2e-*" · window.__TERRARIUM_E2E__ · scenarios/*.yaml
 Stack:    :9099 auth · :8080 API · :8081 compile · :5173 Vite
+
+With `VITE_E2E_HOOKS=true`, Creature Studio skips the debounced compile-on-open check so scenario steps (Run test / Run all) own compile without racing the worker.
 ```
 
 ---

@@ -3,6 +3,7 @@ import type { Creature, SimConfig, WorldTile } from "../lib/api";
 import { getHealth } from "../lib/api";
 import type { FxEvent } from "../lib/worldTypes";
 import { wsRoot } from "../lib/config";
+import { normalizeCreatureAction, normalizeWorldEvent, wireId } from "../lib/wireIds";
 import { WorldRuntime } from "../lib/worldRuntime";
 
 type DeltaMsg = {
@@ -116,7 +117,11 @@ export function useWorldStream() {
       }
 
       const fxNow = Date.now();
-      const events = (msg.events ?? []).map((e) => ({ ...e, at: fxNow, simTick: msg.tick }) as FxEvent);
+      const events = (msg.events ?? []).map((e) => ({
+        ...normalizeWorldEvent(e),
+        at: fxNow,
+        simTick: msg.tick,
+      }) as FxEvent);
 
       const removedTiles: { x: number; y: number; tile: WorldTile }[] = [];
       for (const [x, y] of msg.tiles_remove) {
@@ -126,7 +131,7 @@ export function useWorldStream() {
 
       const hadNewCreature = msg.creatures_upsert.some((c) => !creaturesMap.current.has(c.id));
 
-      for (const id of msg.creatures_remove) creaturesMap.current.delete(id);
+      for (const id of msg.creatures_remove) creaturesMap.current.delete(wireId(id));
       for (const c of msg.creatures_upsert) {
         creaturesMap.current.set(c.id, mergeCreature(creaturesMap.current.get(c.id), c));
       }
@@ -144,9 +149,9 @@ export function useWorldStream() {
       runtimeRef.current.push(
         {
           tick: msg.tick,
-          actions: msg.actions ?? [],
+          actions: (msg.actions ?? []).map(normalizeCreatureAction),
           events,
-          removed: msg.creatures_remove,
+          removed: msg.creatures_remove.map(wireId),
           removedTiles,
         },
         fxNow,

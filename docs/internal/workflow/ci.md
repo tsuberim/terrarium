@@ -30,6 +30,8 @@ Path filters skip irrelevant jobs.
 
 **Required checks on `main`:** `test / rust`, `test / frontend`, `test / docker`, `test / smoke`, `test / e2e`.
 
+Apply via `./scripts/sync-branch-protection.sh` after changing CI jobs (repo admin).
+
 ---
 
 ## CI scripts

@@ -5,6 +5,7 @@ use terrarium_test_spec::{
     evaluate_assertions, AssertionResult, FrameSnapshot, TestSpec, TileKind, TilePlacement,
 };
 
+use crate::abi::Payload;
 use crate::energy_ledger::EnergyLedger;
 use crate::events::{CreatureAction, DeathReason, WorldEvent};
 use crate::hex;
@@ -71,6 +72,8 @@ pub struct SandboxRequest<'a> {
     pub config: Option<SimConfig>,
 }
 
+const SANDBOX_ID: u64 = 0x5341_4E44; // 'SAND'
+
 pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
     host::clear_all_vm_cache();
     if req.wasm.is_empty() || req.wasm.len() > MAX_WASM_BYTES {
@@ -86,13 +89,14 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
     let config = req.config.clone().unwrap_or_else(sandbox_config);
     let mut tiles = spec_tiles(&req.spec, &config);
     let mut creatures = vec![Creature {
-        id: "sandbox".into(),
+        id: SANDBOX_ID,
         x: 0,
         y: 0,
         energy: start_energy,
         health: config.max_health,
         max_health: config.max_health,
         owner_uid: "sandbox".into(),
+        owner_id: SANDBOX_ID,
         parent_id: None,
         wasm: req.wasm.to_vec(),
         code: "// sandbox".into(),
@@ -101,6 +105,7 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
         death_reason: None,
         born_tick: 0,
         facing: req.spec.facing,
+        init: Payload::default(),
     }];
 
     let mut frames = Vec::with_capacity(ticks as usize);
@@ -109,10 +114,17 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
 
     for tick in 1..=ticks {
         ticks_run = tick;
-        let tick_result = run_tick(&mut creatures, &mut tiles, &mut ledger, &config, tick);
+        let tick_result = run_tick(
+            &mut creatures,
+            &mut tiles,
+            &mut ledger,
+            &config,
+            tick,
+            &mut vec![],
+        );
         let creature = creatures
             .iter()
-            .find(|c| c.id == "sandbox")
+            .find(|c| c.id == SANDBOX_ID)
             .cloned()
             .unwrap_or_else(|| dead_creature(&config));
 
@@ -133,7 +145,7 @@ pub fn run_sandbox(req: SandboxRequest<'_>) -> SandboxResult {
         }
     }
 
-    let end_creature = creatures.iter().find(|c| c.id == "sandbox");
+    let end_creature = creatures.iter().find(|c| c.id == SANDBOX_ID);
     let alive = end_creature.map(|c| c.alive).unwrap_or(false);
     let death_reason = end_creature.and_then(|c| c.death_reason);
     let end_energy = end_creature.map(|c| c.energy).unwrap_or(0);
@@ -195,13 +207,14 @@ fn fail_result(msg: &str, start_energy: i64) -> SandboxResult {
 
 fn dead_creature(config: &SimConfig) -> Creature {
     Creature {
-        id: "sandbox".into(),
+        id: SANDBOX_ID,
         x: 0,
         y: 0,
         energy: 0,
         health: 0,
         max_health: config.max_health,
         owner_uid: "sandbox".into(),
+        owner_id: SANDBOX_ID,
         parent_id: None,
         wasm: vec![],
         code: String::new(),
@@ -210,6 +223,7 @@ fn dead_creature(config: &SimConfig) -> Creature {
         death_reason: Some(DeathReason::EnergyFloor),
         born_tick: 0,
         facing: 0,
+        init: Payload::default(),
     }
 }
 
@@ -292,8 +306,9 @@ fn empty_bench(start: i64, ticks: u64) -> SandboxBench {
 mod tests {
     use super::*;
     use crate::compile_wat;
-    use crate::examples::RUNNER;
+    use crate::wat::WAT_MOVE_FWD_LOOP;
     use terrarium_test_spec::parse_tests;
+    use terrarium_test_spec::TestSpec;
 
     fn runner_open_spec() -> TestSpec {
         parse_tests(
@@ -330,7 +345,7 @@ fn wall_blocked() {
 
     #[test]
     fn runner_moves_in_open_sandbox() {
-        let wasm = compile_wat(RUNNER).unwrap();
+        let wasm = compile_wat(WAT_MOVE_FWD_LOOP).unwrap();
         let res = run_sandbox(SandboxRequest {
             wasm: &wasm,
             spec: runner_open_spec(),
@@ -345,7 +360,7 @@ fn wall_blocked() {
 
     #[test]
     fn wall_ahead_blocks_runner() {
-        let wasm = compile_wat(RUNNER).unwrap();
+        let wasm = compile_wat(WAT_MOVE_FWD_LOOP).unwrap();
         let res = run_sandbox(SandboxRequest {
             wasm: &wasm,
             spec: runner_wall_spec(),

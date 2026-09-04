@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use sqlx::SqlitePool;
-use terrarium_sim::{run_tick, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles};
+use terrarium_sim::{
+    host::PendingAction, run_tick, validate_external_broadcast, validate_external_signal,
+    vm::Creature, EnergyLedger, Payload, SimConfig, WorldTile, WorldTiles,
+};
 use tokio::sync::broadcast;
 
 use crate::config::Config;
+use crate::control::ControlRegistry;
 use crate::persist::{load_creatures, load_ledger, load_tiles, PersistSnapshot};
 use crate::seed::seed_ecosystem;
 use crate::wire::{build_creature_delta, build_tile_delta, creature_public, tiles_public};
@@ -14,6 +18,10 @@ pub use crate::wire::{CreaturePublic, TilePublic, WorldMessage};
 
 const DEFAULT_PERSIST_EVERY: u64 = 10;
 const BROADCAST_CAPACITY: usize = 4096;
+
+pub struct CreatureInfo {
+    pub alive: bool,
+}
 
 pub(crate) struct TickStep {
     pub message: WorldMessage,
@@ -35,6 +43,8 @@ pub struct WorldEngine {
     persist_every: u64,
     sim_config: RwLock<SimConfig>,
     events: broadcast::Sender<WorldMessage>,
+    external_actions: Mutex<Vec<(u64, PendingAction)>>,
+    control: RwLock<Option<Arc<ControlRegistry>>>,
 }
 
 impl WorldEngine {
@@ -45,8 +55,6 @@ impl WorldEngine {
         let sim_config = SimConfig::default();
 
         if creatures.is_empty() && config.seed_ecosystem {
-            // Recover from a partial seed (e.g. crash mid-bootstrap) — tiles can
-            // remain while creatures were never committed.
             if !tiles.is_empty() {
                 sqlx::query("DELETE FROM world_tiles").execute(&db).await?;
                 tiles.clear();
@@ -72,7 +80,13 @@ impl WorldEngine {
             persist_every,
             sim_config: RwLock::new(SimConfig::default()),
             events,
+            external_actions: Mutex::new(Vec::new()),
+            control: RwLock::new(None),
         }))
+    }
+
+    pub fn attach_control(&self, control: Arc<ControlRegistry>) {
+        *self.control.write() = Some(control);
     }
 
     pub fn sim_config(&self) -> SimConfig {
@@ -93,6 +107,44 @@ impl WorldEngine {
 
     pub fn current_tick(&self) -> u64 {
         self.inner.read().tick
+    }
+
+    pub fn creature_owned_by(&self, creature_id: u64, owner_uid: &str) -> Option<CreatureInfo> {
+        let state = self.inner.read();
+        state
+            .creatures
+            .iter()
+            .find(|c| c.id == creature_id && c.owner_uid == owner_uid)
+            .map(|c| CreatureInfo { alive: c.alive })
+    }
+
+    pub fn inject_control_signal(
+        &self,
+        from_id: u64,
+        target: u64,
+        payload: Payload,
+    ) -> Result<(), &'static str> {
+        let state = self.inner.read();
+        validate_external_signal(&state.creatures, from_id, target, &self.sim_config.read())?;
+        drop(state);
+        self.external_actions
+            .lock()
+            .push((from_id, PendingAction::Signal { target, payload }));
+        Ok(())
+    }
+
+    pub fn inject_control_broadcast(
+        &self,
+        from_id: u64,
+        payload: Payload,
+    ) -> Result<(), &'static str> {
+        let state = self.inner.read();
+        validate_external_broadcast(&state.creatures, from_id)?;
+        drop(state);
+        self.external_actions
+            .lock()
+            .push((from_id, PendingAction::Broadcast { payload }));
+        Ok(())
     }
 
     pub fn world_http(&self) -> (i64, i64, Vec<CreaturePublic>, Vec<TilePublic>) {
@@ -177,22 +229,25 @@ impl WorldEngine {
         let mut state = self.inner.write();
         let tick = state.tick + 1;
 
-        let before: HashMap<String, (i32, i32, i64, i32, i32, u8)> = state
+        let before: HashMap<u64, (i32, i32, i64, i32, i32, u8)> = state
             .creatures
             .iter()
-            .map(|c| {
-                (
-                    c.id.clone(),
-                    (c.x, c.y, c.energy, c.health, c.max_health, c.facing),
-                )
-            })
+            .map(|c| (c.id, (c.x, c.y, c.energy, c.health, c.max_health, c.facing)))
             .collect();
 
         let mut creatures = std::mem::take(&mut state.creatures);
         let mut tiles = std::mem::take(&mut state.tiles);
         let mut ledger = state.ledger.clone();
         let config = self.sim_config.read().clone();
-        let tick_result = run_tick(&mut creatures, &mut tiles, &mut ledger, &config, tick);
+        let mut external = std::mem::take(&mut *self.external_actions.lock());
+        let tick_result = run_tick(
+            &mut creatures,
+            &mut tiles,
+            &mut ledger,
+            &config,
+            tick,
+            &mut external,
+        );
         state.creatures = creatures;
         state.tiles = tiles;
         state.ledger = ledger;
@@ -203,7 +258,7 @@ impl WorldEngine {
         let message = WorldMessage::tick_delta(
             tick,
             creatures_upsert,
-            creatures_remove,
+            creatures_remove.clone(),
             tiles_upsert,
             tiles_remove,
             tick_result.actions,
@@ -220,6 +275,15 @@ impl WorldEngine {
         };
         drop(state);
 
+        if let Some(control) = self.control.read().clone() {
+            for delivery in &tick_result.inbox_deliveries {
+                control.notify_recv(delivery.creature_id, delivery.sender, delivery.payload);
+            }
+            for id in &creatures_remove {
+                control.notify_detached(*id, "creature_died");
+            }
+        }
+
         TickStep {
             message,
             persist,
@@ -231,11 +295,13 @@ impl WorldEngine {
 #[cfg(test)]
 mod tests {
     use sqlx::sqlite::SqlitePoolOptions;
-    use terrarium_sim::{compile_wat, vm::Creature};
+    use terrarium_sim::{compile_wat, vm::Creature, wat::WAT_MOVE_FWD_LOOP, Payload};
 
     use super::*;
     use crate::config::Config;
     use crate::persist::persist_world;
+
+    const TEST_CREATURE_ID: u64 = 10001;
 
     async fn test_engine() -> Arc<WorldEngine> {
         let pool = SqlitePoolOptions::new()
@@ -261,23 +327,17 @@ mod tests {
         .unwrap()
     }
 
-    async fn seed_creature(
-        engine: &WorldEngine,
-        id: &str,
-        x: i32,
-        y: i32,
-        code: &str,
-        energy: i64,
-    ) {
+    async fn seed_creature(engine: &WorldEngine, id: u64, x: i32, y: i32, code: &str, energy: i64) {
         let wasm = compile_wat(code).unwrap();
         sqlx::query("INSERT INTO accounts (firebase_uid, credits) VALUES ('tester', 1000) ON CONFLICT DO NOTHING")
             .execute(&engine.db)
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, pc, stack) VALUES (?, 'tester', ?, ?, ?, 100, 100, ?, ?, 0, x'')",
+            "INSERT INTO creatures (id, owner_uid, owner_id, x, y, energy, health, max_health, code, bytecode, born_tick, facing, pc, stack) VALUES (?, 'tester', ?, ?, ?, ?, 100, 100, ?, ?, 0, 0, 0, x'')",
         )
-        .bind(id)
+        .bind(id as i64)
+        .bind(id as i64)
         .bind(x as i64)
         .bind(y as i64)
         .bind(energy)
@@ -288,8 +348,9 @@ mod tests {
         .unwrap();
         engine
             .insert_creature(Creature {
-                id: id.into(),
+                id,
                 owner_uid: "tester".into(),
+                owner_id: id,
                 x,
                 y,
                 energy,
@@ -303,29 +364,17 @@ mod tests {
                 death_reason: None,
                 born_tick: 0,
                 facing: 0,
+                init: Payload::default(),
             })
             .unwrap();
     }
 
-    const MOVE_EAST: &str = r#"
-(module
-  (import "terrarium" "sleep" (func $sleep))
-  (import "terrarium" "move" (func $move (param i32) (result i32)))
-  (func (export "main")
-    loop $l
-      i32.const 0
-      call $move
-      drop
-      call $sleep
-      br $l
-    end)
-)
-"#;
+    const MOVE_EAST: &str = WAT_MOVE_FWD_LOOP;
 
     #[tokio::test]
     async fn main_moves_creature_in_memory() {
         let engine = test_engine().await;
-        seed_creature(&engine, "a", 0, 0, MOVE_EAST, 100_000_000).await;
+        seed_creature(&engine, TEST_CREATURE_ID, 0, 0, MOVE_EAST, 100_000_000).await;
 
         engine.tick_step();
 
@@ -334,15 +383,15 @@ mod tests {
         } = engine.full_delta();
         let c = creatures_upsert
             .iter()
-            .find(|c| c.id == "a")
-            .expect("creature a");
+            .find(|c| c.id == TEST_CREATURE_ID)
+            .expect("creature");
         assert_eq!(c.x, 1);
     }
 
     #[tokio::test]
     async fn checkpoint_persists_to_db() {
         let engine = test_engine().await;
-        seed_creature(&engine, "a", 0, 0, MOVE_EAST, 100_000_000).await;
+        seed_creature(&engine, TEST_CREATURE_ID, 0, 0, MOVE_EAST, 100_000_000).await;
 
         for _ in 0..30 {
             let step = engine.tick_step();
@@ -358,7 +407,8 @@ mod tests {
             }
         }
 
-        let (x,): (i64,) = sqlx::query_as("SELECT x FROM creatures WHERE id = 'a'")
+        let (x,): (i64,) = sqlx::query_as("SELECT x FROM creatures WHERE id = ?")
+            .bind(TEST_CREATURE_ID as i64)
             .fetch_one(&engine.db)
             .await
             .unwrap();

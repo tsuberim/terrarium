@@ -2,79 +2,67 @@
 
 use sqlx::SqlitePool;
 use terrarium_sim::{
-    compile_wat, food, vm::Creature, EnergyLedger, SimConfig, WorldTile, WorldTiles,
-    EXAMPLE_PROGRAMS,
+    compile_wat, food, vm::Creature, wat::WAT_IDLE, EnergyLedger, Payload, SimConfig, WorldTile,
+    WorldTiles,
 };
 
 const SEED_OWNER: &str = "__terrarium__";
-/// Starting energy for bootstrap creatures (~120 glims); above clone threshold.
 const SEED_ENERGY: i64 = 12_000_000;
 
 struct SeedCreature {
-    example_id: &'static str,
-    id: &'static str,
+    id: u64,
     x: i32,
     y: i32,
 }
 
 const ECOSYSTEM_SEED: &[SeedCreature] = &[
     SeedCreature {
-        example_id: "predator",
-        id: "seed-predator-0",
+        id: 10001,
         x: 3,
         y: 0,
     },
     SeedCreature {
-        example_id: "predator",
-        id: "seed-predator-1",
+        id: 10002,
         x: -3,
         y: 0,
     },
     SeedCreature {
-        example_id: "prey",
-        id: "seed-prey-0",
+        id: 10003,
         x: 0,
         y: 3,
     },
     SeedCreature {
-        example_id: "prey",
-        id: "seed-prey-1",
+        id: 10004,
         x: 0,
         y: -3,
     },
     SeedCreature {
-        example_id: "prey",
-        id: "seed-prey-2",
+        id: 10005,
         x: 2,
         y: 2,
     },
     SeedCreature {
-        example_id: "prey",
-        id: "seed-prey-3",
+        id: 10006,
         x: -2,
         y: -2,
     },
     SeedCreature {
-        example_id: "scavenger",
-        id: "seed-scavenger-0",
+        id: 10007,
         x: 4,
         y: -2,
     },
     SeedCreature {
-        example_id: "scavenger",
-        id: "seed-scavenger-1",
+        id: 10008,
         x: -4,
         y: 2,
     },
     SeedCreature {
-        example_id: "hawk",
-        id: "seed-hawk-0",
+        id: 10009,
         x: 4,
         y: 2,
     },
     SeedCreature {
-        example_id: "hawk",
-        id: "seed-hawk-1",
+        id: 10010,
         x: -4,
         y: -2,
     },
@@ -105,21 +93,18 @@ pub async fn seed_ecosystem(
     .execute(db)
     .await?;
 
+    let wasm = compile_wat(WAT_IDLE)?;
+    let code = WAT_IDLE.to_string();
     let max_health = sim_config.max_health;
-    for spec in ECOSYSTEM_SEED {
-        let example = EXAMPLE_PROGRAMS
-            .iter()
-            .find(|e| e.id == spec.example_id)
-            .ok_or_else(|| anyhow::anyhow!("missing example {}", spec.example_id))?;
-        let wasm = compile_wat(example.code)?;
-        let code = example.code.to_string();
 
+    for spec in ECOSYSTEM_SEED {
         sqlx::query(
-            "INSERT INTO creatures (id, owner_uid, x, y, energy, health, max_health, code, bytecode, born_tick, facing, pc, stack)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, x'')",
+            "INSERT INTO creatures (id, owner_uid, owner_id, x, y, energy, health, max_health, code, bytecode, born_tick, facing, pc, stack)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, x'')",
         )
-        .bind(spec.id)
+        .bind(spec.id as i64)
         .bind(SEED_OWNER)
+        .bind(spec.id as i64)
         .bind(spec.x as i64)
         .bind(spec.y as i64)
         .bind(SEED_ENERGY)
@@ -131,23 +116,29 @@ pub async fn seed_ecosystem(
         .await?;
 
         creatures.push(Creature {
-            id: spec.id.into(),
+            id: spec.id,
             owner_uid: SEED_OWNER.into(),
+            owner_id: spec.id,
             x: spec.x,
             y: spec.y,
             energy: SEED_ENERGY,
             health: max_health,
             max_health,
             parent_id: None,
-            wasm,
-            code,
+            wasm: wasm.clone(),
+            code: code.clone(),
             alive: true,
             inbox: vec![],
             death_reason: None,
             born_tick: 0,
             facing: 0,
+            init: Payload::default(),
         });
     }
+
+    sqlx::query("UPDATE id_sequence SET next_val = MAX(next_val, 10011) WHERE name = 'global_id'")
+        .execute(db)
+        .await?;
 
     let occupied: Vec<(i32, i32)> = creatures.iter().map(|c| (c.x, c.y)).collect();
     let mut tile_dirty = terrarium_sim::world_tile::TileDirty::new();

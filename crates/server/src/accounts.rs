@@ -1,5 +1,7 @@
 use sqlx::SqlitePool;
 
+use crate::ids::ensure_account_creature_id;
+
 pub async fn account_credits(db: &SqlitePool, uid: &str) -> anyhow::Result<i64> {
     ensure_account(db, uid).await?;
     let credits =
@@ -8,6 +10,11 @@ pub async fn account_credits(db: &SqlitePool, uid: &str) -> anyhow::Result<i64> 
             .fetch_one(db)
             .await?;
     Ok(credits)
+}
+
+pub async fn account_creature_id(db: &SqlitePool, uid: &str) -> anyhow::Result<u64> {
+    ensure_account(db, uid).await?;
+    ensure_account_creature_id(db, uid).await
 }
 
 pub async fn add_credits(db: &SqlitePool, uid: &str, amount: i64) -> anyhow::Result<i64> {

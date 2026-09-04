@@ -14,9 +14,10 @@ use crate::accounts::{account_credits, add_credits};
 use crate::api_keys;
 use crate::auth::AuthenticatedUser;
 use crate::compile_client;
+use crate::control_ws;
 use crate::deploy::{deploy_creature, DeployError};
 use crate::docs;
-use crate::middleware::{dev_only, require_firebase_user, require_user};
+use crate::middleware::{dev_only, require_api_key, require_firebase_user, require_user};
 use crate::sandbox;
 use crate::state::AppState;
 use crate::wire::{CreaturePublic, TilePublic};
@@ -32,6 +33,8 @@ struct HealthResponse {
 struct MeResponse {
     uid: String,
     credits: i64,
+    #[serde(with = "crate::wire::serde_u64")]
+    account_creature_id: u64,
 }
 
 #[derive(Deserialize)]
@@ -119,11 +122,19 @@ pub fn build_app(state: AppState) -> Router {
         .route("/sandbox/run", post(sandbox_run))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_user));
 
+    let control = Router::new()
+        .route("/control/ws", get(control_ws::control_ws))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+
     let v1 = Router::new()
         .route("/world", get(world))
         .route("/world/ws", get(ws::world_ws))
         .merge(protected)
         .merge(api_keys)
+        .merge(control)
         .merge(dev);
 
     let routes = Router::new()
@@ -165,11 +176,18 @@ async fn me(
     Extension(user): Extension<AuthenticatedUser>,
 ) -> impl IntoResponse {
     match account_credits(&state.db, &user.uid).await {
-        Ok(credits) => Json(MeResponse {
-            uid: user.uid,
-            credits,
-        })
-        .into_response(),
+        Ok(credits) => match crate::accounts::account_creature_id(&state.db, &user.uid).await {
+            Ok(account_creature_id) => Json(MeResponse {
+                uid: user.uid,
+                credits,
+                account_creature_id,
+            })
+            .into_response(),
+            Err(err) => {
+                tracing::error!(error = %err, "failed to load account_creature_id");
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        },
         Err(err) => {
             tracing::error!(error = %err, "failed to load account");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()

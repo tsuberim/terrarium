@@ -1,6 +1,6 @@
-use std::collections::HashSet;
-
+use crate::abi::Payload;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,53 +68,57 @@ impl DeathReason {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct InboxDelivery {
+    pub creature_id: u64,
+    pub sender: u64,
+    pub payload: Payload,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorldEvent {
     Signal {
-        from_id: String,
+        from_id: u64,
         from_x: i32,
         from_y: i32,
         #[serde(skip_serializing_if = "Option::is_none")]
-        to_id: Option<String>,
-        byte: u8,
+        to_id: Option<u64>,
         broadcast: bool,
     },
     Death {
-        creature_id: String,
+        creature_id: u64,
         owner_uid: String,
         x: i32,
         y: i32,
         reason: DeathReason,
-        /// Render snapshot — client draws death FX without inferring from prior state.
         facing: u8,
         energy: i64,
         health: i32,
         max_health: i32,
     },
     Spawn {
-        creature_id: String,
-        parent_id: String,
+        creature_id: u64,
+        parent_id: u64,
         parent_x: i32,
         parent_y: i32,
         x: i32,
         y: i32,
     },
     Hit {
-        actor_id: String,
-        victim_id: String,
+        actor_id: u64,
+        victim_id: u64,
         x: i32,
         y: i32,
         damage: i32,
         victim_health: i32,
     },
     Eat {
-        actor_id: String,
+        actor_id: u64,
         x: i32,
         y: i32,
         energy: i64,
-        /// `tile::CORPSE` (3) or `tile::FOOD` (4).
-        tile_kind: i32,
+        tile_kind: i64,
     },
 }
 
@@ -122,24 +126,24 @@ pub enum WorldEvent {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CreatureAction {
     Move {
-        creature_id: String,
+        creature_id: u64,
         from_x: i32,
         from_y: i32,
         to_x: i32,
         to_y: i32,
     },
     Rotate {
-        creature_id: String,
+        creature_id: u64,
         from_facing: u8,
         to_facing: u8,
     },
     Eat {
-        creature_id: String,
+        creature_id: u64,
         x: i32,
         y: i32,
     },
     Hit {
-        creature_id: String,
+        creature_id: u64,
         x: i32,
         y: i32,
     },
@@ -151,8 +155,7 @@ pub struct TickResult {
     pub actions: Vec<CreatureAction>,
     pub destroyed: i64,
     pub free_minted: i64,
-    /// Suicide energy returned to human accounts (uid → glims).
     pub credit_payouts: Vec<(String, i64)>,
-    /// Hex cells touched this tick (upsert or remove in delta).
     pub tiles_dirty: HashSet<(i32, i32)>,
+    pub inbox_deliveries: Vec<InboxDelivery>,
 }

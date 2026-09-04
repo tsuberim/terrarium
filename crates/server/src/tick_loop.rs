@@ -5,10 +5,11 @@ use std::time::{Duration, Instant};
 
 use terrarium_sim::TICK_HZ;
 
+use crate::control::ControlRegistry;
 use crate::engine::WorldEngine;
 use crate::persist::{credit_payout, persist_world, PersistSnapshot};
 
-pub fn spawn_tick_loop(engine: Arc<WorldEngine>) {
+pub fn spawn_tick_loop(engine: Arc<WorldEngine>, _control: Arc<ControlRegistry>) {
     let (persist_tx, mut persist_rx) = tokio::sync::mpsc::channel::<PersistSnapshot>(2);
     let (credit_tx, mut credit_rx) = tokio::sync::mpsc::channel::<(String, i64)>(32);
     let db = engine.db.clone();

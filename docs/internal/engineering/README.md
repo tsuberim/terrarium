@@ -14,6 +14,7 @@
 | WebSocket, server threads, fan-out | [architecture.md](architecture.md) |
 | Tick rules, economy, food mint | [sim/energy-budget.md](sim/energy-budget.md), PRD §4–6 |
 | Host syscalls, WASM ABI | [sim/host-abi.md](sim/host-abi.md) |
+| External control WS, API key attach | [external-control.md](external-control.md) |
 | Unit/integration tests | [testing.md](testing.md) |
 | Known shortcuts / scale limits | [tech-debt.md](tech-debt.md) |
 
@@ -29,6 +30,7 @@
 | [tech-debt.md](tech-debt.md) | Eng debt backlog |
 | [sim/energy-budget.md](sim/energy-budget.md) | Economy math |
 | [sim/host-abi.md](sim/host-abi.md) | WASM host ABI |
+| [external-control.md](external-control.md) | API-key control WS, signal/recv relay |
 
 ---
 

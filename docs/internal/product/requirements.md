@@ -41,7 +41,7 @@ From [vision.md](vision.md):
 |------|--------|-----------|
 | **Visitor** | View map, follow creatures, read event feed, jump/search coords | Deploy, Studio, faucet, API keys |
 | **Signed-in player** | All visitor actions + Studio, deploy, faucet (dev), API keys, manage glims | Read others' source code |
-| **Creature owner** | Edit own Rust in Studio before deploy; see own diagnostics | Change code after deploy |
+| **Creature owner** | Edit own Rust in Studio before deploy; see own diagnostics; attach external control via API key | Change code after deploy |
 
 ---
 
@@ -150,6 +150,7 @@ Display unit: **glims** (◆). Internal scale: `GLIM_SCALE = 100_000` (= sim `EN
 | AUTH-5 | Sign out clears studio shell, deploy cell, deploy dialog | **shipped** |
 | AUTH-6 | API accepts Firebase JWT or API keys (Bearer) | **shipped** |
 | AUTH-7 | Server validates emulator JWTs when `FIREBASE_AUTH_EMULATOR_HOST` set | **shipped** dev-only |
+| AUTH-8 | Mint/revoke API keys in Studio (`GET/POST/DELETE /v1/api-keys`) | **shipped** |
 
 ---
 
@@ -256,7 +257,27 @@ Compile-worker always injects `use terrarium_sdk::prelude::*` (`body_wrap: false
 
 ---
 
-## 13. REST & WebSocket API (product surface)
+## 13. External creature control (API key)
+
+Run your own logic off-device: connect to **owned** creatures over WebSocket, **send and receive the same 64-byte envelopes** as in-creature `signal` / `recv`. Requires an **API key** (`tr_…`) — not Firebase session.
+
+| ID | Requirement | Status |
+|----|-------------|--------|
+| EXT-1 | Each account has stable **`account_creature_id`** (u64) in the global id namespace | **shipped** |
+| EXT-2 | `GET /v1/control/ws?creature_id=` — **API key only**; attach to owned live creature | **shipped** |
+| EXT-3 | Server → client **`recv`** frames: `{ sender, envelope }` when attached creature gets inbox delivery | **shipped** |
+| EXT-4 | Client → server **`signal`** / **`broadcast`** with envelope; sent as attached creature (range + target rules) | **shipped** |
+| EXT-5 | Envelope format identical to [host ABI](internal/engineering/sim/host-abi.md) (64 B) | **shipped** |
+| EXT-6 | Spectator `world/ws` unchanged (read-only); control WS is separate | **shipped** |
+| EXT-7 | Revoked/expired API key → attach rejected | **shipped** |
+
+Eng detail: [internal/engineering/external-control.md](internal/engineering/external-control.md).
+
+Phase 2 (not v1): external **`act()`** (move/eat/…) and optional remote-brain mode replacing WASM.
+
+---
+
+## 14. REST & WebSocket API (product surface)
 
 | Endpoint | Auth | Purpose |
 |----------|------|---------|
@@ -267,7 +288,8 @@ Compile-worker always injects `use terrarium_sdk::prelude::*` (`body_wrap: false
 | `POST /v1/compile` | Required | Rust → WASM |
 | `POST /v1/sandbox/run` | Required | Scenario replay |
 | `POST /v1/faucet` | Required | Dev credits top-up |
-| `GET/POST/DELETE /v1/api-keys` | Required | Key management |
+| `GET/POST/DELETE /v1/api-keys` | Firebase (mint) / API key (use) | Key management |
+| `GET /v1/control/ws?creature_id=` | **API key only** | Attach to owned creature; signal/recv envelopes |
 | `GET /health` | Public | Liveness |
 | `GET /docs` | Public | Scalar API docs |
 
@@ -275,7 +297,7 @@ OpenAPI: `/api/openapi.json`
 
 ---
 
-## 14. Client rendering (UX contract)
+## 15. Client rendering (UX contract)
 
 | ID | Requirement | Status |
 |----|-------------|--------|
@@ -287,7 +309,7 @@ OpenAPI: `/api/openapi.json`
 
 ---
 
-## 15. Explicit non-goals (v1)
+## 16. Explicit non-goals (v1)
 
 Do not implement without explicit product decision:
 
@@ -301,7 +323,7 @@ Do not implement without explicit product decision:
 
 ---
 
-## 16. Open product questions
+## 17. Open product questions
 
 | Topic | Notes |
 |-------|-------|
@@ -314,7 +336,7 @@ Do not implement without explicit product decision:
 
 ---
 
-## 17. Local QA & testing
+## 18. Local QA & testing
 
 Dev-only automation; not exposed in prod. Detail: [../qa/README.md](../qa/README.md).
 
@@ -333,7 +355,7 @@ Scenarios: studio compile+playback, deploy creature, signed-out auth gate.
 
 ---
 
-## 18. Related docs
+## 19. Related docs
 
 | Doc | Contents |
 |-----|----------|

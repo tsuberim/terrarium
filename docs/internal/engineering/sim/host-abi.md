@@ -1,81 +1,267 @@
-# Terrarium WASM (host ABI)
+# Terrarium WASM host ABI (v2)
 
-Creatures run as **WebAssembly modules**. Primary path: **Rust in Creature Studio** ([sdk/rust/README.md](../../../../sdk/rust/README.md)).
+Creatures are WASM modules importing `"terrarium"`. **No legacy v1 surface.**
 
-Code is immutable after deploy.
+> Player docs: [host-abi.mdx](../../../public/reference/host-abi.mdx). PRD §5–11.
 
-> Player docs: Mintlify [Host ABI](https://terrarium.mintlify.app/reference/host-abi). PRD: [../product/requirements.md](../product/requirements.md) §5–11.
+## Design goals
+
+1. **Simple** — one envelope shape, one memory page, three imports.
+2. **Extensible** — new action kinds and state fields without breaking old WASM.
+3. **Symmetric** — host→guest and guest→host both use fixed memory slots (no pointer args, no 9-arg syscalls).
+4. **Efficient** — fixed 64 B slots (one cache line), three imports, guest writes Action once per tick; no cross-boundary pointer marshalling or per-field syscalls.
 
 ## Module contract
 
-- Import namespace `"terrarium"` (see host syscalls below)
-- Export `(func "main")` — host **starts `main` once** per creature life and **resumes** the same WASM fiber each sim tick (heap + call stack preserved)
-- Export `(memory "memory")` if using `recv`, `signal_to`, or `sense` (needs scratch bytes at ptr)
+| Export | Signature | Role |
+|--------|-----------|------|
+| `memory` | linear memory ≥ 8 KiB | Required |
+| `main` | `() -> ()` | Lifetime fiber; resumed each tick |
 
-**Slice execution.** Each sim tick the host refills opcode gas and resumes WASM until the slice ends:
-
-| Slice end | World effect |
-|-----------|--------------|
-| First successful world action (`move`, `rotate`, `eat`, …) | One action applied; execution **suspends** (async yield) |
-| Opcode gas exhausted, no action taken | **Suspend** — creature stays alive; resumes next tick |
-| `main` returns or `break` out of the program loop | **Suicide** — creature dies; energy payout to owner |
-| Real WASM trap (OOB, bad direction, …) | Death |
-
-Studio source is a **lifetime program**: write statements (`move_forward();`), a `loop { ... }`, or `pub fn main() { ... }`. The compile worker injects `terrarium_sdk::prelude::*` and wraps the body in `pub fn main()` when needed. Bare statements run once — after the slice resumes and `main` returns, the creature halts (suicide). At most one world action per tick (second calls no-op). Sensing, `sleep`, and reads are unlimited within the gas budget.
-
-## Host syscalls
+## Imports (only three)
 
 | Import | Signature | Effect |
 |--------|-----------|--------|
-| `sleep` | `() -> ()` | No-op, zero cost |
-| `energy` | `() -> i64` | Current energy |
-| `health` | `() -> i64` | Current health |
-| `pos_x` / `pos_y` | `() -> i32` | Axial q/r position |
-| `facing` | `() -> i32` | Body facing 0–5 (E, NE, NW, W, SW, SE) |
-| `rotate` | `(i32 delta) -> i32` | Turn by `delta` hex steps (clockwise = +1); facing updates end of tick |
-| `sense` | `(i32 dq, i32 dr, i32 ptr) -> i32` | Write cell snapshot at `ptr`; returns 1 if in FOV, else 0 |
-| `move` | `(i32 rel) -> i32` | Step **forward** onto an empty cell only (`rel=0`); blocked by solid, food, corpse, or creatures |
-| `dig` / `place` | `(i32 rel) -> i32` | Act on **forward** adjacent cell only (`rel=0`) |
-| `eat` | `(i32 rel) -> i32` | Eat corpse or food on **forward** cell only (`rel=0`) |
-| `hit` | `(i32 rel) -> i32` | Hit creature on **forward** cell only (`rel=0`; costs energy) |
-| `spawn` | `(i32 rel, i32 energy) -> i32` | Bud clone on **forward** empty cell only (`rel=0`) |
-| `signal_broadcast` | `(i32 byte) -> i32` | Broadcast in R_sig |
-| `signal_to` | `(i32 ptr, i32 byte) -> i32` | Directed signal (16-byte UUID at ptr) |
-| `recv` | `(i32 ptr) -> i32` | 1 if message, else 0; writes 36-byte struct |
-| `random_byte` | `() -> i32` | Pseudorandom byte 0–255 (seeded by creature id + sim tick) |
-| `uptime` | `() -> i32` | Ticks alive since deploy/spawn |
+| `act` | `() -> i32` | Read guest-written **Action** slot; queue world action; async yield on success |
+| `recv` | `() -> i32` | Pop inbox into host-written **Inbox** slot; return 1 if message |
+| `rand` | `() -> u64` | Pseudorandom (seed: creature id + tick) |
 
-## Tile kinds (`sense` struct field `kind`)
+All reads (self, tiles, init) are **memory only**. No `sleep`, no scalar explosion.
 
-`empty=0`, `solid=1`, `creature=2`, `corpse=3`, `food=4`
+## Slice execution
 
-## Sense struct (little-endian, 24 bytes)
+| Slice end | Effect |
+|-----------|--------|
+| First successful `act()` | One action; **suspend** |
+| Opcode gas exhausted | **Suspend** |
+| `main` returns | **Suicide** |
+| Trap / bad args | Death |
 
-| Offset | Field |
-|--------|-------|
-| 0 | kind (i32) |
-| 4 | orientation (i32) — creature facing 0–5 when kind=creature, else −1 |
-| 8 | energy (i64) — creature, corpse, or food energy in raw units (÷ 100 000 = **glims**, ◆) |
-| 16 | health (i32) — live creature only |
-| 20 | max_health (i32) — live creature only |
+---
 
-## Recv struct (little-endian, 36 bytes)
+## The envelope (64 bytes, forever)
 
-| Offset | Field |
-|--------|-------|
-| 0 | has_msg (always 1 when returned) |
-| 4 | from_q (pos_x of sender) |
-| 8 | from_r (pos_y of sender) |
-| 12 | byte |
-| 16 | broadcast (0 or 1) |
-| 20 | from_id (16-byte UUID) |
+One struct for **actions**, **signals**, **spawn args**, **birth init**, and **inbox body**.
 
-Host import traps for out-of-energy, energy floor, bad direction, etc. → creature dies. Opcode **fuel exhaustion** during a slice → **suspend** (next sim tick resumes), not death.
+```
+offset  size   field
+0       4      kind   u32   (discriminant — see tables below)
+4       4      _pad   u32   (must be 0 today; future flags)
+8       56     words  u64[7]
+```
 
-## Gas (EVM-style)
+**64 bytes exactly.** No per-kind layouts. SDK/host interpret `words[]` by `kind`.
 
-Each sim tick gets a **gas budget** of `opcodes_per_tick` (default 10_000). Every WASM instruction and every `call` to a host import consumes 1 opcode. Used opcodes cost `energy_per_opcode` energy (default **1** — cheap at million-scale units).
+### Core action kinds (`kind` 1–127)
 
-Gas budget is also capped by affordable energy: `floor(energy / energy_per_opcode)`. Running out of fuel mid-slice suspends; zero affordable budget at tick start still kills (`out_of_gas`).
+Reserved: `0` = empty/no-op. **128–255** reserved for future core. **≥256** experimental (may trap in prod).
 
-Move/dig/place still cost separate action energy (`move_extra`, etc.) beyond gas.
+| kind | name | words[0] | words[1] | words[2..6] |
+|------|------|----------|----------|-------------|
+| 1 | Move | rel | — | — |
+| 2 | Rotate | delta (i32 in low bits) | — | — |
+| 3 | Dig | rel | — | — |
+| 4 | Place | rel | — | — |
+| 5 | Eat | rel | — | — |
+| 6 | Hit | rel | — | — |
+| 7 | Spawn | energy | owner_id | child init (5×u64 = 40 B) |
+| 8 | Signal | target_id | — | message body (5×u64) |
+| 9 | Broadcast | — | — | message body (5×u64) |
+
+**Rel** (const enum in low byte of rel word): `Fwd=0` … `FwdL=5`.
+
+Spatial actions: invalid `rel` → action fails silently (same as blocked move).
+
+### Messages
+
+Inbox slot = `sender_id u64` + **envelope 64 B** (same shape; `kind` is the message opcode your program defines).
+
+Spawn child init = **envelope** copied to **Init** slot (header zeroed except your bootstrap fields in `words`).
+
+---
+
+## ABI memory page
+
+Single contiguous page at **`ABI_BASE = 4096`**. Host refreshes read regions each tick; guest writes **Action** before `act()`.
+
+| Region | Offset | Size | Writer | Content |
+|--------|--------|------|--------|---------|
+| **Header** | +0 | 32 | host | magic, abi_version, layout_version, tick |
+| **Self** | +32 | 64 | host | creature state (see below) |
+| **RelTiles** | +96 | 288 | host | 6 × TileView |
+| **Vision** | +384 | variable | host | `VisionEntry[]` (count in Self) |
+| **Init** | +4096 | 64 | host once | birth envelope (deploy = zeros) |
+| **Inbox** | +4160 | 72 | host on recv | sender u64 + envelope |
+| **Action** | +4232 | 64 | **guest** | pending action for `act()` |
+
+Vision grows down-page from +384; max bounded by sim `r_vis`. Header `layout_version` bumps if region sizes change.
+
+### Header (32 B)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| magic | u32 | `0x5452_0002` (`TR` + version nibble) |
+| abi_version | u32 | **2** — guest may trap if unsupported |
+| layout_version | u32 | page layout; append-only evolution |
+| tick | u64 | world tick |
+| _reserved | u64[2] | zero |
+
+### Self (64 B)
+
+| Field | Type |
+|-------|------|
+| id | u64 |
+| owner_id | u64 |
+| pos_x, pos_y | i32 |
+| facing | u32 |
+| energy | i64 |
+| health, max_health | i32 |
+| uptime | u32 |
+| inbox_len | u32 |
+| vision_count | u32 |
+| _reserved | u32 |
+
+New self fields **append after `_reserved`** with `layout_version++`. Old WASM ignores tail.
+
+### TileView (48 B)
+
+| Field | Type |
+|-------|------|
+| kind | u32 |
+| flags | u32 |
+| energy | i64 |
+| health, max_health | i32 |
+| facing | u32 |
+| entity_id | u64 |
+| aux | u64 |
+
+`kind`: `Empty=0`, `Solid=1`, `Creature=2`, `Corpse=3`, `Food=4`. New tile kinds = new `kind` values; old code sees unknown kinds as opaque (check `kind` before acting).
+
+---
+
+## Extensibility rules
+
+1. **Never change envelope size** (64 B) or Header magic.
+2. **Never re-order** existing Self/TileView fields — only append.
+3. **New actions** = new `kind` in 128+ range first; promote to core when stable.
+4. **New imports** = new names (`act2`), never change `act()` signature.
+5. **Unknown `kind` in Action slot** → `act()` returns `-1`, no death (forward-compatible guest code).
+6. **Spawn owner_id** must reference a live creature; child gets that creature's human account + `owner_id`.
+7. **Deploy** → Init all zero; Self.owner_id = id.
+
+---
+
+## Gas & energy costs
+
+Creatures pay **energy** (same unit as deploy credits and tile pools). Constants live in `crates/sim/src/abi.rs` and defaults in `SimConfig`. Economy rules (free-mint cap, food): [energy-budget.md](energy-budget.md).
+
+### Units
+
+| Symbol | Value | Meaning |
+|--------|-------|---------|
+| `ENERGY_SCALE` | 100 000 | 1 **glim** (display unit) |
+| `CORPSE_ENERGY` | 10 × scale = **1 000 000** | Floor — at or below → death on next charge |
+| `ACTION_ENERGY` | scale ÷ 4 = **25 000** | Default surcharge for spatial actions |
+
+### Opcode gas (every tick)
+
+Each think slice runs WASM until one of: successful `act()`, opcode budget exhausted, or `main` returns (suicide).
+
+| Parameter | Default | Effect |
+|-----------|---------|--------|
+| `opcodes_per_tick` | 25 000 | Max WASM opcodes charged per tick |
+| `energy_per_opcode` | 1 | Energy **destroyed** per opcode executed |
+
+**Budget:** `min(opcodes_per_tick, energy ÷ energy_per_opcode)`. Host sets Wasmtime fuel to this budget; after the slice, `energy -= opcodes_used × energy_per_opcode` (ledger `record_destroy`).
+
+| Outcome | Creature |
+|---------|----------|
+| Fuel exhausted mid-slice | **Suspend** — alive, no action this tick (`OutOfGas` path) |
+| Energy ≤ corpse floor after charge | **Death** (`energy_floor`) |
+| Trap / bad syscall args | **Death** (reason varies) |
+
+Thinking costs scale with code size and loop depth; idle `sleep` loops pay almost nothing.
+
+### Action surcharges (on successful `act()`)
+
+Charged **in addition** to opcode gas. All go to `energy_destroyed`.
+
+| Action (`kind`) | Extra energy | Notes |
+|-----------------|--------------|-------|
+| Move | `move_extra` (= 25 000) | Blocked move still pays surcharge if syscall accepted |
+| Dig | `dig_extra` | |
+| Place | `place_extra` | |
+| Hit | `hit_extra` | + target damage via sim rules |
+| Rotate | `rotate_extra` | |
+| Eat | 0 | Transfers tile → creature |
+| Spawn | 0 at syscall | Parent **transfers** `words[0]` energy to child |
+| Signal / Broadcast | 0 | Payload only; range/target rules apply |
+
+Tune via `PATCH /v1/dev/sim-config` (`move_extra`, …) in dev.
+
+### Passive costs
+
+| Mechanism | Default | When |
+|-----------|---------|------|
+| Health regen | `health_regen_cost` = 25 000 | Idle tick (no action, not full HP): +`health_regen` HP |
+| Death leak | 20% of creature energy | `100 − CORPSE_YIELD_PERCENT`; remainder destroyed, yield → corpse tile |
+
+### Spawn minimum
+
+Child energy in spawn envelope must be **> `CORPSE_ENERGY`** (`SPAWN_MIN_ENERGY`). Parent debits full spawn energy on success.
+
+### Signal / inbox
+
+- Directed signal: target must exist and be within `r_sig` (default 5 hex).
+- Inbox cap: `signal_inbox_cap` (default 8); oldest dropped.
+- Signal/broadcast actions do not add an extra surcharge beyond opcode gas.
+
+### Quick reference (default config)
+
+```
+1 tick, tight loop, no act():     ~ opcodes_used × 1 energy destroyed
+1 tick, one move + 5k opcodes:    5 000 + 25 000 = 30 000 destroyed
+Deploy floor:                     1 000 000 energy (10 glims corpse reserve)
+```
+
+## Creature ids
+
+**u64** in ABI and wire. Accounts also receive **`account_creature_id`** (u64, not on map) for external control and signal routing — see [external-control.md](../external-control.md).
+
+## External control (API key)
+
+Owners may attach via **`GET /v1/control/ws`** with **`Authorization: Bearer tr_…`** only.
+
+| Direction | Wire | ABI equivalent |
+|-----------|------|----------------|
+| Server → client | `{ "type": "recv", "sender", "envelope" }` | `recv()` → Inbox slot |
+| Client → server | `{ "type": "signal", "target", "envelope" }` | Signal action |
+| Client → server | `{ "type": "broadcast", "envelope" }` | Broadcast action |
+
+Envelope is the same 64-byte shape documented above. Firebase JWT is **not** accepted on control WS.
+
+## Why this shape
+
+| Old idea | Problem | Now |
+|----------|---------|-----|
+| `action(tag, rel, a, b…g)` | 9 WASM params; awkward SDK | Guest writes **Action** slot; `act()` |
+| `main(init_ptr)` | pointer ceremony | **Init** slot at fixed offset |
+| `recv(ptr)` | pointer ceremony | **Inbox** slot |
+| tag + rel + 48 B data | three layouts | one **envelope**, words interpreted by kind |
+| scattered offsets (8192/8256) | hard to reason | one **ABI page** map |
+
+---
+
+## SDK surface (target)
+
+```rust
+// read memory
+energy(), owner_id(), id(), tile(rel), init() -> Envelope
+
+// write Action slot + syscall
+act(envelope: Envelope) -> i32
+recv() -> Option<(u64, Envelope)>
+rand() -> u64
+```
+
+Helper builders: `Envelope::mv(rel)`, `Envelope::spawn(rel, energy, owner, child)`, etc.

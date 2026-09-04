@@ -2,6 +2,8 @@
 
 Internal economy spec. **Player summary:** [public Energy & glims](https://terrarium.mintlify.app/concepts/energy). **Shipped rules:** [../../product/requirements.md](../../product/requirements.md) §6.
 
+Opcode gas and per-action surcharges are specified in [sim/host-abi.md](sim/host-abi.md) § Gas & energy costs. This doc covers economy flow and free-mint budget.
+
 Terrarium's in-world economy is **deflationary**: energy is destroyed continuously by action costs and death leaks. **Free** energy (anything that mints into the sim without debiting credits or an existing pool) is capped so it can never outpace destruction.
 
 **Rule:** for every **2** energy units destroyed in the sim, at most **1** free unit may be minted over the lifetime of the world.

@@ -3,18 +3,10 @@
 use std::collections::HashSet;
 
 use sqlx::SqlitePool;
-use terrarium_sim::{compile_wat, vm::Creature, DeathReason, EnergyLedger, WorldTile, WorldTiles};
-
-const IDLE_WAT: &str = r#"
-(module
-  (import "terrarium" "sleep" (func $sleep))
-  (func (export "main")
-    loop $l
-      call $sleep
-      br $l
-    end)
-)
-"#;
+use terrarium_sim::{
+    compile_wat, vm::Creature, wat::WAT_IDLE, DeathReason, EnergyLedger, Payload, WorldTile,
+    WorldTiles,
+};
 
 pub(crate) struct PersistSnapshot {
     pub creatures: Vec<Creature>,
@@ -23,19 +15,36 @@ pub(crate) struct PersistSnapshot {
 }
 
 pub async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
-    let rows = sqlx::query_as::<_, (String, String, i64, i64, i64, i64, i64, Option<Vec<u8>>, String, i64, i64)>(
-        "SELECT id, owner_uid, x, y, energy, health, max_health, bytecode, code, born_tick, facing FROM creatures ORDER BY id",
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            Option<Vec<u8>>,
+            String,
+            i64,
+            i64,
+        ),
+    >(
+        "SELECT id, owner_uid, owner_id, x, y, energy, health, max_health, bytecode, code, born_tick, facing FROM creatures ORDER BY id",
     )
     .fetch_all(db)
     .await?;
 
-    let idle = compile_wat(IDLE_WAT)?;
+    let idle = compile_wat(WAT_IDLE)?;
 
     rows.into_iter()
         .map(
             |(
                 id,
                 owner_uid,
+                owner_id,
                 x,
                 y,
                 energy,
@@ -50,9 +59,12 @@ pub async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
                     Some(b) => b,
                     None => compile_wat(&code).unwrap_or_else(|_| idle.clone()),
                 };
+                let id = id as u64;
+                let owner_id = if owner_id == 0 { id } else { owner_id as u64 };
                 Ok(Creature {
                     id,
                     owner_uid,
+                    owner_id,
                     x: x as i32,
                     y: y as i32,
                     energy,
@@ -66,6 +78,7 @@ pub async fn load_creatures(db: &SqlitePool) -> anyhow::Result<Vec<Creature>> {
                     death_reason: None,
                     born_tick: born_tick.max(0) as u64,
                     facing: (facing as u8).min(5),
+                    init: Payload::default(),
                 })
             },
         )
@@ -128,15 +141,15 @@ pub async fn persist_world(
 ) -> anyhow::Result<()> {
     let mut tx = db.begin().await?;
 
-    let alive_ids: HashSet<String> = creatures.iter().map(|c| c.id.clone()).collect();
-    let db_ids = sqlx::query_scalar::<_, String>("SELECT id FROM creatures")
+    let alive_ids: HashSet<i64> = creatures.iter().map(|c| c.id as i64).collect();
+    let db_ids = sqlx::query_scalar::<_, i64>("SELECT id FROM creatures")
         .fetch_all(&mut *tx)
         .await?;
 
     for id in db_ids {
         if !alive_ids.contains(&id) {
             sqlx::query("DELETE FROM creatures WHERE id = ?")
-                .bind(&id)
+                .bind(id)
                 .execute(&mut *tx)
                 .await?;
         }
@@ -147,14 +160,14 @@ pub async fn persist_world(
         sqlx::query("UPDATE creatures SET x = ?, y = ? WHERE id = ?")
             .bind(slot)
             .bind(slot)
-            .bind(&creature.id)
+            .bind(creature.id as i64)
             .execute(&mut *tx)
             .await?;
     }
 
     for creature in creatures {
         sqlx::query(
-            "UPDATE creatures SET x = ?, y = ?, energy = ?, health = ?, max_health = ?, facing = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
+            "UPDATE creatures SET x = ?, y = ?, energy = ?, health = ?, max_health = ?, facing = ?, owner_id = ?, bytecode = COALESCE(bytecode, ?), born_tick = ? WHERE id = ?",
         )
         .bind(creature.x as i64)
         .bind(creature.y as i64)
@@ -162,9 +175,10 @@ pub async fn persist_world(
         .bind(creature.health as i64)
         .bind(creature.max_health as i64)
         .bind(creature.facing as i64)
+        .bind(creature.owner_id as i64)
         .bind(&creature.wasm)
         .bind(creature.born_tick as i64)
-        .bind(&creature.id)
+        .bind(creature.id as i64)
         .execute(&mut *tx)
         .await?;
     }

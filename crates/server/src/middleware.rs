@@ -22,6 +22,29 @@ pub async fn dev_only(req: Request, next: Next) -> Response {
     }
 }
 
+pub async fn require_api_key(
+    State(state): State<AppState>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    let token = match bearer_token(req.headers()) {
+        Some(token) => token,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+
+    if !token.starts_with("tr_") {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let uid = match api_keys::verify_key(&state.db, token).await {
+        Some(uid) => uid,
+        None => return StatusCode::UNAUTHORIZED.into_response(),
+    };
+
+    req.extensions_mut().insert(AuthenticatedUser { uid });
+    next.run(req).await
+}
+
 pub async fn require_user(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let token = match bearer_token(req.headers()) {
         Some(token) => token,

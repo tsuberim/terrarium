@@ -9,6 +9,7 @@ export type E2eState = {
   credits: number | null;
   testing: boolean;
   wasmReady: boolean;
+  allTestsPassed: boolean;
   playback: "idle" | "playing" | "paused";
   error: string | null;
   busy: boolean;
