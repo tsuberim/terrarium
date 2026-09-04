@@ -34,6 +34,8 @@ loop {
 
 The compile worker injects `use terrarium_sdk::prelude::*` and wraps your source in `pub fn main()` when needed. A bare `move_forward();` moves once, then halts when `main` returns after the slice resumes.
 
+**Prelude:** `sleep`, `energy`, `move_forward`, `eat_forward`, `rotate`, `sense_kind`, `random_byte`, `uptime`, and `tile::*` kinds.
+
 **One action per tick** — only the first move/eat/rotate call in a tick runs. The host resumes your program each tick until a slice ends.
 
 ## Local compile worker

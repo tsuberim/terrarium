@@ -18,7 +18,7 @@ export const SDK_SYMBOLS: SdkSymbol[] = [
   { name: "sense_kind", kind: "fn", signature: "sense_kind(dq: i32, dr: i32)", returns: "i32", doc: "Tile kind at relative hex, or `-1` out of vision." },
   { name: "energy", kind: "fn", signature: "energy()", returns: "i64", doc: "Current glim balance." },
   { name: "sleep", kind: "fn", signature: "sleep()", returns: "()", doc: "Yield remaining gas this step (optional)." },
-  { name: "random_byte", kind: "fn", signature: "random_byte()", returns: "u8", doc: "Deterministic RNG byte." },
+  { name: "random_byte", kind: "fn", signature: "random_byte()", returns: "i32", doc: "Deterministic RNG byte 0–255." },
   { name: "tile", kind: "mod", signature: "tile", doc: "Tile kind constants: `EMPTY`, `SOLID`, `CREATURE`, `CORPSE`, `FOOD`." },
   { name: "tile::EMPTY", kind: "const", signature: "tile::EMPTY", returns: "i32", doc: "Empty cell." },
   { name: "tile::SOLID", kind: "const", signature: "tile::SOLID", returns: "i32", doc: "Wall / solid tile." },

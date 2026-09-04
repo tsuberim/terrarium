@@ -57,8 +57,8 @@ pub fn sense_kind(dq: i32, dr: i32) -> i32 {
     }
 }
 
-pub fn random_byte() -> u8 {
-    unsafe { host::random_byte() as u8 }
+pub fn random_byte() -> i32 {
+    unsafe { host::random_byte() }
 }
 
 pub fn uptime() -> i32 {
@@ -66,5 +66,7 @@ pub fn uptime() -> i32 {
 }
 
 pub mod prelude {
-    pub use crate::{eat_forward, energy, move_forward, rotate, sense_kind, sleep, tile, uptime};
+    pub use crate::{
+        eat_forward, energy, move_forward, random_byte, rotate, sense_kind, sleep, tile, uptime,
+    };
 }
