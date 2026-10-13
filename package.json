@@ -8,6 +8,6 @@
     "test:integration": "./scripts/api-smoke.sh && ./scripts/e2e.sh"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.5"
   }
 }
