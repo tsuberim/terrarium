@@ -13,5 +13,5 @@ terrarium-test-spec = { path = "../test-spec" }
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
-wasmtime = "28"
+wasmtime = "36"
 wat = "1"
